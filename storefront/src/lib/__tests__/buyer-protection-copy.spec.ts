@@ -107,6 +107,24 @@ describe("/buyer-protection says only what the claim mechanism does", () => {
       expect(page).not.toMatch(/come back to you/i)
       expect(page).not.toMatch(/closing it silently/i)
       expect(page).not.toMatch(/we('|&apos;)ll (contact|reply to|update|get back to) you/i)
+      // "An explanation of why we can't act" reads as one the buyer receives;
+      // the reason is recorded on the claim, and no page or email shows it yet.
+      expect(page).not.toMatch(/\bexplanation\b/i)
+      expect(page).not.toMatch(/we('|&apos;)ll (explain|tell you)/i)
+    }
+  })
+
+  /**
+   * A decision is a refund, a release (the seller keeps the money) or a
+   * withdrawal. Step 4 once offered "a replacement", which no decision
+   * records and nothing arranges.
+   */
+  it("offers only the outcomes a decision can record", () => {
+    const statuses = backend("modules/order-dispute/resolution.ts").match(/export enum DisputeStatus \{([\s\S]*?)\n\}/)
+    expect(statuses).not.toBeNull()
+    expect(statuses![1]).toMatch(/RESOLVED_REFUND/)
+    if (!/REPLACE/i.test(statuses![1])) {
+      expect(page).not.toMatch(/replacement|replace it/i)
     }
   })
 })

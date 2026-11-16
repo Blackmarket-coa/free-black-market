@@ -18,8 +18,10 @@ import {
 
 const proofOfDeliverySchema = z.object({
   proof_type: z.enum(["SIGNATURE", "PHOTO", "PIN_CODE", "RECIPIENT_CONFIRMATION"]),
-  photo_url: z.string().url().optional(),
-  signature_url: z.string().url().optional(),
+  // Further restricted to this platform's own file storage by
+  // `proofOfDeliveryError`; `.url()` alone accepts `javascript:` and `data:`.
+  photo_url: z.string().max(2048).url().optional(),
+  signature_url: z.string().max(2048).url().optional(),
   pin_code: z.string().max(10).optional(),
   recipient_name: z.string().max(255).optional(),
   notes: z.string().max(500).optional(),
@@ -37,6 +39,9 @@ const proofOfDeliverySchema = z.object({
 // caller is not driving. A delivery created with a proof requirement accepts
 // only that proof, and a PIN requirement only the PIN on record
 // (`proofOfDeliveryError`); before this, submitting PHOTO skipped the PIN.
+// Only the PIN is proof the courier cannot make up: PHOTO and SIGNATURE (a
+// file in this platform's storage) and RECIPIENT_CONFIRMATION (a typed name)
+// are the courier's attestation, accepted as such and not verified.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {

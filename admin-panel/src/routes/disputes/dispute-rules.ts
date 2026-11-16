@@ -161,6 +161,8 @@ export function parseAmount(input: string, currencyCode: string): number | null 
   return Number(whole) * 10 ** digits + Number(frac.padEnd(digits, "0") || "0")
 }
 
+const REFUND_OF_NOTHING = "A refund of nothing is a release. To award nothing, release to the seller instead"
+
 export type ResolutionDraft = {
   /** What is wrong, in words for the person; empty when it can be sent. */
   problems: string[]
@@ -174,7 +176,10 @@ export type ResolutionDraft = {
  * - The move must be one the backend allows from the current status.
  * - Taking a case under review carries nothing else.
  * - A refund with no amount awards the whole claim (the backend's rule); an
- *   amount must be exact and no more than was claimed.
+ *   amount must be exact, no more than was claimed, and more than nothing: a
+ *   refund of nothing is a release, and the backend refuses it (400
+ *   `invalid_award_amount`) because the buyer's claims API would otherwise
+ *   call it "accepted" with nothing awarded.
  * - A release awards nothing; an amount on one is refused, as the backend
  *   refuses it, because it means the wrong outcome was picked.
  * - Every decision that closes the case (refund, release, withdrawal) needs
@@ -183,8 +188,10 @@ export type ResolutionDraft = {
  *   not private: it is stored as `resolution_note`, which the buyer reads
  *   from `GET /store/order-claims` (as `reviewer_note`) and
  *   `GET /store/orders/:id/dispute`, and the seller from
- *   `GET /vendor/disputes/:id`. Nothing emails it to either of them; the
- *   screen's label says both.
+ *   `GET /vendor/disputes/:id` (which now resolves a vendor login to its
+ *   seller; it answered 404 to every vendor before). Nothing emails it to
+ *   either of them; the screen's label says both. Those are API reads: no
+ *   storefront page and no vendor-panel screen shows it yet.
  */
 export function resolutionDraft(
   dispute: Pick<AdminDispute, "status" | "claim_amount" | "currency_code">,
@@ -217,10 +224,15 @@ export function resolutionDraft(
           dispute.currency_code
         )} claimed`
       )
+    } else if (parsed === 0) {
+      problems.push(REFUND_OF_NOTHING)
     } else {
       award = parsed
     }
   }
+
+  // Blank awards the whole claim, which is nothing when nothing was claimed.
+  if (to === "resolved_refund" && awardText === "" && claim === 0) problems.push(REFUND_OF_NOTHING)
 
   if (to === "resolved_release" && awardText !== "") {
     const parsed = parseAmount(awardText, dispute.currency_code)
@@ -238,6 +250,32 @@ export function resolutionDraft(
         ? { status: to, note, ...(award !== undefined ? { award_amount: award } : {}) }
         : null,
   }
+}
+
+/**
+ * What to tell the operator when `PATCH /admin/disputes/:id` refuses.
+ *
+ * A 409 from that route means one thing: the case is no longer in the status
+ * this page decided from, because another operator decided it or took it up
+ * first. The server's own words for that are internal ("cannot move a
+ * dispute from resolved_release to resolved_refund", or, in the narrow race
+ * between its read and its write, "this dispute changed while it was being
+ * decided (it is no longer open); reload it"), so any 409 becomes a sentence
+ * here. The mutation refetches the case on settle, so the page already shows
+ * where it stands by the time the operator reads this. Every other refusal
+ * (a missing note, an award the claim cannot carry: 400) keeps the server's
+ * message, which says what to fix.
+ */
+export function decisionErrorText(error: unknown, action: "take_up" | "decide"): string {
+  const status = (error as { status?: unknown } | null)?.status
+  if (status === 409) {
+    return action === "take_up"
+      ? "Someone else already took this dispute up or decided it. The page now shows where it stands."
+      : "This dispute was already decided or changed by someone else. The page now shows where it stands."
+  }
+  const message = (error as { message?: unknown } | null)?.message
+
+  return typeof message === "string" && message.trim() ? message : "The dispute could not be updated. Try again."
 }
 
 /**

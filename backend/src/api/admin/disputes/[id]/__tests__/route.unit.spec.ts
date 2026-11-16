@@ -1,5 +1,6 @@
-import { PATCH } from "../route"
+import { PATCH, parseAwardAmount } from "../route"
 import { ORDER_DISPUTE_MODULE } from "../../../../../modules/order-dispute"
+import OrderDisputeService from "../../../../../modules/order-dispute/service"
 import {
   DECISIONS_NEEDING_A_NOTE,
   DisputeStatus,
@@ -109,5 +110,139 @@ describe("PATCH /admin/disputes/:id: a closing decision needs a note", () => {
     const { res, service } = await invoke({ status: "under_review" })
     expect(res.statusCode).toBe(200)
     expect(service.takeUnderReview).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * `award_amount` is the figure an operator later pays out by hand. The PATCH
+ * used to read any non-number as "no figure", which awards the whole claim:
+ * the string "0" became a 2599 refund on a 2599 claim, -500 became a 0
+ * refund recorded as resolved_refund, and 12.5 was floored to 12. Each case
+ * below returned 200 with those awards before the fix.
+ */
+describe("PATCH /admin/disputes/:id: award_amount is a whole number of minor units or nothing", () => {
+  it.each([
+    ["the string \"0\"", "0"],
+    ["the string \"1250\"", "1250"],
+    ["the string \"12.50\"", "12.50"],
+    ["a negative", -500],
+    ["a fraction", 12.5],
+    ["true", true],
+    ["an array", [1250]],
+    ["an object", { cents: 1250 }],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["an unsafe integer", 2 ** 53],
+  ])("refuses %s with 400 invalid_award_amount, before the service is resolved", async (_label, award_amount) => {
+    for (const status of ["resolved_refund", "resolved_release"]) {
+      const { res, resolve, service } = await invoke({ status, award_amount, note: "Half arrived." })
+      expect(res.statusCode).toBe(400)
+      expect(res.body).toMatchObject({ type: "invalid_award_amount" })
+      expect(resolve).not.toHaveBeenCalled()
+      expect(service.resolve).not.toHaveBeenCalled()
+    }
+  })
+
+  it("passes a whole number through unchanged, and no figure as null (the whole claim)", async () => {
+    const exact = await invoke({ status: "resolved_refund", award_amount: 1250, note: "Half." })
+    expect(exact.service.resolve).toHaveBeenCalledWith(expect.objectContaining({ awardCents: 1250 }))
+
+    for (const extra of [{}, { award_amount: null }]) {
+      const whole = await invoke({ status: "resolved_refund", note: "All of it.", ...extra })
+      expect(whole.res.statusCode).toBe(200)
+      expect(whole.service.resolve).toHaveBeenCalledWith(expect.objectContaining({ awardCents: null }))
+    }
+  })
+
+  it("parseAwardAmount: absent or null is no figure; only a non-negative safe integer is one", () => {
+    expect(parseAwardAmount(undefined)).toEqual({ ok: true, value: null })
+    expect(parseAwardAmount(null)).toEqual({ ok: true, value: null })
+    expect(parseAwardAmount(0)).toEqual({ ok: true, value: 0 })
+    expect(parseAwardAmount(2599)).toEqual({ ok: true, value: 2599 })
+    for (const bad of ["0", "", -1, 0.5, Number.NaN, 2 ** 53, false, [], {}]) {
+      expect(parseAwardAmount(bad)).toEqual({ ok: false })
+    }
+  })
+})
+
+/**
+ * The same route with the real `OrderDisputeService.resolve` (and so the real
+ * `resolveAwardCents`) behind it, on a 2599 claim. Only the reads and writes
+ * that need a database are doubles; `write` records what would be stored.
+ */
+describe("PATCH /admin/disputes/:id with the real resolve: what is recorded", () => {
+  function realReq(body: Record<string, unknown>) {
+    const row = {
+      id: "odsp_1",
+      status: DisputeStatus.OPEN,
+      claim_amount: 2599,
+      award_amount: 0,
+      escrow_agreement_id: null,
+    }
+    const write = jest.fn(async (_row: unknown, _set: Record<string, unknown>) => undefined)
+    const fake = {
+      require: jest.fn(async () => row),
+      writeIfStatusUnchanged: write,
+      createOrderDisputeEvents: jest.fn(async (_e: unknown[]) => undefined),
+    }
+    const service = {
+      resolve: (a: Parameters<OrderDisputeService["resolve"]>[0]) =>
+        OrderDisputeService.prototype.resolve.call(fake as unknown as OrderDisputeService, a),
+    }
+    const req = {
+      params: { id: "odsp_1" },
+      body,
+      scope: { resolve: (key: string) => (key === ORDER_DISPUTE_MODULE ? service : undefined) },
+      auth_context: { actor_id: "user_1", actor_type: "user" },
+    }
+    return { req, write }
+  }
+
+  const send = async (body: Record<string, unknown>) => {
+    const made = realReq(body)
+    const res = createRes()
+    await PATCH(made.req as unknown as RouteArgs[0], res as unknown as RouteArgs[1])
+    return { res, write: made.write }
+  }
+
+  it("records an exact award, and the whole claim when none is sent", async () => {
+    const exact = await send({ status: "resolved_refund", award_amount: 1250, note: "Half." })
+    expect(exact.res.statusCode).toBe(200)
+    expect(exact.write.mock.calls[0][1]).toMatchObject({ status: "resolved_refund", award_amount: 1250 })
+
+    const whole = await send({ status: "resolved_refund", note: "All of it." })
+    expect(whole.write.mock.calls[0][1]).toMatchObject({ award_amount: 2599 })
+  })
+
+  it("refuses a refund that awards nothing (use a release), with 400 and no write", async () => {
+    const zero = await send({ status: "resolved_refund", award_amount: 0, note: "Nothing owed." })
+    expect(zero.res.statusCode).toBe(400)
+    expect(zero.res.body).toMatchObject({ type: "invalid_award_amount", message: expect.stringMatching(/resolved_release/) })
+    expect(zero.write).not.toHaveBeenCalled()
+
+    // A release with 0 is the right way to say it.
+    const release = await send({ status: "resolved_release", award_amount: 0, note: "Nothing owed." })
+    expect(release.res.statusCode).toBe(200)
+    expect(release.write.mock.calls[0][1]).toMatchObject({ status: "resolved_release", award_amount: 0 })
+  })
+
+  it("answers an award the claim cannot carry with 400, not the 409 that means the case changed", async () => {
+    for (const body of [
+      { status: "resolved_refund", award_amount: 2600, note: "x" },
+      { status: "resolved_release", award_amount: 5, note: "x" },
+    ]) {
+      const { res, write } = await send(body)
+      expect(res.statusCode).toBe(400)
+      expect(res.body).toMatchObject({ type: "invalid_award_amount" })
+      expect(write).not.toHaveBeenCalled()
+    }
+  })
+
+  it("records none of the coerced figures the old check produced", async () => {
+    for (const award_amount of ["0", -500, 12.5, 1250.9]) {
+      const { res, write } = await send({ status: "resolved_refund", award_amount, note: "x" })
+      expect(res.statusCode).toBe(400)
+      expect(write).not.toHaveBeenCalled()
+    }
   })
 })

@@ -1,9 +1,9 @@
 import { BigNumber } from "@medusajs/framework/utils"
 import {
-  isDryRunArg,
   legacyFlooredShare,
   minorUnitShare,
-  parseCutoffArg,
+  parseCutoff,
+  parseScriptArgs,
   planMinorUnitCorrection,
   type MajorUnitLine,
   type StoredDisputeAmounts,
@@ -166,25 +166,54 @@ describe("planMinorUnitCorrection", () => {
 
 describe("the corrective script's arguments", () => {
   const now = new Date("2026-11-25T00:00:00Z")
+  const CUTOFF = "before=2026-11-20T12:00:00Z"
 
   it("takes the cutoff as a bare word, which is the only form medusa exec passes through", () => {
-    expect(parseCutoffArg(["dry-run", "before=2026-11-20T12:00:00Z"], now)).toEqual({
+    expect(parseScriptArgs([CUTOFF], now)).toEqual({ ok: true, before: new Date("2026-11-20T12:00:00Z"), apply: false })
+    expect(parseScriptArgs(["before=2026-11-20T07:00:00-05:00"], now)).toEqual({
       ok: true,
       before: new Date("2026-11-20T12:00:00Z"),
+      apply: false,
     })
-    expect(parseCutoffArg(["before=2026-11-20T07:00:00-05:00"], now)).toEqual({
-      ok: true,
-      before: new Date("2026-11-20T12:00:00Z"),
-    })
-    expect(parseCutoffArg(["--before=2026-11-20T12:00:00.500Z"], now)).toEqual({
+    expect(parseScriptArgs(["before=2026-11-20T12:00:00.500Z"], now)).toMatchObject({
       ok: true,
       before: new Date("2026-11-20T12:00:00.500Z"),
     })
   })
 
+  /**
+   * Writing used to be opt-out: anything but exactly `dry-run` wrote, and
+   * unknown words were ignored, so `dryrun before=…` ran live.
+   */
+  it("writes only when told to with `apply`; no word, or `dry-run`, is a dry run", () => {
+    expect(parseScriptArgs([CUTOFF], now)).toMatchObject({ ok: true, apply: false })
+    expect(parseScriptArgs(["dry-run", CUTOFF], now)).toMatchObject({ ok: true, apply: false })
+    expect(parseScriptArgs(["apply", CUTOFF], now)).toMatchObject({ ok: true, apply: true })
+    expect(parseScriptArgs([CUTOFF, "apply"], now)).toMatchObject({ ok: true, apply: true })
+  })
+
+  it("refuses a mistyped or unknown word by name instead of ignoring it", () => {
+    for (const bad of ["dryrun", "dry_run", "DRY-RUN", "Dry-Run", "dry", "run", "--dry-run", "--apply", "APPLY", "applyy", "yes", ""]) {
+      const parsed = parseScriptArgs([bad, CUTOFF], now)
+      expect(parsed.ok).toBe(false)
+      expect((parsed as { message: string }).message).toContain(`unknown argument "${bad}"`)
+    }
+    // The `--` spelling of the cutoff never reaches the script through the CLI; it is not a cutoff here either.
+    expect(parseScriptArgs(["--before=2026-11-20T12:00:00Z"], now).ok).toBe(false)
+  })
+
+  it("refuses a repeated cutoff instead of using the first one, and contradictory or repeated words", () => {
+    const twice = parseScriptArgs([CUTOFF, "before=2020-01-01T00:00:00Z"], now)
+    expect(twice.ok).toBe(false)
+    expect((twice as { message: string }).message).toMatch(/given 2 times/)
+    expect(parseScriptArgs(["apply", "dry-run", CUTOFF], now).ok).toBe(false)
+    expect(parseScriptArgs(["apply", "apply", CUTOFF], now).ok).toBe(false)
+    expect(parseScriptArgs(["dry-run", "dry-run", CUTOFF], now).ok).toBe(false)
+  })
+
   it("refuses to run with no cutoff: `-- --dry-run --before=…` reaches the script as no arguments", () => {
-    for (const args of [undefined, [], ["dry-run"], ["--dry-run"]]) {
-      const parsed = parseCutoffArg(args, now)
+    for (const args of [undefined, [], ["dry-run"], ["apply"]]) {
+      const parsed = parseScriptArgs(args, now)
       expect(parsed.ok).toBe(false)
       expect((parsed as { message: string }).message).toMatch(/cutoff is required/)
     }
@@ -199,14 +228,30 @@ describe("the corrective script's arguments", () => {
       "before=2026-13-45T12:00:00Z",
       "before=2026-11-26T00:00:00Z", // after `now`
     ]) {
-      expect(parseCutoffArg([bad], now).ok).toBe(false)
+      expect(parseScriptArgs([bad], now).ok).toBe(false)
     }
   })
 
-  it("is a dry run only when asked", () => {
-    expect(isDryRunArg(["dry-run", "before=2026-11-20T12:00:00Z"])).toBe(true)
-    expect(isDryRunArg(["--dry-run"])).toBe(true)
-    expect(isDryRunArg(["before=2026-11-20T12:00:00Z"])).toBe(false)
-    expect(isDryRunArg(undefined)).toBe(false)
+  /** JavaScript reads each of these as a different, real time instead of refusing it. */
+  it("refuses a date or time that does not exist rather than letting it roll over", () => {
+    for (const [value, rolled] of [
+      ["2026-02-30T15:00:00Z", "2026-03-02"],
+      ["2026-02-31T15:00:00Z", "2026-03-03"],
+      ["2026-04-31T00:00:00Z", "2026-05-01"],
+      ["2026-11-20T24:00:00Z", "2026-11-21"],
+      ["2026-02-29T12:00:00+05:00", "2026-03-01"],
+    ]) {
+      expect(new Date(value).toISOString().slice(0, 10)).toBe(rolled) // the rollover being refused
+      const parsed = parseCutoff(value, now)
+      expect(parsed.ok).toBe(false)
+      expect((parsed as { message: string }).message).toMatch(/does not exist/)
+      expect(parseScriptArgs([`before=${value}`], now).ok).toBe(false)
+    }
+  })
+
+  it("accepts a real time in any zone, including one whose UTC date is another day", () => {
+    expect(parseCutoff("2024-02-29T12:00:00Z", now)).toMatchObject({ ok: true })
+    expect(parseCutoff("2026-11-20T23:30:00-05:00", now)).toEqual({ ok: true, before: new Date("2026-11-21T04:30:00Z") })
+    expect(parseCutoff("2026-11-20T01:00+05:30", now)).toEqual({ ok: true, before: new Date("2026-11-19T19:30:00Z") })
   })
 })

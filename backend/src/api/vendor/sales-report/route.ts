@@ -4,6 +4,7 @@ const log = createLogger("api/vendor/sales-report")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PLACED_ORDER_LINES_SQL } from "../../../modules/creator-attribution/analytics-queries"
+import { parseReportDateRange } from "./date-range"
 
 /**
  * One CSV field: quoted, with embedded quotes doubled, and a leading
@@ -31,17 +32,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = await requireSellerId(req, res)
   if (!sellerId) return
 
-  const { start_date, end_date, format } = req.query as {
-    start_date?: string
-    end_date?: string
-    format?: string
-  }
+  const { format } = req.query as { format?: string }
 
-  // Default to last 30 days
-  const endDate = end_date ? new Date(end_date as string) : new Date()
-  const startDate = start_date
-    ? new Date(start_date as string)
-    : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000)
+  // The panel sends calendar dates, and a date-only end_date is the whole of
+  // that day: it used to be read as its first instant, so the default view
+  // (ending today) left out every order placed today. See date-range.ts.
+  const parsed = parseReportDateRange(req.query)
+  if (!parsed.ok) {
+    return res.status(400).json({ type: "invalid_data", message: parsed.message })
+  }
+  const { start: startDate, end: endDate, endExclusive } = parsed.range
 
   try {
     // Get product IDs owned by this seller
@@ -64,6 +64,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           total_orders: 0,
           total_units_sold: 0,
           avg_order_value: 0,
+          by_currency: [],
         },
         line_items: [],
         date_range: {
@@ -106,14 +107,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         oli.product_id
       ${PLACED_ORDER_LINES_SQL}
         AND o.created_at >= ?
-        AND o.created_at <= ?
+        AND o.created_at < ?
         AND oli.product_id = ANY(?)
       ORDER BY o.created_at DESC, oli.id
     `
 
     const result = await pgConnection.raw(salesQuery, [
       startDate.toISOString(),
-      endDate.toISOString(),
+      endExclusive.toISOString(),
       productIds,
     ])
 
@@ -150,12 +151,36 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.send(csvHeader + csvRows)
     }
 
+    // Money per currency. An order is in one currency, but a seller who sells
+    // in two regions has lines in two, and $25 plus EUR 10 is not 35 of
+    // anything. The single-currency totals stay where they were; with more
+    // than one currency in the window they are null and by_currency carries
+    // the figures (the panel always formats from by_currency).
+    const currencyTotals = new Map<string, { revenue: number; orders: Set<string> }>()
+    for (const item of lineItems) {
+      const code = String(item.currency_code ?? "").toLowerCase()
+      const entry = currencyTotals.get(code) ?? { revenue: 0, orders: new Set<string>() }
+      entry.revenue += parseFloat(item.line_total) || 0
+      entry.orders.add(item.order_id)
+      currencyTotals.set(code, entry)
+    }
+    const byCurrency = [...currencyTotals.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([currency_code, entry]) => ({
+        currency_code,
+        total_revenue: entry.revenue,
+        total_orders: entry.orders.size,
+        avg_order_value: entry.orders.size > 0 ? entry.revenue / entry.orders.size : 0,
+      }))
+    const oneCurrency = byCurrency.length <= 1
+
     return res.json({
       summary: {
-        total_revenue: totalRevenue,
+        total_revenue: oneCurrency ? totalRevenue : null,
         total_orders: totalOrders,
         total_units_sold: totalUnits,
-        avg_order_value: avgOrderValue,
+        avg_order_value: oneCurrency ? avgOrderValue : null,
+        by_currency: byCurrency,
       },
       line_items: lineItems.map((item) => ({
         line_item_id: item.line_item_id,

@@ -1,14 +1,48 @@
+import { MedusaError } from "@medusajs/framework/utils"
 import {
   PredictionPolicyService,
   jurisdictionLookupChain,
   UNMAPPED_JURISDICTION_ALLOWED_MODES,
   JURISDICTION_PROFILES,
   MATRIX_EFFECTIVE_DATE,
+  MATRIX_POLICY_LABEL,
   MATRIX_POLICY_VERSION,
+  PREDICTION_MODE_NOT_PERMITTED,
+  PredictionPolicyRefusal,
+  canonicalPolicyRules,
+  derivePolicyVersion,
+  isPredictionPolicyRefusal,
+  predictionPolicyDeniedResponse,
   profilesFromEnv,
 } from "../policy-service"
 import { PredictionMode } from "../models"
-import { MAX_POSITIONS_PER_MARKET_PER_USER } from "../service"
+import VendorHypeOperationsPredictionService, { MAX_POSITIONS_PER_MARKET_PER_USER } from "../service"
+
+/**
+ * The version every decision records under the code defaults alone (no env
+ * mapping, no label). Pinned so that a change to the profiles or the default
+ * mapping shows up here, next to the matrix version it should come with.
+ */
+const DEFAULT_POLICY_VERSION = "matrix-1.0.0@2026-01-01+map:c78f8f076443"
+
+const POLICY_ENV = ["VENDOR_HYPE_JURISDICTION_PROFILES", "VENDOR_HYPE_POLICY_VERSION"] as const
+
+/** Run `fn` with exactly these policy env vars set, restoring the rest after. */
+const withPolicyEnv = <T>(env: Partial<Record<(typeof POLICY_ENV)[number], string>>, fn: () => T): T => {
+  const saved = POLICY_ENV.map((key) => [key, process.env[key]] as const)
+  for (const key of POLICY_ENV) {
+    if (env[key] === undefined) delete process.env[key]
+    else process.env[key] = env[key]
+  }
+  try {
+    return fn()
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
 
 /**
  * The compliance matrix states the rule this service exists to keep: "if
@@ -117,9 +151,9 @@ describe("allow-list semantics: a mapped jurisdiction permits only its profile's
   })
 
   it("records the matrix's policy version and effective date on every decision", () => {
-    expect(policy.evaluateMode(PredictionMode.NON_CASH, "US").policy_version).toBe(
-      `matrix-${MATRIX_POLICY_VERSION}@${MATRIX_EFFECTIVE_DATE}`
-    )
+    expect(policy.evaluateMode(PredictionMode.NON_CASH, "US").policy_version.startsWith(
+      `matrix-${MATRIX_POLICY_VERSION}@${MATRIX_EFFECTIVE_DATE}+map:`
+    )).toBe(true)
     expect(MATRIX_POLICY_VERSION).toBe("1.0.0")
     expect(MATRIX_EFFECTIVE_DATE).toBe("2026-01-01")
   })
@@ -150,6 +184,193 @@ describe("profilesFromEnv: the operator's mapping fails closed", () => {
     expect(
       profilesFromEnv('{"US-NV":"US-CASINO","US-RESTRICTED":"US-REGULATED-CASH","US-NJ":"US-REGULATED-CASH"}')
     ).toEqual({ "US-NJ": "US-REGULATED-CASH" })
+  })
+
+  it("drops an entry naming an Object.prototype member, which used to pass and then crash every decision", () => {
+    expect(
+      profilesFromEnv('{"US-NV":"constructor","US-NJ":"toString","US-NY":"hasOwnProperty","US-PA":"__proto__"}')
+    ).toEqual({})
+    expect(() => new PredictionPolicyService({ jurisdictionProfiles: { "US-NV": "constructor" } })).toThrow(
+      /unknown profile/
+    )
+  })
+})
+
+/**
+ * SD-76 follow-up. The recorded version was the matrix label alone, or
+ * whatever VENDOR_HYPE_POLICY_VERSION said, so it did not identify the rules:
+ * a deployment mapping US-NV to US-REGULATED-CASH and one that did not
+ * recorded the same string for opposite decisions.
+ */
+describe("policy_version identifies the rules that decided", () => {
+  it("is the matrix label plus a hash of the effective mapping", () => {
+    const version = withPolicyEnv({}, () => new PredictionPolicyService().policyVersion)
+    expect(version).toBe(DEFAULT_POLICY_VERSION)
+    // What the hash is of, so it can be recomputed from the logged mapping
+    // (sha256 of this string, first 12 hex characters, is c78f8f076443).
+    expect(canonicalPolicyRules({ US: "US-RESTRICTED" })).toBe(
+      '{"mapped":[["US","US-RESTRICTED",["non_cash"]]],"unmapped":["ROW-NONCASH",["non_cash"]]}'
+    )
+    // Compared as a prefix plus a hex suffix, not a regex built from the
+    // label, so no character in the label needs escaping.
+    const prefix = `${MATRIX_POLICY_LABEL}+map:`
+    expect(version.startsWith(prefix)).toBe(true)
+    expect(version.slice(prefix.length)).toMatch(/^[0-9a-f]{12}$/)
+  })
+
+  it("changes with the mapping, and only with what the mapping says", () => {
+    const base = withPolicyEnv({}, () => new PredictionPolicyService().policyVersion)
+    const nv = new PredictionPolicyService({ jurisdictionProfiles: { "US-NV": "US-REGULATED-CASH" } })
+    expect(nv.policyVersion).not.toBe(base)
+    // Same entries, other order: same rules, same version.
+    expect(derivePolicyVersion({ US: "US-RESTRICTED", "US-NV": "US-REGULATED-CASH" })).toBe(
+      derivePolicyVersion({ "US-NV": "US-REGULATED-CASH", US: "US-RESTRICTED" })
+    )
+    expect(derivePolicyVersion({ US: "US-RESTRICTED", "US-NV": "US-REGULATED-CASH" })).toBe(nv.policyVersion)
+  })
+
+  it("lets VENDOR_HYPE_POLICY_VERSION append a label, never replace the version", () => {
+    const labelled = withPolicyEnv({ VENDOR_HYPE_POLICY_VERSION: "counsel-2026-11" }, () => new PredictionPolicyService())
+    expect(labelled.policyVersion).toBe(`${DEFAULT_POLICY_VERSION}+label:counsel-2026-11`)
+    expect(labelled.evaluateMode(PredictionMode.NON_CASH, "US").policy_version).toBe(labelled.policyVersion)
+
+    // A value that could pass for another part of the version is ignored.
+    for (const bad of ["anything goes", "x+map:000000000000", "matrix-9.9.9@2099-01-01"]) {
+      const ignored = withPolicyEnv({ VENDOR_HYPE_POLICY_VERSION: bad }, () => new PredictionPolicyService())
+      expect(ignored.policyVersion).toBe(DEFAULT_POLICY_VERSION)
+    }
+  })
+
+  it("says which profile decided and under which code, for replay", () => {
+    const policy = withPolicyEnv({}, () => new PredictionPolicyService())
+    expect(policy.evaluateMode(PredictionMode.SWEEPSTAKES, "us-ca")).toEqual({
+      allowed: false,
+      reason: "sweepstakes markets are not permitted for US (profile US-RESTRICTED)",
+      policy_version: DEFAULT_POLICY_VERSION,
+      mode: PredictionMode.SWEEPSTAKES,
+      jurisdiction_code: "US-CA",
+      matched: "US",
+      profile: "US-RESTRICTED",
+      allowed_modes: [PredictionMode.NON_CASH],
+    })
+    expect(policy.evaluateMode(PredictionMode.NON_CASH, "ZZ")).toEqual(
+      expect.objectContaining({ allowed: true, matched: null, profile: "ROW-NONCASH", jurisdiction_code: "ZZ" })
+    )
+  })
+
+  it("logs the effective mapping and the version when it is built", () => {
+    const lines: string[] = []
+    const spy = jest.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "))
+    })
+    try {
+      jest.isolateModules(() => {
+        const saved = process.env.LOG_LEVEL
+        process.env.LOG_LEVEL = "info"
+        try {
+          const isolated = require("../policy-service") as typeof import("../policy-service")
+          const built = withPolicyEnv(
+            { VENDOR_HYPE_JURISDICTION_PROFILES: '{"US-NV":"US-REGULATED-CASH"}' },
+            () => new isolated.PredictionPolicyService()
+          )
+          const line = lines.find((l) => l.includes("Prediction policy in force"))
+          expect(line).toBeDefined()
+          expect(line).toContain(built.policyVersion)
+          expect(line).toContain('"US-NV":"US-REGULATED-CASH"')
+          expect(line).toContain('"US":"US-RESTRICTED"')
+        } finally {
+          if (saved === undefined) delete process.env.LOG_LEVEL
+          else process.env.LOG_LEVEL = saved
+        }
+      })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+/**
+ * The operator's mapping has to reach the service the module actually uses,
+ * not just profilesFromEnv. Dropping the env read from the constructor, or
+ * letting the code default win over it, used to fail no test.
+ */
+describe("VENDOR_HYPE_JURISDICTION_PROFILES reaches the module service", () => {
+  const isolatedService = (env: Partial<Record<(typeof POLICY_ENV)[number], string>>) => {
+    let service: VendorHypeOperationsPredictionService | undefined
+    withPolicyEnv(env, () => {
+      jest.isolateModules(() => {
+        const Service = (require("../service") as typeof import("../service")).default
+        // The real module service, built as the container builds it (its
+        // constructor reads only optional container keys), so the policy it
+        // holds is the one its field initialiser makes from the env.
+        service = new Service({} as never)
+      })
+    })
+    if (!service) throw new Error("service was not built")
+    return service
+  }
+
+  it("admits regulated cash in US-NV under a mapping, and still not in US-CA", () => {
+    const service = isolatedService({ VENDOR_HYPE_JURISDICTION_PROFILES: '{"US-NV":"US-REGULATED-CASH"}' })
+    const nv = service.getPolicyDecision(PredictionMode.REGULATED_CASH, "US-NV")
+    expect(nv).toEqual(expect.objectContaining({ allowed: true, matched: "US-NV", profile: "US-REGULATED-CASH" }))
+    expect(service.getPolicyDecision(PredictionMode.REGULATED_CASH, "US-CA").allowed).toBe(false)
+    // A cash-licensed state still gets no sweepstakes.
+    expect(service.getPolicyDecision(PredictionMode.SWEEPSTAKES, "US-NV").allowed).toBe(false)
+    expect(nv.policy_version).not.toBe(DEFAULT_POLICY_VERSION)
+  })
+
+  it("refuses regulated cash in US-NV without one", () => {
+    const service = isolatedService({})
+    const nv = service.getPolicyDecision(PredictionMode.REGULATED_CASH, "US-NV")
+    expect(nv).toEqual(expect.objectContaining({ allowed: false, matched: "US", profile: "US-RESTRICTED" }))
+    expect(nv.policy_version).toBe(DEFAULT_POLICY_VERSION)
+  })
+
+  it("applies the env mapping over the code defaults, as documented", () => {
+    // `US` is mapped by the code default too; the operator's entry wins. (So
+    // an env entry for a country changes every subdivision that inherits it,
+    // which is why the effective mapping is logged when the policy is built.)
+    const service = isolatedService({ VENDOR_HYPE_JURISDICTION_PROFILES: '{"US":"US-SWEEPSTAKES-ELIGIBLE"}' })
+    expect(service.getPolicyDecision(PredictionMode.SWEEPSTAKES, "US-CA")).toEqual(
+      expect.objectContaining({ allowed: true, matched: "US", profile: "US-SWEEPSTAKES-ELIGIBLE" })
+    )
+  })
+})
+
+describe("a policy refusal is a coded 403, not a 500", () => {
+  const refused = withPolicyEnv({}, () =>
+    new PredictionPolicyService().evaluateMode(PredictionMode.SWEEPSTAKES, "US-CA")
+  )
+
+  it("is a FORBIDDEN MedusaError carrying the code, the reason and the version", () => {
+    const error = new PredictionPolicyRefusal(refused)
+    expect(MedusaError.isMedusaError(error)).toBe(true)
+    expect(error.type).toBe(MedusaError.Types.FORBIDDEN)
+    expect(error.code).toBe(PREDICTION_MODE_NOT_PERMITTED)
+    expect(error.message).toBe(refused.reason)
+    expect(error.policy_version).toBe(refused.policy_version)
+    expect(isPredictionPolicyRefusal(error)).toBe(true)
+  })
+
+  it("is recognised by its code after serialisation, and nothing else is", () => {
+    const serialised = JSON.parse(JSON.stringify({ ...new PredictionPolicyRefusal(refused), message: refused.reason }))
+    expect(isPredictionPolicyRefusal(serialised)).toBe(true)
+    expect(isPredictionPolicyRefusal(new Error(refused.reason))).toBe(false)
+    expect(isPredictionPolicyRefusal(new MedusaError(MedusaError.Types.NOT_ALLOWED, "x"))).toBe(false)
+    expect(isPredictionPolicyRefusal(null)).toBe(false)
+  })
+
+  it("answers 403 policy_denied with the reason", () => {
+    expect(predictionPolicyDeniedResponse(new PredictionPolicyRefusal(refused))).toEqual({
+      status: 403,
+      body: {
+        type: "policy_denied",
+        code: PREDICTION_MODE_NOT_PERMITTED,
+        message: "sweepstakes markets are not permitted for US (profile US-RESTRICTED)",
+        policy_version: refused.policy_version,
+      },
+    })
   })
 })
 

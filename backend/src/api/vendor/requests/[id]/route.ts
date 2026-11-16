@@ -62,7 +62,17 @@ const updateRequestSchema = z.object({
 })
 
 /**
- * POST /vendor/requests/:id — replace the data of the seller's own request.
+ * POST /vendor/requests/:id — merge an edit into the data of the seller's own
+ * request.
+ *
+ * It merges; it does not replace. `updateRequests` goes through Medusa's
+ * MikroORM repository, which assigns with `mergeObjectProperties: true`, so
+ * the keys sent overwrite the stored ones, nested objects merge, arrays and
+ * scalars are replaced, and keys left out are kept: a key cannot be removed,
+ * only set to null. That is what the panel relies on: the category edit form
+ * sends only `{ name, handle }`, and replacement would erase the description,
+ * is_active, is_internal and parent_category_id the create form stored.
+ * (`integration-tests/http/vendor-request-detail.spec.ts` pins it.)
  *
  * Only while it is pending: once an admin has accepted, rejected or completed
  * it, or it was cancelled, the record of what was decided must not change

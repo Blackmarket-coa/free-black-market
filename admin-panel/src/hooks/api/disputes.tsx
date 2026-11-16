@@ -20,6 +20,19 @@ import type {
  */
 export const disputeQueryKeys = queryKeysFactory("order_dispute")
 
+/**
+ * Both reads refetch every time their screen mounts (`refetchOnMount:
+ * "always"`), overriding the panel-wide `refetchOnMount: false`
+ * (lib/query-client.ts). A shared triage queue must not be served from
+ * cache: the queue and the case file are sibling routes, so the queue is
+ * unmounted while a case is open, and with the global default "Back to
+ * disputes" showed the case just decided (or taken up) still Open, from
+ * cache, for up to the 10-minute gcTime; a case file reopened from cache
+ * kept offering a decision someone else had already made. Cached rows still
+ * show at once; the fetch replaces them. Found by the browser smoke
+ * (e2e/tests/admin-disputes.spec.ts), which counts list requests.
+ */
+
 /** No params is the backend's queue: open and under review, oldest first. */
 export const useDisputes = (params?: AdminDisputeListParams) => {
   const { data, ...rest } = useQuery({
@@ -28,6 +41,7 @@ export const useDisputes = (params?: AdminDisputeListParams) => {
       sdk.client.fetch<AdminDisputeListResponse>("/admin/disputes", {
         query: params,
       }),
+    refetchOnMount: "always",
   })
 
   return { ...rest, disputes: data?.disputes, count: data?.count }
@@ -39,6 +53,7 @@ export const useDispute = (id: string) => {
     queryFn: () =>
       sdk.client.fetch<AdminDisputeResponse>(`/admin/disputes/${encodeURIComponent(id)}`),
     enabled: !!id,
+    refetchOnMount: "always",
   })
 
   return { ...rest, dispute: data?.dispute, events: data?.events }
@@ -62,10 +77,13 @@ export const useUpdateDispute = (id: string) => {
       }),
     // On a refusal too: a 409 means the case changed on the server (another
     // operator decided it), and the page should show what it is now rather
-    // than keep offering a decision that can no longer be made.
+    // than keep offering a decision that can no longer be made. The lists
+    // are refetched even though none is on screen (`refetchType: "all"`;
+    // the default refetches only active queries), so the queue is current
+    // by the time the operator goes back to it.
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: disputeQueryKeys.detail(id) })
-      queryClient.invalidateQueries({ queryKey: disputeQueryKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: disputeQueryKeys.lists(), refetchType: "all" })
     },
   })
 }

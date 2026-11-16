@@ -18,6 +18,18 @@ jest.setTimeout(240 * 1000)
  *
  * The token here is the real login's, a member (mem_*) id, which is what the
  * vendor panel sends.
+ *
+ * SD-74 follow-up: the first version of this spec never sent dates, so it
+ * missed that the panel's date-only end_date (default: today) was read as the
+ * first instant of that day and dropped that day's orders; and it gave the
+ * vendor one product, so it missed the funnel counting an order once per
+ * product in it. The cases below send the panel's exact query shape and put
+ * two of the vendor's products in one order.
+ *
+ * Every createAuthenticatedSeller spends two POSTs of the /auth limiter's 20
+ * per minute (register, then login), and the whole file runs inside one
+ * window: new checks extend the existing cases where they can rather than
+ * each building a fresh vendor and rival.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -71,6 +83,27 @@ medusaIntegrationTestRunner({
       )
     }
 
+    /** Move an order's placement time, as if it had been placed then. */
+    async function placedAt(orderId: string, at: Date) {
+      const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+      await pg.raw(`UPDATE "order" SET created_at = ? WHERE id = ?`, [at.toISOString(), orderId])
+    }
+
+    /**
+     * The query the panel sends, built exactly as
+     * vendor-panel/src/routes/sales-report/sales-report.tsx getDefaultDateRange()
+     * builds it: calendar dates, ending today.
+     */
+    function panelDefaultQuery() {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(start.getDate() - 30)
+      return new URLSearchParams({
+        start_date: start.toISOString().split("T")[0],
+        end_date: end.toISOString().split("T")[0],
+      }).toString()
+    }
+
     async function world() {
       const vendor = await createAuthenticatedSeller({ api, getContainer })
       const rival = await createAuthenticatedSeller({ api, getContainer })
@@ -102,6 +135,7 @@ medusaIntegrationTestRunner({
           total_orders: 1,
           total_units_sold: 2,
           avg_order_value: 25,
+          by_currency: [{ currency_code: "usd", total_revenue: 25, total_orders: 1, avg_order_value: 25 }],
         })
         expect(res.data.line_items).toHaveLength(1)
         expect(res.data.line_items[0]).toMatchObject({
@@ -113,6 +147,22 @@ medusaIntegrationTestRunner({
           line_total: 25,
           currency_code: "usd",
         })
+
+        // A second currency in the window: money stays per currency, and there
+        // is no cross-currency total ($25 plus EUR 10 is not 35 of anything).
+        await order([{ product: apron, quantity: 1, unit_price: 10 }], { currency_code: "eur" })
+        const mixed = await safe(api.get("/vendor/sales-report", authHeader(vendor.token)))
+        expect(mixed.status).toBe(200)
+        expect(mixed.data.summary).toEqual({
+          total_revenue: null,
+          total_orders: 2,
+          total_units_sold: 3,
+          avg_order_value: null,
+          by_currency: [
+            { currency_code: "eur", total_revenue: 10, total_orders: 1, avg_order_value: 10 },
+            { currency_code: "usd", total_revenue: 25, total_orders: 1, avg_order_value: 25 },
+          ],
+        })
       })
 
       it("exports the same rows as CSV in major units", async () => {
@@ -123,6 +173,49 @@ medusaIntegrationTestRunner({
         const rows = String(res.data).trim().split("\n")
         expect(rows).toHaveLength(2)
         expect(rows[1]).toMatch(/,"Linen Apron","Default","SKU-Linen Apron",2,12\.50,25\.00,"usd"$/)
+      })
+
+      it("with the dates the panel sends: today's order is in the default range, a date-only end date is that whole day, and a bad date is a 400", async () => {
+        const vendor = await createAuthenticatedSeller({ api, getContainer })
+        const apron = await productFor(vendor.seller.id, "Linen Apron")
+        const placed = await order([{ product: apron, quantity: 2, unit_price: 12.5 }])
+        const get = (query: string) => safe(api.get(`/vendor/sales-report?${query}`, authHeader(vendor.token)))
+
+        // The panel's default request (end_date = today) with an order placed
+        // just now. This read zero orders: the end date meant its midnight.
+        const query = panelDefaultQuery()
+        const res = await get(query)
+        expect(res.status).toBe(200)
+        expect(res.data.summary).toMatchObject({ total_orders: 1, total_units_sold: 2, total_revenue: 25 })
+        expect(res.data.line_items.map((l: { order_id: string }) => l.order_id)).toEqual([placed.id])
+        // The window ends at the last millisecond of the end date, not its first.
+        expect(res.data.date_range.end).toMatch(/T23:59:59\.999Z$/)
+        const csv = await get(`${query}&format=csv`)
+        expect(csv.status).toBe(200)
+        expect(String(csv.data).trim().split("\n")).toHaveLength(2)
+
+        // Placed yesterday at 15:00 UTC, after the end date's first instant:
+        // counted with end_date = yesterday, and a one-day range is that day.
+        const now = new Date()
+        const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1))
+        const day = yesterday.toISOString().split("T")[0]
+        await placedAt(placed.id, new Date(yesterday.getTime() + 15 * 60 * 60 * 1000))
+        for (const q of [`end_date=${day}`, `start_date=${day}&end_date=${day}`]) {
+          const r = await get(q)
+          expect(r.status).toBe(200)
+          expect(r.data.summary).toMatchObject({ total_orders: 1, total_units_sold: 2, total_revenue: 25 })
+        }
+        const dayBefore = new Date(yesterday.getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+        const before = await get(`start_date=${dayBefore}&end_date=${dayBefore}`)
+        expect(before.status).toBe(200)
+        expect(before.data.summary.total_orders).toBe(0)
+
+        // A date it cannot read is the caller's error, not a 500.
+        for (const q of ["end_date=garbage", "start_date=2026-02-31", "end_date=2026-13-01&format=csv"]) {
+          const bad = await get(q)
+          expect(bad.status).toBe(400)
+          expect(bad.data).toMatchObject({ type: "invalid_data" })
+        }
       })
     })
 
@@ -140,6 +233,29 @@ medusaIntegrationTestRunner({
           expect.objectContaining({ product_id: apron.id, views: 3, add_to_carts: 1, orders: 1, units: 2 }),
         ])
         expect(res.data.by_day.reduce((sum: number, d: { views: number }) => sum + d.views, 0)).toBe(3)
+
+        // A second order holding two of the vendor's products is ONE order.
+        // Adding up the per-product counts gave apron 2 + towel 1 = 3 orders,
+        // and a conversion of 3/4 for two orders over four views.
+        const towel = await productFor(vendor.seller.id, "Tea Towel")
+        await order([
+          { product: apron, quantity: 1, unit_price: 12.5 },
+          { product: towel, quantity: 1, unit_price: 9 },
+        ])
+        await event({ event_name: "product_view", product_id: towel.id })
+
+        const after = await safe(api.get("/vendor/analytics/products?range=30", authHeader(vendor.token)))
+        expect(after.status).toBe(200)
+        expect(after.data.funnel).toEqual({ views: 4, add_to_carts: 1, orders: 2, units: 4, conversion: 0.5 })
+        expect(after.data.by_product).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ product_id: apron.id, orders: 2, units: 3 }),
+            expect.objectContaining({ product_id: towel.id, orders: 1, units: 1 }),
+          ])
+        )
+        // And it agrees with the sales report's order count.
+        const report = await safe(api.get("/vendor/sales-report", authHeader(vendor.token)))
+        expect(report.data.summary.total_orders).toBe(2)
       })
     })
 

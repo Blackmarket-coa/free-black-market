@@ -76,7 +76,11 @@ notable flags this pass (all default to the safe value):
 - Fail-closed required secrets (backend refuses to boot without them):
   `JWT_SECRET`, `COOKIE_SECRET`, `FREEBLACKMARKET_WEBHOOK_SECRET`,
   `FREEBLACKMARKET_API_KEY`, `CREATOR_ATTRIBUTION_IP_SALT` (see
-  `scripts/assert-env.mjs`; a `CHANGE_ME` placeholder is rejected too).
+  `backend/src/shared/config.ts` and `backend/medusa-config.ts`, the guards
+  that run at boot; a `CHANGE_ME` salt is rejected too). The Blackstar bridge
+  values are refused there as well when the bridge is configured.
+  `scripts/assert-env.mjs` is a wider pre-deploy check that you run yourself
+  (`docs/ENV_CONFIGURATION.md`).
 
 ---
 

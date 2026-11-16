@@ -10,7 +10,7 @@ import MembershipTier from "./models/membership-tier"
 import Member from "./models/member"
 import AutomationTemplate from "./models/automation-template"
 import type { AutomationTrigger } from "./models/automation-template"
-import { classRegistrationRefusal } from "./class-registration"
+import { LIVE_CLASS_STATUSES, classRegistrationRefusal } from "./class-registration"
 
 /**
  * Default Blackout automation copy, seeded (disabled) on first read so the
@@ -265,6 +265,105 @@ class WellnessModuleService extends MedusaService({
 
   // ---- Classes --------------------------------------------------------------
 
+  /** A fresh EntityManager for this module's raw conditional updates. */
+  private rawManager() {
+    return (
+      this as unknown as {
+        baseRepository_: {
+          getFreshManager(): {
+            execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
+          }
+        }
+      }
+    ).baseRepository_.getFreshManager()
+  }
+
+  /**
+   * Take one seat in a live, future class with room, in one statement:
+   * `UPDATE ... WHERE <live> AND ends_at > now() AND <room> RETURNING`.
+   * Returns the class's seat count and capacity after the seat was taken, or
+   * null when no seat was taken (not live, ended, full, or gone).
+   *
+   * Raw SQL because the generated `updateClassEvents` reads and then writes,
+   * which is the race this closes: two buyers of the last seat both read
+   * "room" and both were seated, and a vendor cancel that landed between the
+   * read and the write was overwritten with `status: "open"` (SD-52
+   * re-review). The column names are this module's own, never input.
+   */
+  async takeClassSeat(classEventId: string): Promise<{ seats_taken: number; capacity: number } | null> {
+    const live = [...LIVE_CLASS_STATUSES]
+    const rows = (await this.rawManager().execute(
+      `UPDATE wellness_class_event
+          SET seats_taken = seats_taken + 1,
+              status = CASE WHEN capacity > 0 AND seats_taken + 1 >= capacity THEN 'full' ELSE 'open' END,
+              updated_at = now()
+        WHERE id = ? AND deleted_at IS NULL
+          AND status IN (${live.map(() => "?").join(", ")})
+          AND ends_at > now()
+          AND (capacity = 0 OR seats_taken < capacity)
+        RETURNING seats_taken, capacity`,
+      [classEventId, ...live],
+      "all"
+    )) as Array<{ seats_taken: unknown; capacity: unknown }>
+    const row = rows?.[0]
+    return row ? { seats_taken: Number(row.seats_taken), capacity: Number(row.capacity) } : null
+  }
+
+  /**
+   * Give back a seat {@link takeClassSeat} took, when the attendee row that
+   * should hold it could not be written. A full class reopens; a class the
+   * vendor cancelled meanwhile stays cancelled.
+   */
+  async releaseClassSeat(classEventId: string): Promise<void> {
+    await this.rawManager().execute(
+      `UPDATE wellness_class_event
+          SET seats_taken = GREATEST(seats_taken - 1, 0),
+              status = CASE WHEN status = 'full' THEN 'open' ELSE status END,
+              updated_at = now()
+        WHERE id = ?`,
+      [classEventId],
+      "all"
+    )
+  }
+
+  /**
+   * Claim a class's reminder for the start time it now has, in one
+   * statement. True for exactly one caller per (class, starts_at): the stamp
+   * (`metadata.class_reminder = { starts_at, sent_at }`) is written only if
+   * the class holds none for that start time. A class the vendor moves to a
+   * new time can be reminded again, for the new time.
+   *
+   * The hourly reminder job used to remind every attendee on every run in
+   * the 24 hours before a class, up to 24 times, out of the seller's shared
+   * 50-an-hour send budget; its header claimed a dedupe flag that did not
+   * exist (SD-52 re-review).
+   */
+  async claimClassReminder(classEventId: string, startsAtIso: string): Promise<boolean> {
+    const rows = await this.rawManager().execute(
+      `UPDATE wellness_class_event
+          SET metadata = COALESCE(metadata, '{}'::jsonb)
+                || jsonb_build_object('class_reminder', jsonb_build_object('starts_at', CAST(? AS text), 'sent_at', now())),
+              updated_at = now()
+        WHERE id = ? AND deleted_at IS NULL
+          AND (metadata -> 'class_reminder' ->> 'starts_at') IS DISTINCT FROM CAST(? AS text)
+        RETURNING id`,
+      [startsAtIso, classEventId, startsAtIso],
+      "all"
+    )
+    return Array.isArray(rows) && rows.length === 1
+  }
+
+  /** Drop a reminder claim that reached nobody, so the next run tries again. */
+  async releaseClassReminder(classEventId: string, startsAtIso: string): Promise<void> {
+    await this.rawManager().execute(
+      `UPDATE wellness_class_event
+          SET metadata = metadata - 'class_reminder', updated_at = now()
+        WHERE id = ? AND (metadata -> 'class_reminder' ->> 'starts_at') = CAST(? AS text)`,
+      [classEventId, startsAtIso],
+      "all"
+    )
+  }
+
   /**
    * Register an attendee for a class. Returns the attendee plus whether the
    * class just sold out (so the caller can emit the sold-out KARMA event).
@@ -276,6 +375,13 @@ class WellnessModuleService extends MedusaService({
    * caller (the order subscriber and the vendor's manual add); without it a
    * ticket bought for a cancelled or past class reopened the class (`status`
    * below) and seated the buyer (SD-52 review).
+   *
+   * The seat is taken first, atomically ({@link takeClassSeat}), and the
+   * attendee is written only when it was. Before, this read the class,
+   * inserted the attendee, then wrote `seats_taken: read + 1` and
+   * `status: "open"` back: a vendor cancel landing in between was reopened,
+   * and two buyers of the last seat were both seated (SD-52 re-review). If
+   * the seat could not be taken the class is read again to say why.
    */
   async registerForClass(input: {
     seller_id: string
@@ -286,22 +392,13 @@ class WellnessModuleService extends MedusaService({
     order_id?: string | null
     used_membership_credit?: boolean
   }) {
-    const cls = (await this.retrieveClassEvent(input.class_event_id)) as Record<string, unknown>
-    const refused = classRegistrationRefusal(cls)
-    if (refused) {
-      return { attendee: null, sold_out: false, full: false, refused }
-    }
-    const capacity = Number(cls.capacity ?? 0)
-    const taken = Number(cls.seats_taken ?? 0)
-    const hasRoom = capacity === 0 || taken < capacity
-    const waitlistEnabled = Boolean(cls.waitlist_enabled)
-
-    const status = hasRoom ? "registered" : waitlistEnabled ? "waitlisted" : null
-    if (!status) {
-      return { attendee: null, sold_out: false, full: true, refused: null }
+    const before = (await this.retrieveClassEvent(input.class_event_id)) as Record<string, unknown>
+    const refusedBefore = classRegistrationRefusal(before)
+    if (refusedBefore) {
+      return { attendee: null, sold_out: false, full: false, refused: refusedBefore }
     }
 
-    const attendee = await this.createClassAttendees({
+    const attendeeRow = (status: "registered" | "waitlisted") => ({
       seller_id: input.seller_id,
       class_event_id: input.class_event_id,
       customer_id: input.customer_id ?? null,
@@ -312,17 +409,30 @@ class WellnessModuleService extends MedusaService({
       used_membership_credit: input.used_membership_credit ?? false,
     })
 
-    let soldOut = false
-    if (status === "registered") {
-      const newTaken = taken + 1
-      soldOut = capacity > 0 && newTaken >= capacity
-      await this.updateClassEvents({
-        id: input.class_event_id,
-        seats_taken: newTaken,
-        status: soldOut ? "full" : "open",
-      })
+    const seat = await this.takeClassSeat(input.class_event_id)
+    if (seat) {
+      let attendee
+      try {
+        attendee = await this.createClassAttendees(attendeeRow("registered"))
+      } catch (error) {
+        await this.releaseClassSeat(input.class_event_id)
+        throw error
+      }
+      const soldOut = seat.capacity > 0 && seat.seats_taken >= seat.capacity
+      return { attendee, sold_out: soldOut, full: false, refused: null }
     }
-    return { attendee, sold_out: soldOut, full: false, refused: null }
+
+    // No seat: cancelled or ended since the read above, or full.
+    const latest = (await this.retrieveClassEvent(input.class_event_id)) as Record<string, unknown>
+    const refused = classRegistrationRefusal(latest)
+    if (refused) {
+      return { attendee: null, sold_out: false, full: false, refused }
+    }
+    if (!latest.waitlist_enabled) {
+      return { attendee: null, sold_out: false, full: true, refused: null }
+    }
+    const attendee = await this.createClassAttendees(attendeeRow("waitlisted"))
+    return { attendee, sold_out: false, full: false, refused: null }
   }
 
   async markClassAttendance(attendeeId: string, status: string) {

@@ -52,6 +52,15 @@ import {
  * that sale's flag, so either flag can be set without the other, and the
  * subscription wording is F5's byte for byte. Only a subscription renews.
  *
+ * SD-48 (i) (`FF_TICKET_ORDER_SETTLEMENT_V1`): the ticket checkout
+ * (`workflows/complete-cart-with-tickets`, behind
+ * `POST /store/carts/:id/complete-tickets`, which the storefront uses for
+ * every all-ticket cart) completes its cart through the same
+ * `completeCartWorkflow` and had the same gaps 1 and 2. It runs the same
+ * functions as its `*Ticket*` steps, with `sale: "ticket"` fixed, under its
+ * own flag. Its paid check alone differs: it is dark with that flag (see
+ * `ticketOrderPaidStep`).
+ *
  * A replay — either checkout run again on a cart it already completed — must
  * not reach `completeCartWorkflow` (see `completedCartOrderStep`); the link
  * and capture steps run on it in their `replay` mode, which finishes an order
@@ -68,10 +77,10 @@ import {
 type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }> }
 
 /** The checkout a settlement step serves; `subscription` when an input omits it. */
-export type SettlementSale = "subscription" | "digital_product"
+export type SettlementSale = "subscription" | "digital_product" | "ticket"
 
 type SaleTerms = {
-  /** The flag the sale's steps are dark under, read before anything else; the paid check does not read it. */
+  /** The flag the sale's steps are dark under, read before anything else; the paid check does not read it, except the ticket sale's (`ticketOrderPaidStep`). */
   enabled: () => boolean
   /** "<label> order <id> …" */
   label: string
@@ -93,6 +102,12 @@ const SALES: Record<SettlementSale, SaleTerms> = {
     label: "Digital product",
     soleSeller: "A digital product order is sold by one seller",
     tag: "[digital-product]",
+  },
+  ticket: {
+    enabled: () => featureFlagState.isEnabled("TICKET_ORDER_SETTLEMENT_V1"),
+    label: "Ticket",
+    soleSeller: "A ticket order is sold by one seller",
+    tag: "[ticket]",
   },
 }
 
@@ -257,7 +272,7 @@ type LinkInput = {
    */
   mode: "initial" | "replay" | "renewal"
   expected_seller_id?: string | null
-  /** SD-48: `digital_product` (`initial` or `replay`); `subscription` when omitted. */
+  /** SD-48: `digital_product` or `ticket` (`initial` or `replay`); `subscription` when omitted. */
   sale?: SettlementSale
 }
 
@@ -406,7 +421,7 @@ type CaptureInput = {
   renewal_charge_status?: string | null
   /** `replay`: the seller the link step left the order linked to; null when it could not link it. */
   linked_seller_id?: string | null
-  /** SD-48: `digital_product` (`initial` or `replay`); `subscription` when omitted. */
+  /** SD-48: `digital_product` or `ticket` (`initial` or `replay`); `subscription` when omitted. */
   sale?: SettlementSale
 }
 
@@ -545,7 +560,7 @@ type PaidInput = {
   /** The cart the checkout completed: named in the refusal and its log (SD-53). */
   cart_id: string
   order_id: string
-  /** SD-48: `digital_product`; `subscription` when omitted. */
+  /** SD-48: `digital_product` or `ticket`; `subscription` when omitted. */
   sale?: SettlementSale
 }
 
@@ -683,4 +698,70 @@ export const digitalProductPaymentToCaptureStep = createStep(
 export const digitalProductOrderPaidStep = createStep(
   "digital-product-order-paid",
   (input: Omit<PaidInput, "sale">, context: StepExecutionContext) => orderPaid({ ...input, sale: "digital_product" }, context)
+)
+
+/**
+ * SD-48 (i): the same steps for the ticket checkout
+ * (`workflows/complete-cart-with-tickets`), under its own step names and with
+ * its sale fixed, so they read only FF_TICKET_ORDER_SETTLEMENT_V1 and speak of
+ * a ticket order. Defined here, not renamed with `.config({ name })`, for the
+ * reason given above the digital-product steps.
+ */
+export const ticketCompletedCartOrderStep = createStep(
+  "ticket-completed-cart-order",
+  (input: { cart_id: string }, context: StepExecutionContext) => completedCartOrder({ ...input, sale: "ticket" }, context)
+)
+export const resolveTicketSellerStep = createStep(
+  "resolve-ticket-seller",
+  (input: { cart_id: string }, context: StepExecutionContext) => resolveSeller({ ...input, sale: "ticket" }, context)
+)
+export const linkTicketOrderSellerStep = createStep(
+  "link-ticket-order-seller",
+  (input: Omit<LinkInput, "sale">, context: StepExecutionContext) => linkOrderSeller({ ...input, sale: "ticket" }, context),
+  unlinkOrderSeller
+)
+export const ticketPaymentToCaptureStep = createStep(
+  "ticket-payment-to-capture",
+  (input: Omit<CaptureInput, "sale">, context: StepExecutionContext) =>
+    paymentToCapture({ ...input, sale: "ticket" }, context)
+)
+
+/**
+ * The ticket checkout's paid check: `orderPaid`, but dark with
+ * FF_TICKET_ORDER_SETTLEMENT_V1, unlike the subscription and digital ones
+ * (SD-53 (c)). With the flag off every ticket checkout runs
+ * `completeCartWorkflow` — a retry included, which hands back the cart's
+ * order — and then `requireCompletedCartOrderStep`, which already refuses an
+ * order that owes money and has no payment; this read would refuse nothing
+ * more, so the flag-off checkout is left reading exactly what it read. With
+ * the flag on a replay skips both, and this is the check that keeps an
+ * unpaid order's seats from being created.
+ */
+export const ticketOrderPaidStep = createStep(
+  "ticket-order-paid",
+  async (input: Omit<PaidInput, "sale">, context: StepExecutionContext) =>
+    SALES.ticket.enabled() ? orderPaid({ ...input, sale: "ticket" }, context) : new StepResponse({ checked: false })
+)
+
+/**
+ * The ticket checkout's mode, read once, first, from
+ * FF_TICKET_ORDER_SETTLEMENT_V1 (and nothing else):
+ *
+ *   - `settle`: whether this checkout settles (the steps above are live).
+ *     The workflow uses it to keep the seat check's compensation from
+ *     cancelling the order when the checkout settles (see
+ *     `complete-cart-with-tickets`);
+ *   - `timeout` / `ttl`, the cart lock: before SD-48 (i) it waited 2 s for
+ *     the lock and held it 10 s, and with the flag off it still does. With
+ *     the flag on it also captures the card at Stripe while it holds the
+ *     lock, so it takes Medusa's own completion lock (and the digital
+ *     checkout's): a 30 s wait and a 120 s hold. A shorter hold could lapse
+ *     mid-capture and let a second checkout of the cart in; a shorter wait
+ *     fails a double submit's second run instead of letting it replay the
+ *     first's order.
+ */
+export const ticketCheckoutModeStep = createStep("ticket-checkout-mode", async () =>
+  new StepResponse(
+    SALES.ticket.enabled() ? { settle: true, timeout: 30, ttl: 120 } : { settle: false, timeout: 2, ttl: 10 }
+  )
 )

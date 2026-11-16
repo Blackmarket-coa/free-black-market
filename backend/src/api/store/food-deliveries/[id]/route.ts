@@ -12,6 +12,7 @@ import { DeliveryStatus } from "../../../../modules/food-distribution/models/del
 import { redactDelivery } from "../../../../modules/food-distribution/public-view"
 import {
   DELIVERED_STATUSES,
+  proofRequirementLabel,
   requiresProof,
   retrieveDeliveryOrNull,
 } from "../../../../modules/food-distribution/proof-of-delivery"
@@ -165,7 +166,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       requiresProof(existing)
     ) {
       res.status(409).json({
-        message: `This delivery requires ${existing.proof_type} proof; submit it to /proof`,
+        message: `This delivery requires ${proofRequirementLabel(existing.proof_type)}; submit it to /proof`,
       })
       return
     }

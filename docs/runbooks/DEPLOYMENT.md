@@ -52,7 +52,7 @@ See the templates:
 - `admin-panel/.env.template`
 - `vendor-panel/.env.template`
 
-The fail-closed validator (`scripts/assert-env.mjs`) is invoked at boot for backend and storefront and refuses to start when banned placeholder values are detected.
+With `NODE_ENV=production`, the backend's boot guards refuse to start on missing or placeholder values: `medusa-config.ts` (`JWT_SECRET`, `COOKIE_SECRET`, `MEDUSA_ADMIN_PASSWORD`) and `src/shared/config.ts` (loaded at start: the Blackout secrets, `CREATOR_ATTRIBUTION_IP_SALT`, the Blackstar bridge). The storefront has no guard that runs: `src/lib/config/assertEnv.ts` is called only from the root-level `instrumentation.ts`, which Next never builds because the app lives in `src/app` (Next looks for instrumentation in `src/`). `scripts/assert-env.mjs` is a separate, wider pre-deploy check: nothing runs it at boot or in CI and it is not in the backend image, so run it yourself before a deploy (`docs/ENV_CONFIGURATION.md` has the exact command; it refuses with exit 2 when `NODE_ENV` is not `production`).
 
 ## First-time setup
 

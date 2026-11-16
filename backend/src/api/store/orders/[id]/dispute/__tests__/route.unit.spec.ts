@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { POST, parseClaimAmount } from "../route"
+import { GET, POST, parseClaimAmount } from "../route"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import { ORDER_DISPUTE_MODULE } from "../../../../../../modules/order-dispute"
 
@@ -103,5 +103,78 @@ describe("POST /store/orders/:id/dispute: claim_amount", () => {
     expect(parseClaimAmount(2599)).toEqual({ ok: true, value: 2599 })
     expect(parseClaimAmount(25.99)).toEqual({ ok: false })
     expect(parseClaimAmount("2599")).toEqual({ ok: false })
+  })
+})
+
+/**
+ * The buyer's read returned the raw rows: the deciding admin's user id
+ * (`resolved_by`), the escrow id, and every metadata key (the intake's
+ * bookkeeping, the corrective script's record). It now returns an explicit
+ * buyer view.
+ */
+describe("GET /store/orders/:id/dispute: the buyer's view", () => {
+  const raw = {
+    id: "odsp_1",
+    order_id: "order_1",
+    seller_id: "sel_a",
+    customer_id: "cus_1",
+    status: "resolved_refund",
+    reason: "not_received",
+    description: "Never arrived.",
+    currency_code: "usd",
+    claim_amount: 2599,
+    award_amount: 2599,
+    seller_response: "Shipped on the 3rd.",
+    seller_responded_at: "2026-11-02T00:00:00Z",
+    resolution_note: "The carrier confirms it was lost.",
+    resolved_at: "2026-11-03T00:00:00Z",
+    resolved_by: "user_01ADMIN",
+    escrow_agreement_id: "esc_1",
+    metadata: { amount_unit: "minor", intake_source: "store/order-claims", legacy_request_id: "req_1" },
+    created_at: "2026-11-01T00:00:00Z",
+    updated_at: "2026-11-03T00:00:00Z",
+  }
+
+  it("names the claim, its status and the decision with its note, and nothing internal", async () => {
+    const listOrderDisputes = jest.fn(async (_f: Record<string, unknown>) => [raw])
+    // The order read (proving the order is the buyer's) needs QUERY; the list needs the dispute module.
+    const graph = jest.fn(async () => ({
+      data: [{ id: "order_1", customer_id: "cus_1", created_at: new Date().toISOString(), currency_code: "usd", items: [] }],
+    }))
+    const registry: Record<string, unknown> = {
+      [ContainerRegistrationKeys.QUERY]: { graph },
+      [ORDER_DISPUTE_MODULE]: { listOrderDisputes },
+    }
+    const req = {
+      params: { id: "order_1" },
+      scope: {
+        resolve: (key: string) => {
+          if (!(key in registry)) throw new Error(`unexpected container key: ${key}`)
+          return registry[key]
+        },
+      },
+      auth_context: { actor_type: "customer", actor_id: "cus_1" },
+    }
+    const res = createRes()
+    await GET(req as unknown as Parameters<typeof GET>[0], res as unknown as Parameters<typeof GET>[1])
+
+    expect(res.statusCode).toBe(200)
+    expect(listOrderDisputes).toHaveBeenCalledWith({ order_id: "order_1" })
+    const [view] = (res.body as { disputes: Record<string, unknown>[] }).disputes
+    expect(view).toEqual({
+      id: "odsp_1",
+      order_id: "order_1",
+      seller_id: "sel_a",
+      status: "resolved_refund",
+      reason: "not_received",
+      description: "Never arrived.",
+      currency_code: "usd",
+      claim_amount: 2599,
+      award_amount: 2599,
+      resolution_note: "The carrier confirms it was lost.",
+      resolved_at: "2026-11-03T00:00:00Z",
+      created_at: "2026-11-01T00:00:00Z",
+      updated_at: "2026-11-03T00:00:00Z",
+    })
   })
 })

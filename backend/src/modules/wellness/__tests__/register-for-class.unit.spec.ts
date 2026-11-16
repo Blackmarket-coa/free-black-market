@@ -13,12 +13,26 @@ const HOUR = 3_600_000
 const future = () => new Date(Date.now() + 24 * HOUR)
 const past = () => new Date(Date.now() - HOUR)
 
-function serviceOver(cls: Record<string, unknown>) {
+/**
+ * The service over a class row. `takeClassSeat` stands in for the one-statement
+ * conditional UPDATE (its SQL runs against Postgres in
+ * integration-tests/http/wellness-seller-scope.spec.ts): it takes a seat when
+ * the row is live, not ended and has room, as the WHERE clause does.
+ */
+function serviceOver(cls: Record<string, unknown>, reread?: Record<string, unknown>) {
   const self = {
     retrieveClassEvent: jest.fn(async () => cls),
+    takeClassSeat: jest.fn(async () => {
+      const capacity = Number(cls.capacity ?? 0)
+      const taken = Number(cls.seats_taken ?? 0)
+      if (classRegistrationRefusal(cls) || (capacity > 0 && taken >= capacity)) return null
+      return { seats_taken: taken + 1, capacity }
+    }),
+    releaseClassSeat: jest.fn(async () => undefined),
     createClassAttendees: jest.fn(async (row: Record<string, unknown>) => ({ id: "att_1", ...row })),
     updateClassEvents: jest.fn(async (row: Record<string, unknown>) => row),
   }
+  if (reread) self.retrieveClassEvent.mockResolvedValueOnce(cls).mockResolvedValueOnce(reread)
   const register = () =>
     WellnessModuleService.prototype.registerForClass.call(self as never, {
       seller_id: "sel_1",
@@ -55,6 +69,7 @@ describe("registerForClass refuses a class that is not live or has ended (SD-52 
 
     expect(result).toEqual({ attendee: null, sold_out: false, full: false, refused: reason })
     expect(self.createClassAttendees).not.toHaveBeenCalled()
+    expect(self.takeClassSeat).not.toHaveBeenCalled()
     expect(self.updateClassEvents).not.toHaveBeenCalled()
   })
 
@@ -65,7 +80,17 @@ describe("registerForClass refuses a class that is not live or has ended (SD-52 
 
     expect(result.refused).toBeNull()
     expect(result.attendee).toEqual(expect.objectContaining({ status: "registered", order_id: "order_1" }))
-    expect(self.updateClassEvents).toHaveBeenCalledWith({ id: "cls_1", seats_taken: 3, status: "open" })
+    expect(result.sold_out).toBe(false)
+    // The seat is taken in one conditional statement, before the attendee is
+    // written; nothing writes the class's status or count back afterwards.
+    expect(self.takeClassSeat).toHaveBeenCalledWith("cls_1")
+    expect(self.takeClassSeat.mock.invocationCallOrder[0]).toBeLessThan(self.createClassAttendees.mock.invocationCallOrder[0])
+    expect(self.updateClassEvents).not.toHaveBeenCalled()
+  })
+
+  it("taking the last seat reports sold_out", async () => {
+    const { register } = serviceOver(liveClass({ capacity: 3, seats_taken: 2 }))
+    expect(await register()).toEqual(expect.objectContaining({ sold_out: true, full: false, refused: null }))
   })
 
   it("a class in progress (started, not yet ended) still takes a registration", async () => {
@@ -76,7 +101,36 @@ describe("registerForClass refuses a class that is not live or has ended (SD-52 
   it("a full live class with no waitlist is full, not refused", async () => {
     const { self, register } = serviceOver(liveClass({ status: "full", capacity: 2, seats_taken: 2 }))
     expect(await register()).toEqual({ attendee: null, sold_out: false, full: true, refused: null })
+    expect(self.createClassAttendees).not.toHaveBeenCalled()
     expect(self.updateClassEvents).not.toHaveBeenCalled()
+  })
+
+  it("a full live class with a waitlist waitlists the buyer and takes no seat", async () => {
+    const { self, register } = serviceOver(liveClass({ status: "full", capacity: 2, seats_taken: 2, waitlist_enabled: true }))
+    const result = await register()
+    expect(result).toEqual(expect.objectContaining({ sold_out: false, full: false, refused: null }))
+    expect(result.attendee).toEqual(expect.objectContaining({ status: "waitlisted" }))
+    expect(self.updateClassEvents).not.toHaveBeenCalled()
+  })
+
+  it("a class cancelled between the read and the seat: refused, no attendee, nothing written back (SD-52 re-review)", async () => {
+    // The first read sees it live; the conditional seat take finds it
+    // cancelled (no row); the second read says why.
+    const live = liveClass()
+    const { self, register } = serviceOver(live, { ...live, status: "cancelled" })
+    self.takeClassSeat.mockResolvedValueOnce(null)
+
+    expect(await register()).toEqual({ attendee: null, sold_out: false, full: false, refused: "cancelled" })
+    expect(self.createClassAttendees).not.toHaveBeenCalled()
+    expect(self.updateClassEvents).not.toHaveBeenCalled()
+  })
+
+  it("an attendee row that cannot be written gives its seat back and the error goes to the caller", async () => {
+    const { self, register } = serviceOver(liveClass())
+    self.createClassAttendees.mockRejectedValueOnce(new Error("insert failed"))
+
+    await expect(register()).rejects.toThrow("insert failed")
+    expect(self.releaseClassSeat).toHaveBeenCalledWith("cls_1")
   })
 })
 

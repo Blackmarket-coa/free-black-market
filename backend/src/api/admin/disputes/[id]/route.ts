@@ -2,7 +2,10 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createLogger } from "../../../../shared/logger"
 import { ORDER_DISPUTE_MODULE } from "../../../../modules/order-dispute"
 import type OrderDisputeService from "../../../../modules/order-dispute/service"
-import { DisputeStateError } from "../../../../modules/order-dispute/service"
+import {
+  DisputeAwardError,
+  DisputeStateError,
+} from "../../../../modules/order-dispute/service"
 import {
   DisputeStatus,
   decisionNoteMissing,
@@ -14,6 +17,22 @@ const log = createLogger("api/admin/disputes/[id]")
 const getAdminId = (req: MedusaRequest) =>
   (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
     ?.actor_id ?? "admin"
+
+/**
+ * `award_amount` as sent: absent (or null) is "no figure", which for a refund
+ * awards the whole claim; otherwise a non-negative safe integer of minor
+ * units. A string ("0", "12.50"), a boolean, an array, a fraction or a
+ * negative is refused, never coerced. The same rule as the store intake's
+ * `parseClaimAmount`: until this check a non-number was read as no figure,
+ * so `"0"` recorded a whole-claim refund.
+ */
+export function parseAwardAmount(
+  raw: unknown
+): { ok: true; value: number | null } | { ok: false } {
+  if (raw === undefined || raw === null) return { ok: true, value: null }
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 0) return { ok: false }
+  return { ok: true, value: raw }
+}
 
 /** GET /admin/disputes/:id — the case file, including its full event log. */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -51,6 +70,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * the seller read in their own records, and `/buyer-protection` promises
  * one for every decision; until this check only the admin panel asked for
  * it, so any other caller could close a case with no reason at all.
+ *
+ * `award_amount`, when sent, must be a whole, non-negative number of minor
+ * units (`parseAwardAmount`), or it is refused with 400
+ * `invalid_award_amount`, also before anything is read or written. An award
+ * the case cannot carry (more than the claim, money on a release, nothing on
+ * a refund) is the same 400 from `resolveAwardCents`. A 409 means only that
+ * the case is no longer in the status it was decided from (someone else
+ * decided it or took it up), which the admin panel turns into words.
  */
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const id = (req.params as { id?: string })?.id
@@ -66,6 +93,15 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       message:
         "A decision that closes the case needs a note saying why: the buyer and the seller read it in their claim records.",
       type: "note_required",
+    })
+  }
+
+  const award = parseAwardAmount(body.award_amount)
+  if (!award.ok) {
+    return res.status(400).json({
+      message:
+        "award_amount must be a whole number of the currency's minor unit (1250 for $12.50), or left out to refund the whole claim.",
+      type: "invalid_award_amount",
     })
   }
 
@@ -89,8 +125,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         disputeId: id,
         adminId,
         status,
-        awardCents:
-          typeof body.award_amount === "number" ? body.award_amount : null,
+        awardCents: award.value,
         note,
       })
 
@@ -119,6 +154,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         "status must be under_review, resolved_refund, resolved_release, or withdrawn",
     })
   } catch (err) {
+    if (err instanceof DisputeAwardError) {
+      return res.status(400).json({ message: err.message, type: "invalid_award_amount" })
+    }
     if (err instanceof DisputeStateError) {
       return res.status(409).json({ message: err.message })
     }

@@ -1,8 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import {
+  isPredictionPolicyRefusal,
   PredictionMarketState,
   PredictionMode,
+  predictionPolicyDeniedResponse,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../modules/vendor-hype-operations-prediction"
 import VendorHypeOperationsPredictionService from "../../../../modules/vendor-hype-operations-prediction/service"
@@ -19,7 +21,9 @@ const createMarketSchema = z.object({
   description: z.string().optional(),
   mode: z.nativeEnum(PredictionMode).optional(),
   jurisdiction_code: z.string().min(2),
-  policy_version: z.string().optional(),
+  // No `policy_version`: the policy that admits the market records its own
+  // (createPredictionMarket). zod strips unknown keys, so a client that still
+  // sends one is ignored, as it already was in effect.
   oracle_config_id: z.string().min(1),
   starts_at: z.string().datetime(),
   locks_at: z.string().datetime(),
@@ -109,16 +113,29 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return forbidden(res)
   }
 
-  const market = await service.createPredictionMarket({
-    ...body,
-    policy_version: body.policy_version,
-    starts_at: new Date(body.starts_at),
-    locks_at: new Date(body.locks_at),
-    settlement_deadline_at: body.settlement_deadline_at
-      ? new Date(body.settlement_deadline_at)
-      : undefined,
-    created_by: actorId,
-  })
+  // A mode the jurisdiction's profile does not allow is refused 403
+  // `policy_denied` / PREDICTION_MODE_NOT_PERMITTED with the reason, as the
+  // positions route refuses its own policy checks. It used to surface as a
+  // 500 "An unknown error occurred.". This answer comes after the ownership
+  // check, so it tells a stranger nothing about a profile.
+  let market: Awaited<ReturnType<VendorHypeOperationsPredictionService["createPredictionMarket"]>>
+  try {
+    market = await service.createPredictionMarket({
+      ...body,
+      starts_at: new Date(body.starts_at),
+      locks_at: new Date(body.locks_at),
+      settlement_deadline_at: body.settlement_deadline_at
+        ? new Date(body.settlement_deadline_at)
+        : undefined,
+      created_by: actorId,
+    })
+  } catch (error) {
+    if (isPredictionPolicyRefusal(error)) {
+      const refusal = predictionPolicyDeniedResponse(error)
+      return res.status(refusal.status).json(refusal.body)
+    }
+    throw error
+  }
 
   res.status(201).json({ market })
 }

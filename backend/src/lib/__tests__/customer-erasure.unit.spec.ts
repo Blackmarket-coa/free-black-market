@@ -4,7 +4,7 @@ import {
   eraseCustomerAcrossRegistry,
   readCustomerDataAcrossRegistry,
 } from "../customer-erasure"
-import { CUSTOMER_DATA_REGISTRY, registryEntry } from "../customer-data-registry"
+import { CUSTOMER_DATA_REGISTRY, QUERY_CANNOT_ADDRESS, registryEntry } from "../customer-data-registry"
 
 /**
  * The executor behind D11-1.
@@ -35,12 +35,16 @@ const makeContainer = (opts: {
   },
 })
 
+/** The sign-in identity the deletion route revokes, as it passes it. */
+const IDENTITY = { authIdentityId: "authid_1" }
+
 describe("eraseCustomerAcrossRegistry", () => {
   it("touches every entity in the registry", async () => {
     const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
     const results = await eraseCustomerAcrossRegistry(
       makeContainer({ raw }) as never,
-      "cus_1"
+      "cus_1",
+      IDENTITY
     )
 
     // The registry is the contract; anything less is the old bug returning.
@@ -49,13 +53,19 @@ describe("eraseCustomerAcrossRegistry", () => {
 
   it("deletes rows for delete entities and scopes every statement to the customer", async () => {
     const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 2 }))
-    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1")
+    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
 
     const statements = raw.mock.calls.map((c) => c[0] as string)
     expect(statements.some((s) => /DELETE FROM "shopper_wishlist"/.test(s))).toBe(true)
 
     // An unscoped statement here would erase every customer's rows at once.
+    // The one table keyed by the sign-in identity binds that identity.
     for (const [sql, bindings] of raw.mock.calls) {
+      if (sql.includes('"password_history_entry"')) {
+        expect(sql).toMatch(/WHERE "auth_identity_id" = \?$/)
+        expect(bindings).toEqual(["authid_1"])
+        continue
+      }
       expect(sql).toMatch(/WHERE "(customer_id|receiver_id)" = \?/)
       expect(bindings).toEqual(["cus_1"])
     }
@@ -65,7 +75,7 @@ describe("eraseCustomerAcrossRegistry", () => {
 
   it("clears the customer link on anonymise entities but keeps the row", async () => {
     const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
-    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1")
+    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
 
     const vote = raw.mock.calls
       .map((c) => c[0])
@@ -80,7 +90,7 @@ describe("eraseCustomerAcrossRegistry", () => {
     // address after they deleted their account. The order stays for accounting;
     // the address does not.
     const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
-    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1")
+    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
 
     const order = raw.mock.calls
       .map((c) => c[0])
@@ -94,6 +104,72 @@ describe("eraseCustomerAcrossRegistry", () => {
     expect(order).not.toMatch(/"customer_id" = NULL/)
   })
 
+  it("leaves a collective backing as it is: retained with its backer_id, nothing on it to clear", async () => {
+    // P1-13. The campaign's totals are summed from the row and a failed
+    // campaign's refund is paid to the wallet backer_id names, so the erasure
+    // reports it and issues no statement against it.
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
+    const results = await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
+
+    expect(results.find((r) => r.entity === "collective_backing")).toEqual({
+      entity: "collective_backing",
+      action: "retain",
+      rows: 0,
+    })
+    expect(raw.mock.calls.some((c) => String(c[0]).includes('"collective_backing"'))).toBe(false)
+  })
+
+  it("deletes the revoked sign-in identity's old password hashes, by that identity and no other id", async () => {
+    // P1-13 review: password_history_entry knows the person only by
+    // auth_identity_id. The customer id would match nothing; an unscoped
+    // statement would erase everyone's history.
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 3 }))
+    const results = await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
+
+    expect(raw.mock.calls.filter(([sql]) => sql.includes('"password_history_entry"'))).toEqual([
+      ['DELETE FROM "password_history_entry" WHERE "auth_identity_id" = ?', ["authid_1"]],
+    ])
+    expect(results.find((r) => r.entity === "password_history_entry")).toEqual({
+      entity: "password_history_entry",
+      action: "delete",
+      rows: 3,
+    })
+  })
+
+  it("reports the password history as not erased, rather than skipping it, when given no sign-in identity", async () => {
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
+    const results = await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1")
+
+    expect(results.find((r) => r.entity === "password_history_entry")).toEqual({
+      entity: "password_history_entry",
+      action: "delete",
+      rows: 0,
+      error: "no sign-in identity to erase by",
+    })
+    expect(raw.mock.calls.some(([sql]) => sql.includes('"password_history_entry"'))).toBe(false)
+    // Everything keyed by the customer still runs.
+    expect(results.filter((r) => r.error).map((r) => r.entity)).toEqual(["password_history_entry"])
+  })
+
+  it("unlinks a review and clears the public name it is shown under", async () => {
+    // P1-13 review: the review stays for other shoppers; "Jordan R." does not.
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
+    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
+
+    expect(raw.mock.calls.filter(([sql]) => sql.includes('"embed_product_review"'))).toEqual([
+      ['UPDATE "embed_product_review" SET "customer_id" = NULL, "customer_display_name" = NULL WHERE "customer_id" = ?', ["cus_1"]],
+    ])
+  })
+
+  it("clears a retained standing order's customer notes and keeps its link", async () => {
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
+    await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1", IDENTITY)
+
+    expect(raw.mock.calls.filter(([sql]) => sql.includes('"standing_order"'))).toEqual([
+      ['UPDATE "standing_order" SET "customer_notes" = NULL WHERE "customer_id" = ?', ["cus_1"]],
+    ])
+  })
+
   it("keeps going after one entity fails, and reports which", async () => {
     // A deletion that half-runs and says nothing is how this became a problem.
     const raw = jest.fn(async (sql: string, _bindings?: unknown[]) => {
@@ -103,7 +179,8 @@ describe("eraseCustomerAcrossRegistry", () => {
 
     const results = await eraseCustomerAcrossRegistry(
       makeContainer({ raw }) as never,
-      "cus_1"
+      "cus_1",
+      IDENTITY
     )
 
     expect(results).toHaveLength(CUSTOMER_DATA_REGISTRY.length)
@@ -137,7 +214,8 @@ describe("eraseCustomerAcrossRegistry", () => {
     try {
       const results = await eraseCustomerAcrossRegistry(
         makeContainer({ raw }) as never,
-        "cus_1"
+        "cus_1",
+        IDENTITY
       )
       const bad = results.find((r) => r.entity.includes("DROP TABLE"))
       expect(bad?.error).toMatch(/unsafe identifier/i)
@@ -169,6 +247,60 @@ describe("readCustomerDataAcrossRegistry", () => {
     await readCustomerDataAcrossRegistry(makeContainer({ graph }) as never, "cus_1")
     const notification = graph.mock.calls.map((c) => c[0]).find((q) => q.entity === "notification")
     expect(notification?.filters).toEqual({ receiver_id: "cus_1" })
+  })
+
+  it("reads a collective backing by backer_id, in SQL, because Query cannot address it", async () => {
+    // Until the P1-13 follow-up a person's backings were missing from their
+    // export entirely: the table has no customer_id. Query calls a
+    // `listCollectiveBackings` the module does not have, so the entry reads
+    // the table directly.
+    const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
+    const raw = jest.fn(async (sql: string, bindings?: unknown[]) =>
+      sql.includes('"collective_backing"') && bindings?.[0] === "cus_1"
+        ? { rows: [{ id: "cbck_1", backer_id: "cus_1" }] }
+        : { rows: [] }
+    )
+    const out = await readCustomerDataAcrossRegistry(makeContainer({ graph, raw }) as never, "cus_1")
+
+    expect(raw.mock.calls.filter(([sql]) => sql.includes('"collective_backing"'))).toEqual([
+      ['SELECT * FROM "collective_backing" WHERE "backer_id" = ?', ["cus_1"]],
+    ])
+    expect(graph.mock.calls.some(([q]) => q.entity === "collective_backing")).toBe(false)
+    expect(out.collective_backing).toEqual([{ id: "cbck_1", backer_id: "cus_1" }])
+  })
+
+  it("reads every table Query cannot address by SQL on its own customer column, and nothing else", async () => {
+    // The P1-13 review: twelve more entries put `_error` in every export on
+    // Postgres for the same reason as the backing. Each is one SELECT scoped
+    // to the person; every other entry still goes through Query.
+    const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rows: [] }))
+    await readCustomerDataAcrossRegistry(makeContainer({ graph, raw }) as never, "cus_1")
+
+    const sqlEntries = CUSTOMER_DATA_REGISTRY.filter((e) => e.exportVia === "sql")
+    expect(sqlEntries.map((e) => e.entity).sort()).toEqual(Object.keys(QUERY_CANNOT_ADDRESS).sort())
+    expect(raw.mock.calls).toEqual(
+      sqlEntries.map((e) => [
+        `SELECT * FROM "${e.entity}" WHERE "${e.customerColumn ?? "customer_id"}" = ?`,
+        ["cus_1"],
+      ])
+    )
+    const graphed = graph.mock.calls.map(([q]) => q.entity)
+    expect(graphed.filter((entity) => entity in QUERY_CANNOT_ADDRESS)).toEqual([])
+    expect(graphed).toHaveLength(CUSTOMER_DATA_REGISTRY.filter((e) => e.inExport !== false).length - sqlEntries.length)
+  })
+
+  it("reports a SQL-read entity in place when there is no database", async () => {
+    const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
+    const container = makeContainer({ graph })
+    const withoutPg = {
+      resolve: (key: string) => {
+        if (key === ContainerRegistrationKeys.PG_CONNECTION) throw new Error("not registered")
+        return container.resolve(key)
+      },
+    }
+    const out = await readCustomerDataAcrossRegistry(withoutPg as never, "cus_1")
+    expect(JSON.stringify(out.collective_backing)).toMatch(/could not be read: no database connection/)
   })
 
   it("reports an unreadable entity in place rather than omitting it", async () => {

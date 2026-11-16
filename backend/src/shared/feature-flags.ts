@@ -233,6 +233,85 @@ export const PHASE0_FEATURE_FLAGS = {
   // reaches a total), and `membership_first_signup` is awarded on every
   // membership sale, not only a seller's first.
   WELLNESS_SALE_KARMA_V1: "FF_WELLNESS_SALE_KARMA_V1",
+  // A ticket sale reaches its seller and the ledger (SD-48 open item (i)).
+  // The storefront checks out every all-ticket cart through
+  // `POST /store/carts/:id/complete-tickets` (`placeTicketOrder`), whose
+  // `complete-cart-with-tickets` workflow completes the cart with Medusa's
+  // `completeCartWorkflow`, not Mercur's split: the order got no seller link
+  // and its FBM Stripe payment was authorized and never captured, exactly the
+  // two gaps SD-48 closed for digital products. Off (default): unchanged —
+  // every new step returns before any read, and the checkout keeps its old
+  // 2 s / 10 s cart lock. On: the same settlement as
+  // DIGITAL_ORDER_SETTLEMENT_V1, through the same shared steps
+  // (`workflows/subscription/steps/subscription-order-settlement.ts`, sale
+  // `ticket`): every line must be one seat — a ticket variant naming its
+  // venue row, seat number and show date, quantity 1 — or the cart is
+  // refused (400) before Medusa authorizes the payment session, on a replay
+  // before anything is linked or captured (the storefront sends here any
+  // cart whose lines all carry `metadata.show_date`, which a store client
+  // sets; `steps/require-seated-ticket-cart.ts`); the cart's one seller is
+  // resolved before Medusa authorizes the payment session and a cart with
+  // none or several is refused (400; the storefront's Stripe button confirms
+  // the card before it calls the route, so that hold is left to lapse, as on
+  // Blackout's page under SD-48); the seats are validated, the order is
+  // linked to that seller, the ticket purchases are created — the purchase's
+  // unique index is the seat's lock — and only then is the card captured. A
+  // seat already sold, or taken by another cart at the same moment (SD-48
+  // (b)), is refused before the capture, so its authorization is cancelled,
+  // not refunded. A refused capture fails the checkout: the ticket purchases
+  // are deleted by their compensation (the seats are free again),
+  // completeCartWorkflow's compensation deletes the order and cancels the
+  // authorization, and the seller link is dismissed. The order's refetch
+  // comes before the capture too. What still follows Stripe's capture: the
+  // payment module's own `captured_at` write and collection update (inside
+  // capturePaymentStep), then capturePaymentWorkflow's later steps (its order
+  // read, the order transaction, the event) and the lock's release. If the
+  // `captured_at` write fails, Stripe holds the money, Medusa records no
+  // capture and attempts no refund, every retry is refused by Stripe, and no
+  // SQL query can see it. A failure in the later steps undoes the
+  // purchases and the seller link and keeps the capture: on a first checkout
+  // the order is deleted and the capture refunded, best effort (SD-48 (b);
+  // Stripe's fee on that capture is likely kept, not checked against FBM's
+  // account); on a replay nothing refunds and the order stays live, captured
+  // with no seat. With the flag on the seat check's own compensation
+  // (Medusa's cancelOrderWorkflow) is not run: completeCartWorkflow's undoes
+  // a first completion, and a replay's order is left for an operator. A
+  // replay — the checkout run again on a cart already completed — never
+  // re-enters `completeCartWorkflow` and so never registers its refund
+  // compensation: a finished sale is returned as it is, one its first
+  // completion left unlinked or uncaptured is linked, its seats sold, and
+  // only then captured, and one that owes money with no payment is refused
+  // (SD-53). With the flag on the checkout holds the cart lock for up to
+  // 120 s and a second checkout waits up to 30 s (Medusa's own completion
+  // lock), so a double submit replays instead of failing. Settles only with
+  // CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE SETTING IT
+  // (in addition to the list below): a reconciliation against Stripe — FBM
+  // PaymentIntents in status succeeded whose Medusa payment has
+  // `captured_at` IS NULL, or whose order is gone or holds no live ticket
+  // purchase — because the `captured_at`-write failure above is invisible to
+  // Medusa's tables; the SQL query in ticket-order-settlement.spec.ts
+  // (`capturedTicketOrdersWithoutSeat`) covers only the later-step case.
+  // And:
+  // every ticket product needs a Mercur seller link (vendor-created ones get
+  // one; `POST /admin/ticket-products` without `seller_id` does not, and is
+  // refused until linked), a cart holding two sellers' tickets is refused
+  // with the flag on, and neither of Stripe's
+  // payment_intent.amount_capturable_updated / payment_intent.succeeded events
+  // may be sent to Medusa's webhook while this is on (SD-48 (g)). Also before
+  // setting it (the SD-48 (i) review's ledger row): an alert on a refund
+  // Stripe refuses (SD-48 (b)) and on a captured ticket order with no live
+  // ticket purchase (the query is the spec's `capturedTicketOrdersWithoutSeat`);
+  // a decision on orders whose seats are sold and whose card is only
+  // authorized (a crash before the capture; nothing sweeps them); a check that
+  // a line's venue row, row type, seat number and show date belong to its
+  // ticket variant — today only their presence is checked, so a store client
+  // can name a dearer row on the cheapest variant, and with the flag on that
+  // sale is captured and credited — or an explicit acceptance of that risk;
+  // and a guard on a store client opening its Stripe session with
+  // `capture_method: automatic`, which Stripe captures when the browser
+  // confirms the card, before this checkout runs (the storefront never sets
+  // it).
+  TICKET_ORDER_SETTLEMENT_V1: "FF_TICKET_ORDER_SETTLEMENT_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

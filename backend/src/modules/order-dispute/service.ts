@@ -4,6 +4,7 @@ import {
   AMOUNT_UNIT_METADATA_KEY,
   AMOUNT_UNIT_MINOR,
   DEFAULT_FILING_WINDOW_DAYS,
+  DisputeAwardError,
   DisputeReason,
   DisputeStateError,
   DisputeStatus,
@@ -14,7 +15,7 @@ import {
   type DisputeActor,
 } from "./resolution"
 
-export { DisputeStateError }
+export { DisputeAwardError, DisputeStateError }
 
 export type DisputeRow = {
   id: string
@@ -302,6 +303,56 @@ class OrderDisputeService extends MedusaService({
     return this.require(dispute.id)
   }
 
+  /**
+   * The corrective script's one write (`scripts/fix-order-dispute-minor-units.ts`):
+   * set a row's claim and award to their minor-unit figures and record the
+   * correction under `metadata.amount_units_corrected`, but only if the row
+   * is still exactly what the correction was planned from. One
+   * `UPDATE … WHERE id = ? AND status = ? AND claim_amount = ? AND award_amount = ?`,
+   * atomic in Postgres, which also refuses a row that has since been marked
+   * `amount_unit = "minor"` or already corrected (a second run at the same
+   * time).
+   *
+   * It used to be a plain update by id. An admin deciding the case between
+   * the script's read and its write was then overwritten by the script's
+   * figures (a whole-claim refund of 25 reset to an award of 0 while the
+   * status stayed resolved_refund), or kept an award computed from the old
+   * claim against the corrected one. Now the row that changed is not
+   * written, and the script reports it for review.
+   *
+   * Returns whether the row was written. Raw SQL for the reason given on
+   * `writeIfStatusUnchanged`; the column names are this module's own.
+   */
+  async correctAmountsIfUnchanged(args: {
+    id: string
+    status: string
+    from: { claim_amount: number; award_amount: number }
+    to: { claim_amount: number; award_amount: number }
+    record: Record<string, unknown>
+  }): Promise<boolean> {
+    const rows = await this.freshManager().execute(
+      `UPDATE order_dispute SET claim_amount = ?, award_amount = ?, ` +
+        `metadata = COALESCE(metadata, CAST('{}' AS jsonb)) || jsonb_build_object('amount_units_corrected', CAST(? AS jsonb)), ` +
+        `updated_at = now() ` +
+        `WHERE id = ? AND status = ? AND claim_amount = ? AND award_amount = ? AND deleted_at IS NULL ` +
+        `AND (metadata ->> ?) IS DISTINCT FROM ? AND (metadata -> 'amount_units_corrected') IS NULL ` +
+        `RETURNING id`,
+      [
+        args.to.claim_amount,
+        args.to.award_amount,
+        JSON.stringify(args.record),
+        args.id,
+        args.status,
+        args.from.claim_amount,
+        args.from.award_amount,
+        AMOUNT_UNIT_METADATA_KEY,
+        AMOUNT_UNIT_MINOR,
+      ],
+      "all"
+    )
+    return Array.isArray(rows) && rows.length === 1
+  }
+
   /** The admin queue: everything still awaiting a decision, oldest first. */
   async queue(): Promise<DisputeRow[]> {
     const rows = (await this.listOrderDisputes(
@@ -370,17 +421,7 @@ class OrderDisputeService extends MedusaService({
     >
   ): Promise<void> {
     const columns = Object.keys(set) as (keyof typeof set)[]
-    const manager = (
-      this as unknown as {
-        baseRepository_: {
-          getFreshManager(): {
-            execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
-          }
-        }
-      }
-    ).baseRepository_.getFreshManager()
-
-    const rows = await manager.execute(
+    const rows = await this.freshManager().execute(
       `UPDATE order_dispute SET ${columns.map((c) => `"${c}" = ?`).join(", ")}, updated_at = now() ` +
         `WHERE id = ? AND status = ? AND deleted_at IS NULL RETURNING id`,
       [...columns.map((c) => set[c] ?? null), dispute.id, dispute.status],
@@ -392,6 +433,20 @@ class OrderDisputeService extends MedusaService({
         `this dispute changed while it was being decided (it is no longer ${dispute.status}); reload it`
       )
     }
+  }
+
+  private freshManager(): {
+    execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
+  } {
+    return (
+      this as unknown as {
+        baseRepository_: {
+          getFreshManager(): {
+            execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
+          }
+        }
+      }
+    ).baseRepository_.getFreshManager()
   }
 
   private async require(disputeId: string): Promise<DisputeRow> {

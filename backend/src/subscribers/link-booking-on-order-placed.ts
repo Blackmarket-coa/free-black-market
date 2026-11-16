@@ -1,10 +1,13 @@
 import { createLogger } from "../shared/logger"
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { BOOKING_MODULE } from "../modules/booking"
 import { BookingStatus } from "../modules/booking/models/booking"
 import type BookingService from "../modules/booking/service"
 import { notifyBookingConfirmed } from "../shared/booking-notify"
 import { getOrderCartMetadata } from "../lib/cart-metadata-recovery"
+import { productSellerIds } from "../shared/product-sellers"
+import { orderSellerId } from "../lib/blackout-identity"
 
 const log = createLogger("subscribers/link-booking-on-order-placed")
 
@@ -26,16 +29,31 @@ const log = createLogger("subscribers/link-booking-on-order-placed")
  * with no `metadata` key at all, so cart metadata does not survive checkout on
  * that path — D9-5, and the reason two other subscribers already recover it
  * this way.
+ *
+ * Only the order that sold the booking's product, by the booking's own
+ * seller, confirms it: the order must carry a line for the booking's product,
+ * that product must be the booking's seller's (Mercur's seller-product link),
+ * and, when the order carries Mercur's seller link, that seller too. The
+ * vendor config routes used to write a booking config for any product id, so
+ * seller B's embed key could book seller A's product and this subscriber then
+ * confirmed B's booking with A's order and A's customer (SD-81 addendum). The
+ * same checks keep the other orders of a split multi-seller cart, which all
+ * recover the cart's booking_id, from confirming it. Anything else is logged
+ * and left pending.
  */
 export default async function linkBookingOnOrderPlaced({
   event: { data },
   container,
 }: SubscriberArgs<{ id: string }>) {
   try {
-    const query = container.resolve("query")
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
+    // `items.*`, the item read wellness-order-placed uses (SD-52: Medusa
+    // 2.14.2 rewrites `items.quantity` to a property OrderLineItem lacks, and
+    // `items.*` is the form known to work). `seller.id` is Mercur's
+    // order→seller link (Order has no `seller_id`).
     const { data: [order] } = await query.graph({
       entity: "order",
-      fields: ["id", "email", "customer_id", "metadata"],
+      fields: ["id", "email", "customer_id", "metadata", "seller.id", "items.*"],
       filters: { id: data.id },
     })
     if (!order) return
@@ -48,6 +66,19 @@ export default async function linkBookingOnOrderPlaced({
     const rows = await booking.listBookings({ id: bookingId }, { take: 1 })
     const row = rows?.[0]
     if (!row || row.status === BookingStatus.CANCELLED) return
+
+    const lines = (order.items ?? []) as Array<{ product_id?: string | null } | null>
+    const onOrder = lines.some((it) => it?.product_id === row.product_id)
+    const productSeller = (await productSellerIds(container, [row.product_id])).get(row.product_id) ?? null
+    const orderSeller = orderSellerId(order as { seller?: { id?: unknown } | null })
+    if (!onOrder || productSeller !== row.seller_id || (orderSeller && orderSeller !== row.seller_id)) {
+      log.warn(
+        `[link-booking-on-order-placed] order ${order.id}: booking ${row.id} of seller ${row.seller_id} for product ` +
+          `${row.product_id} not confirmed (product on order: ${onOrder}, product's seller: ${productSeller ?? "none"}, ` +
+          `order's seller: ${orderSeller ?? "none"})`
+      )
+      return
+    }
 
     await booking.updateBookings({
       id: row.id,

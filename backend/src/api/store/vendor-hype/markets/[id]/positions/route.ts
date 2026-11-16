@@ -1,7 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import {
+  isPredictionPolicyRefusal,
   PredictionMode,
+  predictionPolicyDeniedResponse,
   PredictionStakeUnit,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../../../modules/vendor-hype-operations-prediction"
@@ -103,20 +105,33 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(400).json({ error: "idempotency_key is required in body or Idempotency-Key header" })
   }
 
-  const position = await service.placePredictionPosition({
-    market_id: req.params.id,
-    supporter_id: supporterId,
-    outcome_option_key: body.outcome_option_key,
-    stake_amount: body.stake_amount,
-    stake_unit: body.stake_unit,
-    max_payout_amount: body.max_payout_amount,
-    idempotency_key: idempotencyKey,
-    metadata: {
-      // The validated request field, checked above for non-cash markets.
-      disclosure_acknowledged: body.disclosure_acknowledged,
-      client_metadata: clientMetadata(body.metadata),
-    },
-  })
+  // placePredictionPosition re-checks the market's mode and jurisdiction
+  // against the policy in force; a market the policy no longer admits is
+  // refused 403 `policy_denied` / PREDICTION_MODE_NOT_PERMITTED, beside the
+  // age gate's PREDICTION_AGE_VERIFICATION_REQUIRED above.
+  let position: Awaited<ReturnType<VendorHypeOperationsPredictionService["placePredictionPosition"]>>
+  try {
+    position = await service.placePredictionPosition({
+      market_id: req.params.id,
+      supporter_id: supporterId,
+      outcome_option_key: body.outcome_option_key,
+      stake_amount: body.stake_amount,
+      stake_unit: body.stake_unit,
+      max_payout_amount: body.max_payout_amount,
+      idempotency_key: idempotencyKey,
+      metadata: {
+        // The validated request field, checked above for non-cash markets.
+        disclosure_acknowledged: body.disclosure_acknowledged,
+        client_metadata: clientMetadata(body.metadata),
+      },
+    })
+  } catch (error) {
+    if (isPredictionPolicyRefusal(error)) {
+      const refusal = predictionPolicyDeniedResponse(error)
+      return res.status(refusal.status).json(refusal.body)
+    }
+    throw error
+  }
 
   res.status(201).json({ position })
 }

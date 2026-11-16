@@ -21,7 +21,11 @@ import {
   SafetyRiskLevel,
   UserPredictionSafety,
 } from "./models"
-import { PredictionPolicyService } from "./policy-service"
+import {
+  PredictionPolicyRefusal,
+  PredictionPolicyService,
+  policyDecisionRecord,
+} from "./policy-service"
 
 /**
  * Per-user position cap for one market.
@@ -56,6 +60,20 @@ export const MARKET_STATE_TRANSITIONS: Readonly<
   [PredictionMarketState.SETTLED]: [],
   [PredictionMarketState.VOIDED]: [],
 }
+
+/**
+ * Targets at which a market is re-checked against the policy in force:
+ * publishing it (SCHEDULED, when it becomes public) and opening it to
+ * positions (OPEN). Placement re-checks as well. Creation is not enough on
+ * its own, because a market outlives the rules that admitted it: sweepstakes
+ * markets for the US were admitted until 316f01b, and a jurisdiction can
+ * lose a profile later. VOIDED is never gated, since it is how an operator
+ * retires a market the policy no longer allows.
+ */
+export const POLICY_RECHECKED_TARGET_STATES: ReadonlySet<PredictionMarketState> = new Set([
+  PredictionMarketState.SCHEDULED,
+  PredictionMarketState.OPEN,
+])
 
 class VendorHypeOperationsPredictionService extends MedusaService({
   HypeProfile,
@@ -135,7 +153,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     description?: string
     mode?: PredictionMode
     jurisdiction_code: string
-    policy_version?: string
     oracle_config_id: string
     starts_at: Date
     locks_at: Date
@@ -151,17 +168,26 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     const mode = input.mode || PredictionMode.NON_CASH
     const policyDecision = this.policyService.evaluateMode(mode, input.jurisdiction_code)
     if (!policyDecision.allowed) {
-      throw new Error(policyDecision.reason || "Prediction mode blocked by policy")
+      // Typed and coded (403 PREDICTION_MODE_NOT_PERMITTED). A plain Error
+      // here was a 500 that hid the reason from the creator.
+      throw new PredictionPolicyRefusal(policyDecision)
     }
 
     const [market] = await this.createPredictionMarkets([
       {
         ...input,
         mode,
-        // The version of the policy that actually admitted this market. It
-        // used to prefer a caller-supplied string, so a market creator could
-        // label a market with any policy version they liked.
+        // The version of the policy that actually admitted this market: the
+        // matrix version plus a hash of the effective mapping. It used to
+        // prefer a caller-supplied string, so a market creator could label a
+        // market with any policy version they liked; the input type no longer
+        // has the field, and this key comes after the spread for a JS caller
+        // that sends it anyway.
         policy_version: policyDecision.policy_version,
+        // And the decision itself (profile, the code it matched), so it can be
+        // replayed without the deployment's env. Server-owned: it overwrites a
+        // `policy_decision` key in the caller's metadata.
+        metadata: { ...(input.metadata ?? {}), policy_decision: policyDecisionRecord(policyDecision) },
         state: PredictionMarketState.DRAFT,
       },
     ])
@@ -181,7 +207,12 @@ class VendorHypeOperationsPredictionService extends MedusaService({
    * store route let any signed-in account do exactly that, one legal step at
    * a time from draft.
    *
-   * Errors are typed so the HTTP layer answers 404/400, not 500.
+   * Publishing (SCHEDULED) and opening (OPEN) re-check the market's mode and
+   * jurisdiction against the policy in force, so a market admitted under
+   * older rules cannot be put in front of supporters (see
+   * POLICY_RECHECKED_TARGET_STATES).
+   *
+   * Errors are typed so the HTTP layer answers 404/400/403, not 500.
    */
   async transitionPredictionMarketState(id: string, nextState: PredictionMarketState) {
     if (nextState === PredictionMarketState.SETTLED) {
@@ -204,6 +235,16 @@ class VendorHypeOperationsPredictionService extends MedusaService({
         MedusaError.Types.NOT_ALLOWED,
         `Invalid prediction market transition from ${market.state} to ${nextState}. Valid transitions: ${validTransitions.join(", ") || "none"}`
       )
+    }
+
+    if (POLICY_RECHECKED_TARGET_STATES.has(nextState)) {
+      const decision = this.policyService.evaluateMode(
+        market.mode as PredictionMode,
+        market.jurisdiction_code
+      )
+      if (!decision.allowed) {
+        throw new PredictionPolicyRefusal(decision)
+      }
     }
 
     await this.updatePredictionMarkets({ id, state: nextState })
@@ -313,6 +354,16 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     }
     if (market.state !== PredictionMarketState.OPEN) {
       throw new Error("Positions can only be placed while a market is open")
+    }
+    // The market's mode must still be permitted in its jurisdiction under the
+    // policy in force, whatever admitted it. Before the age gate and before
+    // ensureSupporterEligibility, so a refused call writes nothing.
+    const policyDecision = this.policyService.evaluateMode(
+      market.mode as PredictionMode,
+      market.jurisdiction_code
+    )
+    if (!policyDecision.allowed) {
+      throw new PredictionPolicyRefusal(policyDecision)
     }
     // The age gate lives here as well as in the route so that no caller can
     // place a position without it. It runs before ensureSupporterEligibility,

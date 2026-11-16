@@ -6,7 +6,7 @@ The platform ships three observability primitives, all opt-in via environment va
 
 | Concern | Mechanism | Where it's wired |
 |---|---|---|
-| Tracing (OTel) | `@medusajs/medusa#registerOtel` (backend) and `@opentelemetry/sdk-node` (storefront) | `backend/instrumentation.ts`, `storefront/instrumentation.ts` |
+| Tracing (OTel) | `@medusajs/medusa#registerOtel` (backend) and `@opentelemetry/sdk-node` (storefront) | `backend/instrumentation.ts`, `storefront/instrumentation.ts` (not loaded today: Next looks for it in `storefront/src/`, beside `src/app`; see `docs/ENV_CONFIGURATION.md`) |
 | Error tracking | Sentry SDKs | `storefront/sentry.{client,server}.config.ts`, `admin-panel/src/lib/telemetry.ts`, `vendor-panel/src/lib/telemetry.ts` |
 | Logs | JSON to stdout (backend); Next.js default (storefront); browser console (panels) | `backend/src/**` (logger TBD — tracked under `LG-1` in `AUDIT_DEBT.md`) |
 

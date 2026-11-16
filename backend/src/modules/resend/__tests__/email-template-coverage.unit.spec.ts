@@ -175,15 +175,27 @@ function resolveTemplateExpression(expr: string): string | null {
 }
 
 /**
- * The keys of the notification object(s) in a call's arguments, with anything
- * nested deeper blanked out: `{ to, channel: "email", data: { ...order } }`
- * becomes `{ to, channel: "email", data:              }`. The objects are the
- * shallowest `{...}` in the arguments, so an array of notifications works too.
- * Reading keys at this level is what lets a spread or a shorthand `template`
- * be seen as a key rather than confused with one inside `data`.
+ * Splits a call's arguments into the notification objects' own keys and
+ * whatever sits outside those objects.
+ *
+ * The notification objects are the shallowest `{...}` in the arguments. In
+ * `keys`, anything nested deeper is blanked out:
+ * `{ to, channel: "email", data: { ...order } }` becomes
+ * `{ to, channel: "email", data:              }`. Reading keys at this level is
+ * what lets a spread or a shorthand `template` be seen as a key rather than
+ * confused with one inside `data`.
+ *
+ * `outside` is every other character. A literal object, or an array whose
+ * elements are all literal objects, leaves only `[`, `]`, `,` and whitespace
+ * there. Anything else is something the walk cannot read and could be another
+ * notification: a variable element (`[{...}, other]`), an array-level spread
+ * (`[{...}, ...xs.map(...)]`), a ternary (`cond ? {...} : payload`), a type
+ * assertion. Before, only the shallowest-object text was read, so such a
+ * caller parsed as its one literal and the rest vanished without failing.
  */
-function topLevelKeys(args: string): string {
+function splitNotificationObjects(args: string): { keys: string; outside: string } {
   const depthAt: number[] = []
+  const inString: boolean[] = []
   let depth = 0
   for (let i = 0; i < args.length; i++) {
     const c = args[i]
@@ -193,7 +205,10 @@ function topLevelKeys(args: string): string {
         if (args[j] === "\\") j++
         j++
       }
-      for (let k = i; k <= j && k < args.length; k++) depthAt[k] = depth
+      for (let k = i; k <= j && k < args.length; k++) {
+        depthAt[k] = depth
+        inString[k] = true
+      }
       i = j
       continue
     }
@@ -211,26 +226,45 @@ function topLevelKeys(args: string): string {
   }
   let objectDepth = Infinity
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "{" && depthAt[i] < objectDepth) objectDepth = depthAt[i]
+    if (args[i] === "{" && !inString[i] && depthAt[i] < objectDepth) objectDepth = depthAt[i]
   }
-  if (objectDepth === Infinity) return ""
-  let out = ""
+  // Each notification object runs from a `{` at objectDepth to the `}` that
+  // closes it, which is the next brace back at objectDepth outside a string.
+  const inObject: boolean[] = []
   for (let i = 0; i < args.length; i++) {
-    out += depthAt[i] === objectDepth || args[i] === "\n" ? args[i] : " "
+    if (args[i] !== "{" || inString[i] || depthAt[i] !== objectDepth) continue
+    let j = i + 1
+    while (j < args.length && !(args[j] === "}" && !inString[j] && depthAt[j] === objectDepth)) j++
+    for (let k = i; k <= j && k < args.length; k++) inObject[k] = true
+    i = j
   }
-  return out
+  let keys = ""
+  let outside = ""
+  for (let i = 0; i < args.length; i++) {
+    const c = args[i]
+    keys += (inObject[i] && depthAt[i] === objectDepth) || c === "\n" ? c : " "
+    outside += inObject[i] ? " " : c
+  }
+  return { keys, outside }
 }
 
 /**
  * What one call's arguments say about its channel and template. Anything the
  * walk cannot read as a literal (or an `EMAIL_TEMPLATES.X` constant) lands in
  * `nonLiteralTemplate`, which fails the email check below: a computed
- * expression, a shorthand `template` property, a spread that could carry the
- * template, or an email call with no `template` key at all. Reading only
- * `template:` keys used to skip the last three silently.
+ * expression, a shorthand `template` property, a spread inside a notification
+ * object that could carry the template, or an email call with no `template`
+ * key at all. Reading only `template:` keys used to skip the last three
+ * silently.
+ *
+ * Text outside the notification objects (see splitNotificationObjects) also
+ * sets `nonLiteralChannel`, because the notification it may hold has a channel
+ * nobody read. That is what makes it fail even when the literal beside it is
+ * on another channel: `[{ channel: "seller_feed" }, ...emails]` is not an
+ * email site, so a template flag alone would not reach the email check.
  */
 function parseCallArguments(args: string): Omit<CallSite, "file"> {
-  const keys = topLevelKeys(args)
+  const { keys, outside } = splitNotificationObjects(args)
   const channels = [...keys.matchAll(/\bchannel\s*:\s*(["'`])([^"'`]+)\1/g)].map((x) => x[2])
   const channelKeys = [...keys.matchAll(/\bchannel\s*[:,}\n]/g)].length
   const templateExprs = [...keys.matchAll(/\btemplate\s*:\s*([^,\n}]+)/g)].map((x) => x[1].trim())
@@ -243,13 +277,18 @@ function parseCallArguments(args: string): Omit<CallSite, "file"> {
   }
   if (/(?:^|[{,])\s*template\s*(?=[,}]|$)/m.test(keys)) nonLiteralTemplate.push("shorthand `template`")
   if (/(?:^|[{,])\s*\.\.\./m.test(keys)) nonLiteralTemplate.push("a spread (`...`)")
+  const unread = outside.replace(/[[\],\s]+/g, " ").trim()
+  if (unread) {
+    const shown = unread.length > 60 ? `${unread.slice(0, 57)}...` : unread
+    nonLiteralTemplate.push(`outside the notification objects: \`${shown}\``)
+  }
   if (channels.includes("email") && templateExprs.length === 0 && nonLiteralTemplate.length === 0) {
     nonLiteralTemplate.push("no `template` key")
   }
   return {
     channels,
     templates,
-    nonLiteralChannel: channelKeys !== channels.length || channelKeys === 0,
+    nonLiteralChannel: channelKeys !== channels.length || channelKeys === 0 || unread.length > 0,
     nonLiteralTemplate,
   }
 }
@@ -326,7 +365,9 @@ describe("notification callers", () => {
   })
 
   it("every call names its channel literally, and the channel has a registered provider", () => {
-    const unreadable = SITES.filter((s) => s.nonLiteralChannel).map((s) => s.file)
+    const unreadable = SITES.filter((s) => s.nonLiteralChannel).map(
+      (s) => `${s.file}${s.nonLiteralTemplate.length ? `: ${s.nonLiteralTemplate.join(", ")}` : ""}`
+    )
     expect(unreadable).toEqual([])
 
     const unrouted = SITES.flatMap((s) =>
@@ -373,6 +414,48 @@ describe("the call-site parser reads what a caller can write", () => {
     const site = parse(`[{ to: a, channel: "email", template: "order-placed" }, { to: b, channel: "feed", template: "admin-ui" }]`)
     expect(site.channels).toEqual(["email", "feed"])
     expect(site.templates).toEqual(["order-placed", "admin-ui"])
+    expect(site.nonLiteralChannel).toBe(false)
+    expect(site.nonLiteralTemplate).toEqual([])
+  })
+
+  it("reads an array of literals laid out over lines with a trailing comma", () => {
+    const site = parse(`
+      [
+        { to: a, channel: "email", template: "order-placed" },
+        { to: b, channel: "email", template: EMAIL_TEMPLATES.ORDER_PLACED },
+      ]
+    `)
+    expect(site.templates).toEqual(["order-placed", "order-placed"])
+    expect(site.nonLiteralChannel).toBe(false)
+    expect(site.nonLiteralTemplate).toEqual([])
+  })
+
+  // The walk keeps the notification objects' own keys. Anything else in the
+  // arguments could be another notification it cannot read, so beside a
+  // literal object it must fail, not vanish: before, each of these parsed as
+  // the literal alone, and an email to `nope-unknown` passed green.
+  it.each([
+    ["a variable beside a literal in an array", `[{ to: a, channel: "email", template: "order-placed" }, other]`, "other"],
+    [
+      "an array-level spread of mapped notifications",
+      `[{ channel: "seller_feed", template: "x" }, ...recipients.map((r) => ({ to: r, channel: "email", template: "nope-unknown" }))]`,
+      "...recipients.map(",
+    ],
+    ["a ternary with a variable branch", `isX ? { channel: "email", template: "order-placed" } : payload`, "isX ?"],
+    [
+      "a conditional array spread",
+      `[{ channel: "email", template: "order-placed" }, ...(flag ? [{ channel: "email", template: "bogus2" }] : [])]`,
+      "...(flag ?",
+    ],
+    ["a parenthesised element at the objects' own depth", `[{ channel: "email", template: "order-placed" }, (other)]`, "(other)"],
+    ["a nested array element", `[{ channel: "email", template: "order-placed" }, [other]]`, "other"],
+    ["a type assertion", `{ to, channel: "email", template: "order-placed" } as Payload`, "as Payload"],
+  ])("flags %s instead of reading only the literal", (_label, args, snippet) => {
+    const site = parse(args)
+    expect(site.nonLiteralChannel).toBe(true)
+    const outside = site.nonLiteralTemplate.find((r) => r.startsWith("outside the notification objects"))
+    expect(outside).toBeDefined()
+    expect(outside).toContain(snippet)
   })
 
   it.each([

@@ -237,23 +237,67 @@ medusaIntegrationTestRunner({
       expect(res.data.dispute.award_amount).toBe(2599)
     })
 
-    it("refuses an award over the claim and an award on a release, and writes nothing", async () => {
+    /**
+     * An award the case cannot carry is a 400 `invalid_award_amount`: the
+     * request was wrong, the case did not change. (It was a 409, the code
+     * that now means only "decided or changed by someone else".) The
+     * malformed ones used to be accepted: a non-number was read as "no
+     * figure", so the string "0" recorded the whole claim; -500 recorded a
+     * refund of 0; 12.5 was floored.
+     */
+    it("refuses an award that is not a whole number of minor units or that the claim cannot carry, and writes nothing", async () => {
       const { headers } = await asAdmin()
       const dispute = await openDispute()
 
-      const over = await call(
-        api.patch(`/admin/disputes/${dispute.id}`, { status: "resolved_refund", award_amount: 2600, note: "x" }, headers)
-      )
-      expect(over.status).toBe(409)
-
-      const release = await call(
-        api.patch(`/admin/disputes/${dispute.id}`, { status: "resolved_release", award_amount: 5, note: "x" }, headers)
-      )
-      expect(release.status).toBe(409)
+      for (const body of [
+        { status: "resolved_refund", award_amount: 2600, note: "x" },
+        { status: "resolved_release", award_amount: 5, note: "x" },
+        { status: "resolved_refund", award_amount: 0, note: "Nothing owed." },
+        { status: "resolved_refund", award_amount: "0", note: "x" },
+        { status: "resolved_refund", award_amount: "1250", note: "x" },
+        { status: "resolved_refund", award_amount: -500, note: "x" },
+        { status: "resolved_refund", award_amount: 12.5, note: "x" },
+        { status: "resolved_refund", award_amount: true, note: "x" },
+      ]) {
+        const res = await call(api.patch(`/admin/disputes/${dispute.id}`, body, headers))
+        expect([JSON.stringify(body.award_amount), res.status]).toEqual([JSON.stringify(body.award_amount), 400])
+        expect(res.data).toMatchObject({ type: "invalid_award_amount" })
+      }
 
       const file = await call(api.get(`/admin/disputes/${dispute.id}`, headers))
       expect(file.data.dispute).toMatchObject({ status: "open", award_amount: 0, resolution_note: null })
       expect(file.data.events.map((e: { kind: string }) => e.kind)).toEqual(["opened"])
+
+      // A release says "nothing" properly.
+      const release = await call(
+        api.patch(`/admin/disputes/${dispute.id}`, { status: "resolved_release", award_amount: 0, note: "Nothing owed." }, headers)
+      )
+      expect(release.status).toBe(200)
+      expect(release.data.dispute).toMatchObject({ status: "resolved_release", award_amount: 0 })
+    })
+
+    /**
+     * What the admin panel meets when another operator decided the case
+     * first: the service reads the row, sees it is closed, and refuses the
+     * move. The 409 carries that message, not the read-then-write race's
+     * "changed while it was being decided", which only the stale-read case
+     * below can produce.
+     */
+    it("a decision on a case someone else already decided is a 409 naming the move", async () => {
+      const { headers, user } = await asAdmin()
+      const dispute = await openDispute()
+      await service().resolve({
+        disputeId: dispute.id,
+        adminId: user.id,
+        status: DisputeStatus.RESOLVED_RELEASE,
+        note: "Signed for at the door.",
+      })
+
+      const res = await call(
+        api.patch(`/admin/disputes/${dispute.id}`, { status: "resolved_refund", note: "Refund in full." }, headers)
+      )
+      expect(res.status).toBe(409)
+      expect(res.data.message).toBe("cannot move a dispute from resolved_release to resolved_refund")
     })
 
     it("a claim filed through the real intake is stored, shown and decided in minor units", async () => {
@@ -337,11 +381,11 @@ medusaIntegrationTestRunner({
       const before = new Date(Date.now() - 60 * 60 * 1000)
       const read = async () => (await service().listOrderDisputes({ id: legacy.id }))[0] as any
 
-      const dry = await fixOrderDisputeMinorUnits(container(), { before, dryRun: true })
+      const dry = await fixOrderDisputeMinorUnits(container(), { before })
       expect(dry.corrected).toContain(legacy.id)
       expect(await read()).toMatchObject({ claim_amount: 25, award_amount: 25 })
 
-      const applied = await fixOrderDisputeMinorUnits(container(), { before })
+      const applied = await fixOrderDisputeMinorUnits(container(), { before, apply: true })
       expect(applied.corrected).toContain(legacy.id)
       const fixed = await read()
       expect(fixed).toMatchObject({ claim_amount: 2599, award_amount: 2599, status: "resolved_refund" })
@@ -356,9 +400,71 @@ medusaIntegrationTestRunner({
       expect(events.map((e) => e.kind)).toEqual(["opened", "resolved", "amount_corrected"])
       expect(events[2]).toMatchObject({ actor_type: "system", actor_id: "script:fix-order-dispute-minor-units" })
 
-      const again = await fixOrderDisputeMinorUnits(container(), { before })
+      const again = await fixOrderDisputeMinorUnits(container(), { before, apply: true })
       expect(again.corrected).not.toContain(legacy.id)
       expect(await read()).toMatchObject({ claim_amount: 2599, award_amount: 2599 })
+    })
+
+    /**
+     * The corrective script used to write by id alone. An admin deciding the
+     * case between the script's read and its write was overwritten: here, a
+     * whole-claim refund of the old figure (25) would have been reset to the
+     * planned award of 0 with the status left at resolved_refund. Replayed by
+     * handing the script the row as it was before the decision.
+     */
+    it("the corrective script does not write a row that changed after it read it, and lists it for review", async () => {
+      const { user } = await asAdmin()
+      const { order, sellerId, customerId } = await sellerOrder([25.99])
+      const legacy = await service().open({
+        orderId: order.id,
+        sellerId,
+        customerId,
+        orderPlacedAt: new Date(),
+        orderTotalCents: 25,
+        currencyCode: "usd",
+        reason: DisputeReason.NOT_RECEIVED,
+        description: "Never arrived.",
+      })
+      await markAsOldIntakeRow(legacy.id, 24)
+      const before = new Date(Date.now() - 60 * 60 * 1000)
+      const stale = (await service().listOrderDisputes({ id: legacy.id }))[0]
+      expect(stale).toMatchObject({ status: "open", claim_amount: 25, award_amount: 0 })
+
+      // The admin decides it after the script has read it.
+      await service().resolve({
+        disputeId: legacy.id,
+        adminId: user.id,
+        status: DisputeStatus.RESOLVED_REFUND,
+        note: "Refund in full.",
+      })
+
+      const spy = jest.spyOn(service(), "listOrderDisputes")
+      try {
+        spy.mockResolvedValueOnce([stale] as any).mockResolvedValueOnce([] as any)
+        const summary = await fixOrderDisputeMinorUnits(container(), { before, apply: true })
+        expect(summary.corrected).not.toContain(legacy.id)
+        expect(summary.review).toContainEqual({ id: legacy.id, reason: expect.stringMatching(/changed since it was read/) })
+      } finally {
+        spy.mockRestore()
+      }
+
+      const [after] = (await service().listOrderDisputes({ id: legacy.id })) as any[]
+      expect(after).toMatchObject({ status: "resolved_refund", claim_amount: 25, award_amount: 25 })
+      expect(after.metadata?.amount_units_corrected).toBeUndefined()
+      const events = (await service().listOrderDisputeEvents({ dispute_id: legacy.id })) as any[]
+      expect(events.map((e) => e.kind).sort()).toEqual(["opened", "resolved"])
+
+      // Read afresh, the decided refund is corrected with its award, and flagged.
+      const fresh = await fixOrderDisputeMinorUnits(container(), { before, apply: true })
+      expect(fresh.corrected).toContain(legacy.id)
+      expect(fresh.refundToCheck).toContainEqual({ id: legacy.id, award: { from: 25, to: 2599 } })
+      const [fixed] = (await service().listOrderDisputes({ id: legacy.id })) as any[]
+      expect(fixed).toMatchObject({ status: "resolved_refund", claim_amount: 2599, award_amount: 2599 })
+      expect(fixed.metadata).toMatchObject({ amount_units_corrected: { refund_check: true, claim_amount: { from: 25, to: 2599 } } })
+      const corrected = ((await service().listOrderDisputeEvents({ dispute_id: legacy.id })) as any[]).find(
+        (e) => e.kind === "amount_corrected"
+      )
+      expect(corrected.message).toMatch(/already decided as a refund/)
     })
 
     it("a decision made from a stale read is refused and overwrites nothing", async () => {
@@ -427,7 +533,7 @@ medusaIntegrationTestRunner({
       })
       const before = new Date()
 
-      const summary = await fixOrderDisputeMinorUnits(container(), { before })
+      const summary = await fixOrderDisputeMinorUnits(container(), { before, apply: true })
 
       expect(summary.corrected).not.toContain(filed.dispute.id)
       expect(summary.skipped).toContainEqual({ id: filed.dispute.id, reason: "marked_minor_units" })
@@ -454,7 +560,7 @@ medusaIntegrationTestRunner({
       await markAsOldIntakeRow(row.id, 0)
       const before = new Date(Date.now() - 60 * 60 * 1000)
 
-      const summary = await fixOrderDisputeMinorUnits(container(), { before })
+      const summary = await fixOrderDisputeMinorUnits(container(), { before, apply: true })
 
       const seen = [...summary.corrected, ...summary.skipped.map((r) => r.id), ...summary.review.map((r) => r.id)]
       expect(seen).not.toContain(row.id)

@@ -128,6 +128,97 @@ const envSchema = z.object({
 
 export type Config = z.infer<typeof envSchema>
 
+// Blackstar parcel bridge rules (SD-78). The same rules are in
+// scripts/assert-env.mjs; src/shared/__tests__/config-blackstar-boot.unit.spec.ts
+// runs one table of envs through both and fails when they disagree.
+// Keep the literals in sync with scripts/assert-env.mjs BANNED_LITERALS.
+const BANNED_SECRET_LITERALS = new Set([
+  "supersecret",
+  "changeme",
+  "change-me",
+  "change_me",
+  "dev-only-secret-change-in-production-32chars",
+  "test",
+  "secret",
+  "password",
+  "localadmin1234",
+])
+const MIN_SECRET_LENGTH = 32
+export const BLACKSTAR_API_BASE_RULE =
+  "must be an https:// URL with a host, and no whitespace, query or fragment"
+
+/**
+ * Whether BLACKSTAR_API_BASE is a usable https base URL.
+ *
+ * https only: node.operator.approved carries a newly minted per-node secret in
+ * its body (shared/provision-node-operator.ts), so the destination must be TLS.
+ * It has to parse with a host, because a value that does not (no scheme,
+ * `https://b c`, `https://host:notaport`) makes every delivery fail URL
+ * parsing and retry until it is DEAD. And marketplace-webhooks appends a path
+ * to it as a string (`${apiBase}/api/webhooks/...`), so a query or fragment
+ * would swallow that path and whitespace would end up inside it. The same
+ * check is `isHttpsBaseUrl` in scripts/assert-env.mjs.
+ */
+export function isHttpsBaseUrl(value: string): boolean {
+  if (/[\s?#]/.test(value)) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" && url.hostname !== ""
+  } catch {
+    return false
+  }
+}
+
+function secretError(key: string, value: string): string | null {
+  if (value === "") return `${key} is required in production`
+  if (BANNED_SECRET_LITERALS.has(value.trim().toLowerCase())) {
+    return `${key} matches a banned placeholder literal`
+  }
+  if (value.startsWith("CHANGE_ME")) return `${key} starts with a banned placeholder prefix`
+  if (value.length < MIN_SECRET_LENGTH) {
+    return `${key} must be at least ${MIN_SECRET_LENGTH} characters (got ${value.length})`
+  }
+  return null
+}
+
+/**
+ * What a production boot must refuse about the Blackstar bridge.
+ *
+ * Outbound (FBM -> Blackstar, marketplace-webhooks `blackstarEmitConfig`) is
+ * live whenever BLACKSTAR_API_BASE and BLACKSTAR_WEBHOOK_SECRET are both set,
+ * whatever FBM_BLACKSTAR_INTEGRATION says. So either one being set, or the
+ * flag being on, means both must be valid. Inbound
+ * (`/v1/integrations/blackstar/events`) runs only with the flag on and
+ * verifies with BLACKSTAR_OUTBOUND_SECRET unless BLACKSTAR_REQUIRE_KEY_ID=1
+ * moves it to per-partner credentials. "Set" means non-empty, which is what
+ * the code tests.
+ */
+export function blackstarProductionEnvErrors(env: NodeJS.ProcessEnv): string[] {
+  const value = (key: string) => env[key] ?? ""
+  const flagOn = value("FBM_BLACKSTAR_INTEGRATION") === "1"
+  const errors: string[] = []
+
+  if (flagOn || value("BLACKSTAR_API_BASE") !== "" || value("BLACKSTAR_WEBHOOK_SECRET") !== "") {
+    const apiBase = value("BLACKSTAR_API_BASE")
+    if (apiBase === "") {
+      errors.push("BLACKSTAR_API_BASE is required in production")
+    } else if (apiBase.startsWith("CHANGE_ME")) {
+      errors.push("BLACKSTAR_API_BASE starts with a banned placeholder prefix")
+    } else if (!isHttpsBaseUrl(apiBase)) {
+      errors.push(`BLACKSTAR_API_BASE ${BLACKSTAR_API_BASE_RULE}`)
+    }
+    const webhook = secretError("BLACKSTAR_WEBHOOK_SECRET", value("BLACKSTAR_WEBHOOK_SECRET"))
+    if (webhook) errors.push(webhook)
+  }
+
+  if (flagOn && value("BLACKSTAR_REQUIRE_KEY_ID") !== "1") {
+    const outbound = secretError("BLACKSTAR_OUTBOUND_SECRET", value("BLACKSTAR_OUTBOUND_SECRET"))
+    if (outbound) errors.push(outbound)
+  }
+
+  return errors
+}
+
 /**
  * Validate and load configuration from environment variables
  */
@@ -198,6 +289,16 @@ function loadConfig(): Config {
     if (!ipSalt || ipSalt.startsWith("CHANGE_ME") || ipSalt.startsWith("local-dev-")) {
       logger.error("CREATOR_ATTRIBUTION_IP_SALT is required in production.")
       throw new Error("CREATOR_ATTRIBUTION_IP_SALT is required in production.")
+    }
+
+    // Blackstar bridge (SD-78). This is the guard that runs at boot;
+    // scripts/assert-env.mjs is a pre-deploy check that is not in the image.
+    const blackstarErrors = blackstarProductionEnvErrors(process.env)
+    if (blackstarErrors.length > 0) {
+      blackstarErrors.forEach((e) => logger.error(e))
+      throw new Error(
+        `Blackstar bridge configuration is invalid in production: ${blackstarErrors.join("; ")}.`
+      )
     }
 
     const warnings: string[] = []

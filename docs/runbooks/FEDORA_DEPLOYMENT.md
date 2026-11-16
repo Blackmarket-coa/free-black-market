@@ -113,9 +113,16 @@ Fill in **every** key the example flags as required. In particular:
 - `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`,
   `ALGOLIA_*`, `SENTRY_DSN`, etc.
 
-The backend's `scripts/assert-env.mjs` runs at startup and refuses to boot
-with placeholder values - the example file marks every value that has a
-banned default.
+The backend refuses to boot with some missing or placeholder values:
+`medusa-config.ts` checks `JWT_SECRET`, `COOKIE_SECRET` and
+`MEDUSA_ADMIN_PASSWORD`, and `src/shared/config.ts` checks the Blackout
+secrets, `CREATOR_ATTRIBUTION_IP_SALT` and the Blackstar bridge values. Both
+apply only when the container's `NODE_ENV` is `production`, which
+`docker-compose.yml` defaults to `development` unless `.env.production` is
+sourced into the shell first (`scripts/deploy-fedora.sh` does that).
+`scripts/assert-env.mjs` checks more (the opt-in integrations), but it is not
+in the image and nothing runs it for you: see `docs/ENV_CONFIGURATION.md` for
+how to run it. The example file marks every value that has a banned default.
 
 ### 2.4 Install nginx vhost + obtain TLS certs
 
@@ -441,7 +448,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 | Symptom                                           | First thing to check |
 | ------------------------------------------------- | -------------------- |
 | `502 Bad Gateway` from nginx                      | Is the upstream container running? `docker compose ps`. SELinux: `getsebool httpd_can_network_connect` should be `on`. |
-| Backend stuck in `unhealthy`                      | `docker compose logs backend` — usually a missing env var or the DB isn't ready. `assert-env.mjs` will name the failing key. |
+| Backend stuck in `unhealthy`                      | `docker compose logs backend` — usually a missing env var or the DB isn't ready. The boot guard's error (`… is required in production`, `Blackstar bridge configuration is invalid in production: …`) names the failing key. |
 | Storefront 500s for product images                | `MINIO_PUBLIC_URL` mismatch. Must be reachable from the browser **and** match the bucket on the Fedora MinIO. |
 | `certbot --nginx` fails                           | DNS not pointing at the server yet, or :80 blocked by firewalld. |
 | `pg_restore` complains about ownership            | The script passes `--no-owner --no-privileges` already; if you see this, you ran restore by hand. |

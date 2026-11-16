@@ -1,6 +1,8 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { createLogger } from "../../../../shared/logger"
-import { sellerId, wellnessService, fail, body } from "../_helpers"
+import { sellerId, wellnessService, fail, body, ownedProductId } from "../_helpers"
+import { forbidden } from "../../../../shared/community-read-access"
+import { isKnownTimeZone } from "../../../../modules/wellness/class-messages"
 
 const log = createLogger("api/vendor/wellness/classes")
 
@@ -19,7 +21,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   }
 }
 
-// POST /vendor/wellness/classes — create a group class/workshop.
+// POST /vendor/wellness/classes — create a group class/workshop. A
+// `product_id` (the class's ticket) must be one of the caller's own products:
+// 403 otherwise (SD-52 re-review).
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const seller = await sellerId(req, res)
   if (!seller) return
@@ -45,6 +49,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     if (!b.title || !b.starts_at || !b.ends_at) {
       return res.status(400).json({ message: "title, starts_at, ends_at are required" })
     }
+    if (b.timezone !== undefined && !isKnownTimeZone(b.timezone)) {
+      return res.status(400).json({ message: "timezone must be an IANA time zone, e.g. America/New_York" })
+    }
+    const product = await ownedProductId(req, seller, b.product_id ?? null)
+    if (!product.ok) return forbidden(res)
 
     const created = await wellnessService(req).createClassEvents({
       seller_id: seller,
@@ -62,7 +71,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       early_bird_until: b.early_bird_until ? new Date(b.early_bird_until) : null,
       location_type: b.location_type ?? "video",
       location_detail: b.location_detail ?? null,
-      product_id: b.product_id ?? null,
+      product_id: product.value,
       status: "scheduled",
       is_embeddable: b.is_embeddable ?? true,
     })

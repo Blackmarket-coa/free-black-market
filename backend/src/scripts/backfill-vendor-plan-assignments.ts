@@ -1,5 +1,6 @@
 import { ExecArgs } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
 import { VENDOR_PLAN_MODULE } from "../modules/vendor-plan"
 import { getPlanDefinition } from "../modules/vendor-plan/catalog"
 import { VendorPlanAssignedBy } from "../modules/vendor-plan/models"
@@ -7,7 +8,7 @@ import { VendorPlanAssignedBy } from "../modules/vendor-plan/models"
 /**
  * Give every existing seller a plan assignment.
  *
- * `--default-plan=<code>` is REQUIRED and deliberately has no fallback.
+ * `default-plan=<code>` is REQUIRED and deliberately has no fallback.
  *
  * The rollout decision for this work is "enforce immediately, no
  * grandfathering", which means whichever plan is chosen here is what every
@@ -16,13 +17,23 @@ import { VendorPlanAssignedBy } from "../modules/vendor-plan/models"
  * whole change inside a script. Making it an explicit argument forces a human
  * to make it at run time, with the consequence in front of them.
  *
- * To keep FBM's own vendors whole, pass `--default-plan=internal` (the
+ * To keep FBM's own vendors whole, pass `default-plan=internal` (the
  * operator-assigned plan carrying every feature). That is a plan assignment,
  * not a grandfather clause, and stays consistent with the chosen rollout.
  *
- * Run (dry run first):
- *   pnpm medusa exec ./src/scripts/backfill-vendor-plan-assignments.ts -- --default-plan=free --dry-run
- *   pnpm medusa exec ./src/scripts/backfill-vendor-plan-assignments.ts -- --default-plan=free
+ * A dry run unless given `apply`, so the preview really comes first:
+ *   pnpm medusa exec ./src/scripts/backfill-vendor-plan-assignments.ts default-plan=free
+ *   pnpm medusa exec ./src/scripts/backfill-vendor-plan-assignments.ts default-plan=free apply
+ *
+ * `dry-run` may be given to say so; `apply dry-run` is refused, and
+ * `PLAN_BACKFILL_DRY_RUN=1` in the environment forces a dry run even with
+ * `apply`.
+ *
+ * Bare words. This used to document `-- --default-plan=free --dry-run`, and the
+ * script could not be run at all: `medusa exec` drops everything after `--`
+ * (so the plan never arrived and the script refused), and refuses
+ * `--default-plan=…` on its own as an unknown option. Any other argument, or a
+ * `--` separator, is refused (`shared/exec-args.ts`).
  */
 export default async function backfillVendorPlanAssignments({
   container,
@@ -32,22 +43,29 @@ export default async function backfillVendorPlanAssignments({
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const plans: any = container.resolve(VENDOR_PLAN_MODULE)
 
-  const argv = args ?? []
-  const planArg = argv.find((a) => a.startsWith("--default-plan="))
+  const parsed = parseScriptArgs(args, {
+    ...APPLY_OR_DRY_RUN,
+    options: ["default-plan"],
+  })
+  if (!parsed.ok) {
+    // Thrown, so `medusa exec` exits non-zero: nothing was read or written.
+    logger.error(`[backfill-vendor-plan] refused: ${parsed.message}`)
+    throw new Error(`backfill-vendor-plan refused: ${parsed.message}`)
+  }
+  const defaultPlan = parsed.options.get("default-plan")
   const dryRun =
-    argv.includes("--dry-run") || process.env.PLAN_BACKFILL_DRY_RUN === "1"
+    !parsed.flags.has("apply") || process.env.PLAN_BACKFILL_DRY_RUN === "1"
 
-  if (!planArg) {
+  if (!defaultPlan) {
     logger.error(
-      "[backfill-vendor-plan] --default-plan=<code> is required. " +
+      "[backfill-vendor-plan] default-plan=<code> is required. " +
         "Every seller without an assignment will be placed on this plan, and " +
         "with enforcement live that is what they are limited to. " +
-        "Use --default-plan=internal to keep existing vendors whole."
+        "Use default-plan=internal to keep existing vendors whole."
     )
-    throw new Error("--default-plan is required")
+    throw new Error("default-plan=<code> is required")
   }
 
-  const defaultPlan = planArg.split("=")[1]?.trim()
   const def = getPlanDefinition(defaultPlan)
   if (!def) {
     logger.error(`[backfill-vendor-plan] unknown plan code "${defaultPlan}"`)
@@ -100,4 +118,11 @@ export default async function backfillVendorPlanAssignments({
     `[backfill-vendor-plan] ${assigned} assigned, ${skipped} already had an assignment` +
       (dryRun ? " (dry run)" : "")
   )
+  if (dryRun) {
+    logger.info(
+      process.env.PLAN_BACKFILL_DRY_RUN === "1"
+        ? "[backfill-vendor-plan] dry run forced by PLAN_BACKFILL_DRY_RUN=1, nothing written"
+        : `[backfill-vendor-plan] dry run, nothing written: re-run with \`default-plan=${def.code} apply\` to assign`
+    )
+  }
 }

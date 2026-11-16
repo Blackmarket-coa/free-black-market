@@ -6,6 +6,8 @@ import { createLogger } from "../../../../shared/logger"
 import { requireSellerId } from "../../../../shared"
 import { BOOKING_MODULE } from "../../../../modules/booking"
 import type BookingService from "../../../../modules/booking/service"
+import { sellerOwnsProduct } from "../../../../shared/product-sellers"
+import { forbidden } from "../../../../shared/community-read-access"
 
 const log = createLogger("api/vendor/bookings/config")
 
@@ -43,6 +45,13 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
  * POST /vendor/bookings/config — create/update a product's booking config.
  * Body: { product_id, duration_minutes?, buffer_minutes?, timezone?,
  *         advance_days?, min_notice_hours?, is_active? }
+ *
+ * `product_id` must be one of the caller's own products (Mercur's
+ * seller-product link): 403 otherwise, the same for a product that does not
+ * exist. It used to take any product id, so seller B could make seller A's
+ * product bookable under B, and since product_id is unique on the table,
+ * leave A unable to configure it at all (SD-81 addendum). A row another
+ * seller wrote on the caller's product before this check is taken over.
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const sellerId = await requireSellerId(req, res)
@@ -54,6 +63,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     return res
       .status(400)
       .json({ message: "product_id is required", type: "invalid_data" })
+  }
+  if (!(await sellerOwnsProduct(req.scope, sellerId, product_id))) {
+    return forbidden(res)
   }
 
   const num = (v: unknown, fallback: number, min: number, max: number) => {
@@ -76,8 +88,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const fields = {
-    seller_id: sellerId,
-    product_id,
     duration_minutes: num(body.duration_minutes, 60, 5, 1440),
     buffer_minutes: num(body.buffer_minutes, 0, 0, 1440),
     timezone,
@@ -88,19 +98,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   try {
     const booking = req.scope.resolve(BOOKING_MODULE) as BookingService
-    const existing = await booking.listProductBookingConfigs(
-      { product_id, seller_id: sellerId },
-      { take: 1 }
+    const { config, previous_seller_id } = await booking.saveConfigAsProductOwner(
+      sellerId,
+      product_id,
+      fields
     )
-
-    let config
-    if (existing?.[0]) {
-      config = await booking.updateProductBookingConfigs({
-        id: existing[0].id,
-        ...fields,
-      })
-    } else {
-      config = await booking.createProductBookingConfigs(fields)
+    if (previous_seller_id) {
+      log.warn(
+        `[POST /vendor/bookings/config] seller ${sellerId} took over product ${product_id}'s booking config from seller ${previous_seller_id}`
+      )
     }
 
     return res.json({ config })

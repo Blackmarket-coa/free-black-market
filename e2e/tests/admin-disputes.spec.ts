@@ -15,9 +15,15 @@ import { expect, test, type Page } from "@playwright/test"
  * Every `/admin/*` and `/auth/*` call is answered here with `page.route`
  * (nothing reaches a backend): the signed-in user, the store the shell
  * reads, a disputes queue and case files with their event logs, and a
- * PATCH that applies the backend's own rules (a closing decision needs a
- * note, an award may not exceed the claim, and a case already decided
- * answers 409). The panel is pointed at its own origin for the API through
+ * PATCH that applies the backend's own rules and answers in its words: a
+ * closing decision needs a note (400 `note_required`); an award must be a
+ * whole number of minor units, no more than the claim, nothing on a release
+ * and something on a refund (400 `invalid_award_amount`); a case already
+ * decided answers 409 "cannot move a dispute from X to Y", which is what
+ * `backend/integration-tests/http/admin-disputes.spec.ts` gets on Postgres;
+ * and only a case decided between the server's read and its write answers
+ * 409 "this dispute changed while it was being decided" (`raceNext`). The
+ * panel is pointed at its own origin for the API through
  * `window.__MEDUSA_BACKEND_URL__`, which it reads before its build-time
  * backend URL, so the same spec runs against the compose-built panel in CI
  * (ADMIN_URL, port 7000) and against `vite` locally:
@@ -134,7 +140,9 @@ async function mockBackend(page: Page, seed: Dispute[]) {
   )
   const patches: { id: string; body: Record<string, unknown> }[] = []
   const listQueries: string[] = []
+  const detailReads: string[] = []
   const unexpected: string[] = []
+  const racing = new Set<string>()
 
   const log = (id: string, e: Omit<DisputeEvent, "id" | "created_at">) =>
     events.get(id)!.push({ ...e, id: `ev_${id}_${events.get(id)!.length}`, created_at: new Date().toISOString() })
@@ -145,6 +153,14 @@ async function mockBackend(page: Page, seed: Dispute[]) {
     log(id, { kind: "resolved", actor_type: "admin", actor_id: "user_other", from_status: d.status, to_status: status, message: note, metadata: { award_amount: 0 } })
     Object.assign(d, { status, resolution_note: note, resolved_at: new Date().toISOString(), resolved_by: "user_other" })
   }
+
+  /**
+   * The next PATCH on this case loses the race the service's conditional
+   * write guards: it read the case while still open, and another operator's
+   * release landed before its write. Only then does the backend send the
+   * "changed while it was being decided" message.
+   */
+  const raceNext = (id: string) => racing.add(id)
 
   await page.addInitScript(() => {
     ;(window as unknown as { __MEDUSA_BACKEND_URL__: string }).__MEDUSA_BACKEND_URL__ = window.location.origin
@@ -180,15 +196,27 @@ async function mockBackend(page: Page, seed: Dispute[]) {
         const id = decodeURIComponent(detail[1])
         const d = disputes.get(id)
         if (!d) return json({ message: "Dispute not found" }, 404)
-        if (method === "GET") return json({ dispute: d, events: events.get(id) })
+        if (method === "GET") {
+          detailReads.push(id)
+          return json({ dispute: d, events: events.get(id) })
+        }
         if (method === "PATCH") {
           const body = (req.postDataJSON() ?? {}) as Record<string, unknown>
           patches.push({ id, body })
           const to = String(body.status ?? "")
           const note = typeof body.note === "string" ? body.note.trim() : ""
           if (CLOSING.has(to) && !note) return json({ message: "A decision that closes the case needs a note saying why", type: "note_required" }, 400)
+          const raw = body.award_amount
+          if (raw !== undefined && raw !== null && !(typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0)) {
+            return json({ message: "award_amount must be a whole number of the currency's minor unit", type: "invalid_award_amount" }, 400)
+          }
+          if (racing.delete(id)) {
+            const from = d.status
+            decideElsewhere(id, "resolved_release", "Signed for at the door.")
+            return json({ message: `this dispute changed while it was being decided (it is no longer ${from}); reload it` }, 409)
+          }
           if (!(ALLOWED[d.status] ?? []).includes(to)) {
-            return json({ message: `this dispute changed while it was being decided (it is no longer open); reload it` }, 409)
+            return json({ message: `cannot move a dispute from ${d.status} to ${to}` }, 409)
           }
           if (to === "under_review") {
             log(id, { kind: "status_changed", actor_type: "admin", actor_id: "user_ops", from_status: d.status, to_status: to, message: null, metadata: null })
@@ -196,9 +224,14 @@ async function mockBackend(page: Page, seed: Dispute[]) {
             return json({ dispute: d, escrow_transition: null })
           }
           let award = 0
+          const invalidAward = (message: string) => json({ message, type: "invalid_award_amount" }, 400)
           if (to === "resolved_refund") {
-            award = typeof body.award_amount === "number" ? body.award_amount : d.claim_amount
-            if (award > d.claim_amount) return json({ message: `award of ${award} exceeds the ${d.claim_amount} claimed` }, 409)
+            award = typeof raw === "number" ? raw : d.claim_amount
+            if (award > d.claim_amount) return invalidAward(`award of ${award} exceeds the ${d.claim_amount} claimed`)
+            if (award === 0) return invalidAward("a refund resolution must award something — use resolved_release to award nothing")
+          }
+          if (to === "resolved_release" && typeof raw === "number" && raw > 0) {
+            return invalidAward("a release resolution awards nothing — use resolved_refund to award a refund")
           }
           log(id, { kind: "resolved", actor_type: "admin", actor_id: "user_ops", from_status: d.status, to_status: to, message: note, metadata: { award_amount: award } })
           Object.assign(d, { status: to, award_amount: award, resolution_note: note, resolved_at: new Date().toISOString(), resolved_by: "user_ops" })
@@ -229,7 +262,7 @@ async function mockBackend(page: Page, seed: Dispute[]) {
     }
   )
 
-  return { disputes, events, patches, listQueries, unexpected, decideElsewhere }
+  return { disputes, events, patches, listQueries, detailReads, unexpected, decideElsewhere, raceNext }
 }
 
 /** Fail the test on anything the page throws. */
@@ -370,7 +403,13 @@ test.describe("admin Disputes screens", () => {
     expect(api.unexpected).toEqual([])
   })
 
-  test("a decision someone else already made comes back as a 409, and the operator is told", async ({ page }) => {
+  /**
+   * The backend's answer here is "cannot move a dispute from
+   * resolved_release to resolved_refund" (status words, not a sentence).
+   * The spec used to mock the race message instead, which the backend sends
+   * only in the race below, so it tested a toast operators never saw.
+   */
+  test("a decision someone else already made comes back as a 409, and the operator is told in words", async ({ page }) => {
     const errors = watchErrors(page)
     const api = await mockBackend(page, [dispute("odsp_race")])
 
@@ -384,7 +423,10 @@ test.describe("admin Disputes screens", () => {
     await page.getByRole("button", { name: "Record decision" }).click()
     await page.getByRole("alertdialog").getByRole("button", { name: "Record decision" }).click()
 
-    await expect(toast(page, /changed while it was being decided/)).toBeVisible()
+    await expect(
+      toast(page, "This dispute was already decided or changed by someone else. The page now shows where it stands.")
+    ).toBeVisible()
+    await expect(page.getByText(/cannot move a dispute|resolved_release/)).toHaveCount(0)
     // Sent once: a refusal is not retried behind the operator's back.
     expect(api.patches).toEqual([{ id: "odsp_race", body: { status: "resolved_refund", note: "Refund in full." } }])
     // And the case file shows what the server now says, without a reload:
@@ -394,6 +436,92 @@ test.describe("admin Disputes screens", () => {
     await expect(page.getByText("Note", { exact: true }).locator("..")).toContainText("Signed for at the door.")
     await expect(page.getByRole("button", { name: "Record decision" })).toHaveCount(0)
     await shot(page, "09-conflict-toast-and-refreshed")
+
+    expect(errors).toEqual([])
+    expect(api.unexpected).toEqual([])
+  })
+
+  test("a decision that loses the race to another operator's write gets the same words", async ({ page }) => {
+    const errors = watchErrors(page)
+    const api = await mockBackend(page, [dispute("odsp_close")])
+
+    await page.goto(`${ADMIN}/disputes/odsp_close`)
+    await page.getByRole("button", { name: "Refund the buyer" }).click()
+    await page.getByLabel(/Decision note/).fill("Refund in full.")
+    api.raceNext("odsp_close")
+
+    await page.getByRole("button", { name: "Record decision" }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Record decision" }).click()
+
+    await expect(
+      toast(page, "This dispute was already decided or changed by someone else. The page now shows where it stands.")
+    ).toBeVisible()
+    await expect(page.getByText(/changed while it was being decided/)).toHaveCount(0)
+    expect(api.patches).toHaveLength(1)
+    await expect(page.getByText("Outcome").locator("..")).toContainText("Decided: release")
+    await expect(page.getByRole("button", { name: "Record decision" })).toHaveCount(0)
+    await shot(page, "10-race-toast-and-refreshed")
+
+    expect(errors).toEqual([])
+    expect(api.unexpected).toEqual([])
+  })
+
+  /**
+   * The queue and the case file are sibling routes, so the queue is
+   * unmounted while a case is open, and the panel sets `refetchOnMount:
+   * false` for every query. Going back used to show the pre-decision queue
+   * from cache with no request: the decided case still listed as Open.
+   */
+  test("after a decision, Back to disputes shows the queue without the decided case", async ({ page }) => {
+    const errors = watchErrors(page)
+    const api = await mockBackend(page, [
+      dispute("odsp_one", { created_at: daysAgo(3) }),
+      dispute("odsp_two", { created_at: daysAgo(5) }),
+    ])
+
+    await page.goto(`${ADMIN}/disputes`)
+    const rows = page.locator("table tbody tr")
+    await expect(rows).toHaveCount(2)
+    await rows.filter({ hasText: "order_odsp_one" }).getByRole("button", { name: "Open" }).click()
+    await expect(page).toHaveURL(/\/disputes\/odsp_one$/)
+
+    await page.getByRole("button", { name: "Refund the buyer" }).click()
+    await page.getByLabel(/Decision note/).fill("Never shipped.")
+    await page.getByRole("button", { name: "Record decision" }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Record decision" }).click()
+    await expect(toast(page, "Decision recorded")).toBeVisible()
+
+    await page.getByRole("button", { name: "Back to disputes" }).click()
+    await expect(page).toHaveURL(/\/disputes$/)
+    await expect(rows).toHaveCount(1)
+    await expect(rows.nth(0)).toContainText("order_odsp_two")
+    await expect(page.getByText("order_odsp_one")).toHaveCount(0)
+    // The queue was asked again, not read from cache.
+    expect(api.listQueries.filter((q) => q === "(queue)").length).toBeGreaterThanOrEqual(2)
+    await shot(page, "11-back-to-queue-after-decision")
+
+    expect(errors).toEqual([])
+    expect(api.unexpected).toEqual([])
+  })
+
+  test("a case file reopened after someone else decided it shows their decision, not a stale form", async ({ page }) => {
+    const errors = watchErrors(page)
+    const api = await mockBackend(page, [dispute("odsp_seen")])
+
+    await page.goto(`${ADMIN}/disputes`)
+    await page.locator("table tbody tr").first().getByRole("button", { name: "Open" }).click()
+    await expect(page.getByRole("button", { name: "Refund the buyer" })).toBeVisible()
+    await page.getByRole("button", { name: "Back to disputes" }).click()
+    await expect(page.locator("table tbody tr")).toHaveCount(1)
+
+    // Another operator decides it while this tab is on the queue.
+    api.decideElsewhere("odsp_seen", "resolved_release", "Signed for at the door.")
+    const readsBefore = api.detailReads.length
+
+    await page.locator("table tbody tr").first().getByRole("button", { name: "Open" }).click()
+    await expect(page.getByText("Outcome").locator("..")).toContainText("Decided: release")
+    await expect(page.getByRole("button", { name: "Refund the buyer" })).toHaveCount(0)
+    expect(api.detailReads.length).toBeGreaterThan(readsBefore)
 
     expect(errors).toEqual([])
     expect(api.unexpected).toEqual([])

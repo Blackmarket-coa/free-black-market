@@ -1,6 +1,8 @@
 import { POST } from "../markets/[id]/positions/route"
 import {
   PredictionMode,
+  PredictionPolicyRefusal,
+  PredictionPolicyService,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../modules/vendor-hype-operations-prediction"
 import VendorHypeOperationsPredictionService from "../../../../modules/vendor-hype-operations-prediction/service"
@@ -193,5 +195,27 @@ describe("store vendor hype market positions route", () => {
     // The client's other data is kept, apart from the server's keys.
     expect(metadata.client_metadata).toEqual({ referrer: "newsletter" })
     expect(Object.keys(metadata).sort()).toEqual(["client_metadata", "disclosure_acknowledged"])
+  })
+
+  it("answers a market the policy no longer admits 403 policy_denied, not a 500 (SD-76 follow-up)", async () => {
+    // placePredictionPosition re-checks the market against the policy in
+    // force. Today the age gate above refuses first, for everyone (SD-67).
+    const decision = new PredictionPolicyService().evaluateMode(PredictionMode.SWEEPSTAKES, "US")
+    const service = {
+      listPredictionMarkets: jest.fn().mockResolvedValue([{ id: "m_1", mode: PredictionMode.SWEEPSTAKES }]),
+      isSupporterAgeVerified: jest.fn().mockResolvedValue(true),
+      placePredictionPosition: jest.fn().mockRejectedValue(new PredictionPolicyRefusal(decision)),
+    }
+    const res = createRes()
+
+    await POST(makeReq({ body: { idempotency_key: "idem_1" }, service }) as never, res as never)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual({
+      type: "policy_denied",
+      code: "PREDICTION_MODE_NOT_PERMITTED",
+      message: "sweepstakes markets are not permitted for US (profile US-RESTRICTED)",
+      policy_version: decision.policy_version,
+    })
   })
 })

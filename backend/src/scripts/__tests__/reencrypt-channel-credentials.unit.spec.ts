@@ -1,3 +1,4 @@
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import reencryptChannelCredentials from "../reencrypt-channel-credentials"
 import { CHANNEL_CONNECTOR_MODULE } from "../../modules/channel-connector/module-key"
 import { channelCredentialCipher } from "../../modules/channel-connector/lib/credentials"
@@ -45,8 +46,11 @@ function makeContainer(rows: Record<string, unknown>[]) {
   }
   return {
     container: {
-      resolve: (key: string) =>
-        key === CHANNEL_CONNECTOR_MODULE ? service : logger,
+      resolve: (key: string) => {
+        if (key === CHANNEL_CONNECTOR_MODULE) return service
+        if (key === ContainerRegistrationKeys.LOGGER) return logger
+        throw new Error(`unexpected container key "${key}"`)
+      },
     },
     updateChannelConnections,
     logger,
@@ -78,7 +82,7 @@ describe("reencryptChannelCredentials", () => {
       row("b", channelCredentialCipher.encrypt("already-safe")),
     ])
 
-    await reencryptChannelCredentials({ container, args: ["--apply"] } as never)
+    await reencryptChannelCredentials({ container, args: ["apply"] } as never)
 
     expect(updateChannelConnections).toHaveBeenCalledTimes(1)
     const written = updateChannelConnections.mock.calls[0][0]
@@ -97,7 +101,7 @@ describe("reencryptChannelCredentials", () => {
       row("a", "plaintext-token", { enabled: false, needs_reauth: true }),
     ])
 
-    await reencryptChannelCredentials({ container, args: ["--apply"] } as never)
+    await reencryptChannelCredentials({ container, args: ["apply"] } as never)
 
     expect(Object.keys(updateChannelConnections.mock.calls[0][0]).sort()).toEqual(
       ["access_token", "id"]
@@ -140,14 +144,94 @@ describe("reencryptChannelCredentials", () => {
     ])
 
     await expect(
-      reencryptChannelCredentials({ container, args: ["--apply"] } as never)
+      reencryptChannelCredentials({ container, args: ["apply"] } as never)
     ).rejects.toThrow(/could not be encrypted/)
     expect(updateChannelConnections).not.toHaveBeenCalled()
   })
 
+  describe("arguments, as `medusa exec` actually passes them", () => {
+    // `medusa exec` refuses `--apply` as an unknown option and drops anything
+    // after `--`, so the old documented `-- --apply` reached this script as []
+    // and it could never apply. Checked against the real CLI.
+    const realArgv = process.argv
+    afterEach(() => {
+      process.argv = realArgv
+    })
+
+    it("applies on the bare word `apply`", async () => {
+      const { container, updateChannelConnections } = makeContainer([
+        row("a", "plaintext-token"),
+      ])
+      await reencryptChannelCredentials({ container, args: ["apply"] } as never)
+      expect(updateChannelConnections).toHaveBeenCalledTimes(1)
+    })
+
+    it("refuses `--apply`, and writes nothing", async () => {
+      const { container, updateChannelConnections, logger } = makeContainer([
+        row("a", "plaintext-token"),
+      ])
+      await expect(
+        reencryptChannelCredentials({ container, args: ["--apply"] } as never)
+      ).rejects.toThrow(/refused.*`apply`, not `--apply`/)
+      expect(updateChannelConnections).not.toHaveBeenCalled()
+      expect(logger.error).toHaveBeenCalled()
+    })
+
+    it("refuses a `--` separator instead of quietly running a dry run", async () => {
+      // What the process looks like for `npx medusa exec <file> -- apply`:
+      // `args` is [] and the dropped words are only in process.argv.
+      process.argv = [
+        realArgv[0],
+        "/app/node_modules/@medusajs/cli/cli.js",
+        "exec",
+        "./src/scripts/reencrypt-channel-credentials.ts",
+        "--",
+        "apply",
+      ]
+      const { container, updateChannelConnections, logger } = makeContainer([
+        row("a", "plaintext-token"),
+      ])
+      await expect(
+        reencryptChannelCredentials({ container, args: [] } as never)
+      ).rejects.toThrow(/drops everything after "--"/)
+      expect(updateChannelConnections).not.toHaveBeenCalled()
+      expect(logged(logger)).not.toMatch(/dry run/)
+    })
+
+    it("refuses an unknown word rather than reading it as a dry run", async () => {
+      const { container, updateChannelConnections } = makeContainer([
+        row("a", "plaintext-token"),
+      ])
+      await expect(
+        reencryptChannelCredentials({ container, args: ["aply"] } as never)
+      ).rejects.toThrow(/unknown argument "aply"; this script takes: apply/)
+      expect(updateChannelConnections).not.toHaveBeenCalled()
+    })
+
+    it("takes `dry-run` to say so, and refuses `apply dry-run`", async () => {
+      const preview = makeContainer([row("a", "plaintext-token")])
+      await reencryptChannelCredentials({ container: preview.container, args: ["dry-run"] } as never)
+      expect(preview.updateChannelConnections).not.toHaveBeenCalled()
+      expect(logged(preview.logger)).toMatch(/dry run/)
+
+      const both = makeContainer([row("a", "plaintext-token")])
+      await expect(
+        reencryptChannelCredentials({ container: both.container, args: ["apply", "dry-run"] } as never)
+      ).rejects.toThrow(/"apply" and "dry-run" contradict each other/)
+      expect(both.updateChannelConnections).not.toHaveBeenCalled()
+    })
+
+    it("tells a dry run how to apply, with the word that works", async () => {
+      const { container, logger } = makeContainer([row("a", "plaintext-token")])
+      await reencryptChannelCredentials({ container, args: [] } as never)
+      expect(logged(logger)).toContain("re-run with `apply`")
+      expect(logged(logger)).not.toContain("--apply")
+    })
+  })
+
   it("does nothing when there are no connections", async () => {
     const { container, updateChannelConnections, logger } = makeContainer([])
-    await reencryptChannelCredentials({ container, args: ["--apply"] } as never)
+    await reencryptChannelCredentials({ container, args: ["apply"] } as never)
     expect(updateChannelConnections).not.toHaveBeenCalled()
     expect(logged(logger)).toMatch(/no channel connections/)
   })

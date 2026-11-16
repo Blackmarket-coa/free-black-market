@@ -11,6 +11,7 @@ import {
   adminActionsFor,
   buyerSubmission,
   daysWaiting,
+  decisionErrorText,
   describeEvent,
   escrowTransitionFor,
   formatMajor,
@@ -51,6 +52,25 @@ describe("resolutionDraft", () => {
     const d = resolutionDraft(open, "resolved_refund", { award: "26", note: "x" })
     expect(d.body).toBeNull()
     expect(d.problems).toEqual(["The award of $26.00 is more than the $25.99 claimed"])
+  })
+
+  /**
+   * The backend refuses a refund that awards nothing (400
+   * `invalid_award_amount`): it is a release, and the buyer's claims API
+   * would call it "accepted" with nothing awarded.
+   */
+  it("refuses a refund of nothing, and says to release instead", () => {
+    for (const award of ["0", "0.00", " 0 "]) {
+      const d = resolutionDraft(open, "resolved_refund", { award, note: "x" })
+      expect(d.body).toBeNull()
+      expect(d.problems).toEqual(["A refund of nothing is a release. To award nothing, release to the seller instead"])
+    }
+    // A blank award is the whole claim, which is nothing when nothing was claimed.
+    const nothingClaimed = { ...open, claim_amount: 0 }
+    expect(resolutionDraft(nothingClaimed, "resolved_refund", { note: "x" }).body).toBeNull()
+    expect(resolutionDraft(nothingClaimed, "resolved_release", { note: "x" }).body).toEqual({ status: "resolved_release", note: "x" })
+    // The smallest real award still goes.
+    expect(resolutionDraft(open, "resolved_refund", { award: "0.01", note: "x" }).body?.award_amount).toBe(1)
   })
 
   it("refuses an amount it would have to guess at", () => {
@@ -101,6 +121,43 @@ describe("resolutionDraft", () => {
     const yen = { status: "open" as const, claim_amount: 5000, currency_code: "jpy" }
     expect(resolutionDraft(yen, "resolved_refund", { award: "3000", note: "x" }).body?.award_amount).toBe(3000)
     expect(resolutionDraft(yen, "resolved_refund", { award: "30.5", note: "x" }).body).toBeNull()
+  })
+})
+
+/**
+ * The server's words for a status conflict are internal. The e2e smoke
+ * pinned the race message ("changed while it was being decided"), but a case
+ * someone else already decided gets "cannot move a dispute from
+ * resolved_release to resolved_refund" (checked on Postgres in
+ * backend/integration-tests/http/admin-disputes.spec.ts).
+ */
+describe("decisionErrorText", () => {
+  const fetchError = (status: number, message: string) => Object.assign(new Error(message), { status })
+
+  it("turns any 409 on a decision into a sentence about the case having moved on", () => {
+    for (const message of [
+      "cannot move a dispute from resolved_release to resolved_refund",
+      "this dispute changed while it was being decided (it is no longer open); reload it",
+      "",
+    ]) {
+      expect(decisionErrorText(fetchError(409, message), "decide")).toBe(
+        "This dispute was already decided or changed by someone else. The page now shows where it stands."
+      )
+    }
+    expect(decisionErrorText(fetchError(409, "cannot move a dispute from under_review to under_review"), "take_up")).toBe(
+      "Someone else already took this dispute up or decided it. The page now shows where it stands."
+    )
+  })
+
+  it("keeps the server's message for any other refusal, which says what to fix", () => {
+    expect(decisionErrorText(fetchError(400, "A decision that closes the case needs a note saying why"), "decide")).toBe(
+      "A decision that closes the case needs a note saying why"
+    )
+    expect(decisionErrorText(fetchError(400, "award of 2600 exceeds the 2599 claimed"), "decide")).toBe(
+      "award of 2600 exceeds the 2599 claimed"
+    )
+    expect(decisionErrorText(fetchError(500, ""), "decide")).toBe("The dispute could not be updated. Try again.")
+    expect(decisionErrorText(undefined, "decide")).toBe("The dispute could not be updated. Try again.")
   })
 })
 
@@ -349,6 +406,40 @@ describe("parity with backend/src/modules/order-dispute", () => {
     const method = mutation.match(/method: "(\w+)"/)?.[1]
     expect(method).toBe("PATCH")
     expect(exported(patchRoute)).toContain(method)
+  })
+
+  /**
+   * The panel sets `refetchOnMount: false` for every query, and the queue
+   * is unmounted while a case file is open, so without these "Back to
+   * disputes" served the pre-decision queue from cache. The browser proof
+   * is e2e/tests/admin-disputes.spec.ts, which counts list requests; this
+   * keeps the options from being dropped by someone who never runs it.
+   */
+  it("never serves the queue or a case file from cache, and refetches every list after a decision", () => {
+    const hooks = readFileSync(path.join(__dirname, "../../hooks/api/disputes.tsx"), "utf8")
+    const block = (name: string) => hooks.match(new RegExp(`export const ${name} = [\\s\\S]*?\\n\\}\\n`))?.[0] ?? ""
+    expect(block("useDisputes")).toMatch(/refetchOnMount: "always"/)
+    expect(block("useDispute")).toMatch(/refetchOnMount: "always"/)
+    expect(block("useUpdateDispute")).toMatch(
+      /invalidateQueries\(\{ queryKey: disputeQueryKeys\.lists\(\), refetchType: "all" \}\)/
+    )
+  })
+
+  /**
+   * `decisionErrorText` reads every 409 as "someone else decided or took up
+   * this case". That holds only while the PATCH answers an award problem
+   * with 400 (`DisputeAwardError`, checked before the generic
+   * `DisputeStateError` → 409) and `resolveAwardCents` throws nothing else.
+   */
+  it("gets a 409 from the PATCH only for a case that moved on, never for an award problem", () => {
+    expect(patchRoute).toMatch(
+      /if \(err instanceof DisputeAwardError\) \{\s*return res\.status\(400\)[\s\S]*?if \(err instanceof DisputeStateError\) \{\s*return res\.status\(409\)/
+    )
+    const award = resolution.match(/export function resolveAwardCents[\s\S]*?\n\}\n/)
+    if (!award) throw new Error("Could not find resolveAwardCents in order-dispute/resolution.ts")
+    const thrown = [...award[0].matchAll(/throw new (\w+)/g)].map((m) => m[1])
+    expect(thrown.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(thrown)).toEqual(new Set(["DisputeAwardError"]))
   })
 
   /**

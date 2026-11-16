@@ -123,6 +123,28 @@ export function productOrdersQuery(args: {
   }
 }
 
+/**
+ * The funnel's own order and unit totals across all of the seller's products.
+ * Adding up productOrdersQuery's per-product COUNT(DISTINCT o.id) counted an
+ * order once per product in it, so one order holding two of the seller's
+ * products read as 2 orders and doubled the conversion (SD-74 follow-up).
+ */
+export function productOrdersTotalQuery(args: {
+  productIds: string[]
+  window: DateWindow
+}): SqlQuery {
+  const { productIds, window } = args
+  return {
+    sql: `
+      SELECT COUNT(DISTINCT o.id)             AS orders,
+             COALESCE(SUM(oi.quantity), 0)    AS units
+        ${PLACED_ORDER_LINES_SQL}
+         AND o.created_at >= ? AND o.created_at <= ?
+         AND oli.product_id = ANY(?)`,
+    bindings: [window.from, window.to, productIds],
+  }
+}
+
 export type ProductFunnelRow = {
   product_id: string
   title: string | null

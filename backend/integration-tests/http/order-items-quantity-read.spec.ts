@@ -24,6 +24,7 @@ import { itemCount, loadOrderForSellerPush } from "../../src/shared/native-push-
 import { enqueueBlackMaskProvisioning } from "../../src/lib/black-mask-provisioning"
 import { GET as dataExport } from "../../src/api/store/customers/me/data-export/route"
 import { GET as growerDashboard } from "../../src/api/vendor/farm/grower-dashboard/route"
+import { GET as nurseryPayouts } from "../../src/api/vendor/plant-nursery/payouts/current-period/route"
 import { cardOrderFixtures } from "./helpers/card-orders"
 
 jest.setTimeout(240 * 1000)
@@ -819,6 +820,27 @@ medusaIntegrationTestRunner({
         const product = await makeProduct(seller.id)
         await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
 
+        // Not sales in the period, and left out in the database (SD-52
+        // re-review): a cancelled order, a draft, and an order from before the
+        // six months the response's `period` names. The read had no status
+        // filter and no date bound, so each one counted.
+        const orders = container().resolve(Modules.ORDER)
+        const canceled = await makeOrder(seller.id, [{ productId: product.id, quantity: 5, unitPrice: 40 }])
+        await orders.cancel(canceled.id)
+        const [draft] = await orders.createOrders([
+          {
+            currency_code: "usd",
+            email: "buyer@example.com",
+            status: "draft",
+            is_draft_order: true,
+            items: [{ title: "Jam", product_id: product.id, quantity: 7, unit_price: 60 }],
+          },
+        ])
+        await link().create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.ORDER]: { order_id: draft.id } })
+        const old = await makeOrder(seller.id, [{ productId: product.id, quantity: 11, unitPrice: 80 }])
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        await pg.raw(`UPDATE "order" SET created_at = now() - interval '7 months' WHERE id = ?`, [old.id])
+
         let body: any
         const res = { json: (b: unknown) => ((body = b), res), status: () => res } as any
         await growerDashboard({ auth_context: { actor_id: seller.id }, scope: container() } as any, res)
@@ -829,6 +851,26 @@ medusaIntegrationTestRunner({
           top_skus: [{ product_id: product.id, units: 3, revenue_cents: 3750 }],
           source: "orders",
         })
+      })
+
+      it("the nursery payouts route's per-product gross and cut are in cents", async () => {
+        // getSellerOrders' unit_price is Medusa's major units; the route summed
+        // it as cents, so 3 x $12.50 read gross_cents 37.5 (SD-52 re-review).
+        // Keyed by the seller id here; production passes the member id (SD-49
+        // fault 1). What "your cut" means is F7's to decide (inventory §10.8):
+        // only the units are under test.
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5, title: "Fern" }])
+
+        let body: any
+        const res = { json: (b: unknown) => ((body = b), res), status: () => res } as any
+        await nurseryPayouts({ auth_context: { actor_id: seller.id }, scope: container() } as any, res)
+
+        const split = body.current_period.split_pct as number
+        expect(body.split_breakdown).toEqual([
+          { product_name: "Fern", units: 3, gross_cents: 3750, your_cut_cents: Math.round((3750 * split) / 100) },
+        ])
       })
     })
 

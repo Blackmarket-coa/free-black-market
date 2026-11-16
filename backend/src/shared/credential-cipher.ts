@@ -42,7 +42,7 @@ const log = createLogger("shared/credential-cipher")
  *
  * `isEncrypted` is exported for exactly that reason:
  * `scripts/reencrypt-channel-credentials.ts` uses it to report how much
- * plaintext is left and, with `--apply`, to finish the job.
+ * plaintext is left and, with `apply`, to finish the job.
  */
 
 const ALGORITHM = "aes-256-gcm"

@@ -123,15 +123,40 @@ Cloudflare's TTL on tunnel-routed records is short, so propagation completes wit
 ### 7. Bring up FBM on primary
 
 ```bash
-# On primary: take the stack out of idle and run a real boot.
-docker compose -f docker-compose.prod.yml up -d backend storefront admin-panel vendor-panel
+# On primary, from the repo root. Load .env.production into this shell first.
+# docker-compose.yml's backend `environment:` block overrides the env_file and
+# interpolates NODE_ENV, JWT_SECRET, COOKIE_SECRET and MEDUSA_ADMIN_PASSWORD
+# from the shell, falling back to development and public local-dev values.
+# Without this the backend comes up in development, with those dev secrets
+# and every production boot guard off. scripts/deploy-fedora.sh does the same.
+set -a; . ./.env.production; set +a
 
-# Run the env validator (it runs at startup but verify no banned values).
-docker compose -f docker-compose.prod.yml exec backend node scripts/assert-env.mjs
+# Take the stack out of idle and run a real boot.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d \
+  backend storefront admin-panel vendor-panel
+
+# The running backend must be in production, or its boot guards were skipped.
+# (If it is restarting instead, a boot guard refused: `... logs backend` names
+# the key.)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend printenv NODE_ENV
+# must print: production
+
+# Run the wider env check against the env the running backend actually has.
+# The boot guards (medusa-config.ts, src/shared/config.ts) already refused to
+# start on the values they check; scripts/assert-env.mjs checks more (the
+# opt-in integrations). It is not in the image (`exec backend node
+# scripts/assert-env.mjs` fails with MODULE_NOT_FOUND), so copy it in first.
+# Exit 1 names each failing key; exit 2 means the container's NODE_ENV is not
+# production and nothing was checked.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml cp \
+  scripts/assert-env.mjs backend:/tmp/assert-env.mjs
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \
+  node /tmp/assert-env.mjs --app=backend
 
 # Confirm migrations have been applied (the dump was a snapshot of the
 # Railway schema; the primary should not need additional migrations).
-docker compose -f docker-compose.prod.yml exec backend pnpm exec medusa db:migrate --dry-run
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \
+  pnpm exec medusa db:migrate --dry-run
 ```
 
 ### 8. Smoke-test the primary
