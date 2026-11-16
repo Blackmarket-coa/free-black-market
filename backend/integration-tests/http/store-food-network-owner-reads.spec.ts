@@ -23,9 +23,12 @@ jest.setTimeout(180 * 1000)
  *  2. `POST /vendor/deliveries/:id` on a delivery made the way
  *     `POST /store/food-deliveries` makes it (500 "existingHistory is not
  *     iterable"), and on a row that already holds the list it used to write.
- *  3. A signed-in stranger on a courier and on a batch with no owner on
- *     record: the claim and the batch PUT were that account's read of
- *     deliveries it is refused on GET.
+ *  3. A signed-in stranger on a courier, a batch and a producer with no owner
+ *     on record: the claim and the batch PUT were that account's read of
+ *     deliveries it is refused on GET; a shift told it when the courier is
+ *     out, an added delivery how many the run holds, and the producer PUT
+ *     the address `hide_address` keeps off the GET (the review of this
+ *     branch found those three).
  *
  * These are in a file of their own, not in
  * `store-food-network-write-authz.spec.ts`: that one already spends 13 of the
@@ -36,6 +39,7 @@ jest.setTimeout(180 * 1000)
  * The same rules on fake containers: `src/api/__tests__/food-network-owner-read-auth.unit.spec.ts`,
  * `src/api/store/couriers/__tests__/courier-read-projection.unit.spec.ts`,
  * `src/api/store/delivery-batches/__tests__/batch-entitlement.unit.spec.ts`,
+ * `src/api/store/food-producers/__tests__/producer-write-echo.unit.spec.ts`,
  * `src/api/vendor/deliveries/__tests__/delivery-refusal.unit.spec.ts` and
  * `src/modules/food-distribution/__tests__/status-history.unit.spec.ts`.
  */
@@ -75,7 +79,7 @@ medusaIntegrationTestRunner({
         email: `kitchen-${uid()}@example.com`,
         ...fields,
       })
-    const homeOrder = (foodDistribution: any, producerId: string) =>
+    const homeOrder = (foodDistribution: any, producerId: string, fields: Record<string, unknown> = {}) =>
       foodDistribution.createFoodOrders({
         order_number: `FO-${uid()}`,
         transaction_type: TransactionType.SALE,
@@ -86,7 +90,12 @@ medusaIntegrationTestRunner({
         items: {},
         ordered_at: new Date(),
         status: FoodOrderStatus.PENDING,
+        ...fields,
       })
+    // One shift, and a window inside it and one clear of it.
+    const SHIFT = { scheduled_start: "2026-12-01T09:00:00.000Z", scheduled_end: "2026-12-01T17:00:00.000Z" }
+    const INSIDE_IT = { scheduled_start: "2026-12-01T10:00:00.000Z", scheduled_end: "2026-12-01T11:00:00.000Z" }
+    const CLEAR_OF_IT = { scheduled_start: "2026-12-03T10:00:00.000Z", scheduled_end: "2026-12-03T11:00:00.000Z" }
 
     it("a seller reads the courier, the deliveries, the orders and the batches they own, and the public reads are as they were", async () => {
       const pak = await createPublishableKeyToken(getContainer)
@@ -144,11 +153,14 @@ medusaIntegrationTestRunner({
       const shift = await safe(
         api.post(
           `/store/couriers/${courierId}/shifts`,
-          { scheduled_start: "2026-12-01T09:00:00.000Z", scheduled_end: "2026-12-01T17:00:00.000Z", notes: "home by 5" },
+          { ...SHIFT, notes: "home by 5" },
           as(owner)
         )
       )
       expect(shift.status).toBe(201)
+      // The owner is still told when a second one would overlap it.
+      const doubleBooked = await safe(api.post(`/store/couriers/${courierId}/shifts`, INSIDE_IT, as(owner)))
+      expect([doubleBooked.status, doubleBooked.data]).toEqual([400, { message: "Shift overlaps with existing shift" }])
       const ownShifts = await safe(api.get(`/store/couriers/${courierId}/shifts`, as(owner)))
       expect([ownShifts.status, ownShifts.data?.shifts?.map((row: { id: string }) => row.id)]).toEqual([
         200,
@@ -446,7 +458,7 @@ medusaIntegrationTestRunner({
       })
     })
 
-    it("a signed-in stranger on a courier and a batch with no owner on record is told nothing of their deliveries", async () => {
+    it("a signed-in stranger on a courier, a batch and a producer with no owner on record is told nothing their reads keep back", async () => {
       const pak = await createPublishableKeyToken(getContainer)
       const foodDistribution = getContainer().resolve(FOOD_DISTRIBUTION_MODULE)
       // One customer, who owns nothing here.
@@ -502,6 +514,67 @@ medusaIntegrationTestRunner({
       const direct = await safe(api.get(`/store/food-deliveries/${pending.id}`, stranger))
       expect([direct.status, direct.data]).toEqual([403, refusal])
 
+      // A shift on that courier. The stranger is refused its schedule on
+      // GET; a shift inside one it has answered 400 "Shift overlaps with
+      // existing shift" and one clear of it 201. One refusal now, and no
+      // shift booked.
+      await foodDistribution.createCourierShifts({
+        courier: unowned.id,
+        scheduled_start: new Date(SHIFT.scheduled_start),
+        scheduled_end: new Date(SHIFT.scheduled_end),
+        notes: "home by 5",
+      })
+      const schedule = await safe(api.get(`/store/couriers/${unowned.id}/shifts`, stranger))
+      expect([schedule.status, schedule.data]).toEqual([403, refusal])
+      for (const [what, window] of [
+        ["inside a shift", INSIDE_IT],
+        ["clear of every shift", CLEAR_OF_IT],
+      ] as const) {
+        const booked = await safe(api.post(`/store/couriers/${unowned.id}/shifts`, window, stranger))
+        expect([what, booked.status, booked.data]).toEqual([what, 403, refusal])
+      }
+      expect(await foodDistribution.listCourierShifts({ courier_id: unowned.id })).toHaveLength(1)
+
+      // A producer with no owner on record that hides its address (a
+      // cottage-food producer working from home). GET keeps the street lines
+      // and coordinates back; the stranger's empty PUT answered with them.
+      const DOORSTEP = {
+        hide_address: true,
+        address_line_1: "5 Hidden Home St",
+        address_line_2: "Rear flat",
+        city: "Springfield",
+        latitude: 41.5,
+        longitude: -87.25,
+      }
+      const doorstepOf = (answer: { data?: { producer?: Record<string, unknown> } }) =>
+        ["address_line_1", "address_line_2", "latitude", "longitude", "city"].map((field) => answer.data?.producer?.[field])
+      const homeKitchen = await producerFor(foodDistribution, DOORSTEP)
+      expect(homeKitchen.owner_id).toBeNull()
+      const served = await safe(api.get(`/store/food-producers/${homeKitchen.id}`, stranger))
+      expect([served.status, doorstepOf(served)]).toEqual([200, [null, null, null, null, "Springfield"]])
+      const acknowledged = await safe(api.put(`/store/food-producers/${homeKitchen.id}`, {}, stranger))
+      expect([acknowledged.status, doorstepOf(acknowledged)]).toEqual([200, [null, null, null, null, "Springfield"]])
+      // The coordinates are covered by the fields above; as text they could
+      // match a timestamp.
+      for (const value of ["Hidden Home", "Rear flat"]) {
+        expect([value, JSON.stringify(acknowledged.data).includes(value)]).toEqual([value, false])
+      }
+      // What GET serves, field for field (GET adds whether it is open now).
+      expect(Object.keys(acknowledged.data.producer).sort()).toEqual(
+        Object.keys(served.data.producer)
+          .filter((field) => field !== "is_currently_open")
+          .sort()
+      )
+      // The row was not what was kept back: it still holds the address.
+      expect((await foodDistribution.retrieveFoodProducer(homeKitchen.id)).address_line_1).toBe(DOORSTEP.address_line_1)
+      // The recorded owner of a producer is still echoed theirs whole.
+      const ownKitchen = await producerFor(foodDistribution, { ...DOORSTEP, owner_id: strangerId, owner_type: "customer" })
+      const ownProducerEcho = await safe(api.put(`/store/food-producers/${ownKitchen.id}`, {}, stranger))
+      expect([ownProducerEcho.status, doorstepOf(ownProducerEcho)]).toEqual([
+        200,
+        [DOORSTEP.address_line_1, DOORSTEP.address_line_2, DOORSTEP.latitude, DOORSTEP.longitude, "Springfield"],
+      ])
+
       // (iii) A batch with no owner on record, behind FF_PICK_PACK_V1. The
       // stranger is refused it on GET and its list is empty; the PUT echoed
       // the whole row, with the id of every delivery in the run.
@@ -553,6 +626,26 @@ medusaIntegrationTestRunner({
       expect((await foodDistribution.retrieveFoodDelivery(outside.id)).batch_sequence).toBeNull()
       expect((await foodDistribution.retrieveDeliveryBatch(run.id)).optimized_route).toEqual(ROUTE)
 
+      // Adding a delivery to it. The stranger is the recipient of one, so it
+      // may read that one and, by the interim rule, batch it. Added to this
+      // run it was answered `total_deliveries: 3` and read `batch_sequence`
+      // 3 back off its own delivery: how many deliveries a run it is refused
+      // holds. Refused now, and the delivery is left in no batch.
+      const theirs = await foodDistribution.createDeliveryForOrder(
+        (await homeOrder(foodDistribution, producer.id, { customer_id: strangerId })).id,
+        { pickup_address: "1 Kitchen Way", delivery_address: "2 Their Own Road", recipient_name: "Themself" }
+      )
+      const theirOwn = async () => {
+        const read = await safe(api.get(`/store/food-deliveries/${theirs.id}`, stranger))
+        return [read.status, read.data?.delivery?.batch_id, read.data?.delivery?.batch_sequence]
+      }
+      expect(await theirOwn()).toEqual([200, null, null])
+      const addedToRun = await safe(api.post(`/store/delivery-batches/${run.id}`, { delivery_ids: [theirs.id] }, stranger))
+      expect([addedToRun.status, addedToRun.data]).toEqual([403, refusal])
+      expect(await theirOwn()).toEqual([200, null, null])
+      expect((await foodDistribution.retrieveDeliveryBatch(run.id)).total_deliveries).toBe(2)
+      expect(await foodDistribution.listFoodDeliveries({ batch_id: run.id })).toHaveLength(2)
+
       // The batch's recorded owner is still echoed the row and still
       // sequences it.
       const mine = await foodDistribution.createDeliveryBatch([outside.id], undefined, undefined, undefined, {
@@ -569,6 +662,10 @@ medusaIntegrationTestRunner({
       expect([ownEcho.status, ownEcho.data?.batch?.owner_id, ownEcho.data?.batch?.notes]).toEqual([200, strangerId, "mine"])
       expect(ownEcho.data.batch.optimized_route).toEqual([{ delivery_id: outside.id, sequence: 4 }])
       expect((await foodDistribution.retrieveFoodDelivery(outside.id)).batch_sequence).toBe(4)
+      // And still adds to it, and is told its size.
+      const addedToOwn = await safe(api.post(`/store/delivery-batches/${mine.id}`, { delivery_ids: [theirs.id] }, stranger))
+      expect([addedToOwn.status, addedToOwn.data]).toEqual([200, { success: true, total_deliveries: 2 }])
+      expect(await theirOwn()).toEqual([200, mine.id, 2])
     })
   },
 })
