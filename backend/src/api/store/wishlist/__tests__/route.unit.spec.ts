@@ -1,3 +1,4 @@
+import type { MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
 import { GET, POST } from "../route"
 import { WISHLIST_MODULE } from "../../../../modules/wishlist"
@@ -53,6 +54,7 @@ function makeScope(saved: string[]) {
   return { scope, wishlists, graph }
 }
 
+/** A response that records what the handler sent; typed as Medusa's for the handlers. */
 const makeRes = () => {
   const res: { statusCode: number; body: any; status: (code: number) => any; json: (payload: unknown) => any } = {
     statusCode: 200,
@@ -66,7 +68,7 @@ const makeRes = () => {
       return res
     },
   }
-  return res
+  return res as unknown as MedusaResponse & { statusCode: number; body: any }
 }
 
 const makeReq = (scope: unknown, body?: unknown) =>
