@@ -35,11 +35,14 @@ jest.setTimeout(240 * 1000)
  * card form reads, for the amount the buyer is shown.
  *
  * The fourth is about that amount. Stripe charges what the session was opened
- * for, and only Medusa's own cart workflows keep that equal to the cart's
- * total. It changes a line item's price the way FBM's tier and wholesale
- * routes do (through the cart module) and holds the storefront's refusal
- * (`storefront/src/lib/helpers/card-charge.ts`, run here too) against the
- * cart the backend then serves.
+ * for, and only a cart workflow that ends in Medusa's payment refresh keeps
+ * that equal to the cart's total. It changes a line item's price through the
+ * cart module with nothing run afterwards, which is what FBM's tier and
+ * wholesale routes did until SD-115 (they now refresh the cart; that, and
+ * Mercur's shipping-method routes, are pinned in cart-payment-refresh.spec.ts),
+ * so here it stands for a writer nobody has found. It holds the storefront's
+ * refusal (`storefront/src/lib/helpers/card-charge.ts`, run here too) against
+ * the cart the backend then serves.
  *
  * What a buyer then sees for each id is the storefront's own spec:
  * `storefront/src/components/sections/__tests__/checkout-card-payment.test.tsx`.
@@ -275,8 +278,8 @@ medusaIntegrationTestRunner({
       const { cart, item, openSession, readCart, createIntent, updateIntent, cancelIntent } = await cartInACardRegion()
       expect((await openSession()).status).toBe(200)
 
-      // What POST /store/carts/:id/tier and /wholesale do to reprice a line:
-      // a cart module write, with no workflow after it.
+      // A cart module write with no workflow after it: how POST
+      // /store/carts/:id/tier and /wholesale repriced a line before SD-115.
       await getContainer().resolve(Modules.CART).updateLineItems(item.id, { unit_price: 12.99, is_custom_price: true })
 
       const stale = await readCart()
@@ -304,9 +307,9 @@ medusaIntegrationTestRunner({
       expect(createIntent.mock.calls[1][0]).toMatchObject({ amount: 5997 })
       expect(storefront!.cardChargeMatchesCartTotal(repicked.payment_collection.payment_sessions[0], repicked)).toBe(false)
 
-      // What Medusa's cart workflows run after a change of total, and those
-      // two routes do not: the collection takes the new amount and the
-      // session for the old one is deleted, its intent cancelled.
+      // What Medusa's cart workflows run after a change of total, and this
+      // write did not: the collection takes the new amount and the session
+      // for the old one is deleted, its intent cancelled.
       const cancelledBefore = cancelIntent.mock.calls.length
       await refreshPaymentCollectionForCartWorkflow(getContainer()).run({ input: { cart_id: cart.id } })
       const refreshed = await readCart()
