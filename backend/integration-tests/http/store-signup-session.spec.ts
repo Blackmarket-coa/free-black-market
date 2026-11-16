@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { Modules } from "@medusajs/framework/utils"
+import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { REQUEST_MODULE } from "../../src/modules/request"
 import { createPublishableKeyToken } from "./_publishable-key"
 
@@ -267,30 +268,34 @@ medusaIntegrationTestRunner({
       // What POST /auth/seller/register-request files for whatever login the
       // email in its body names, with no token.
       const requests = container().resolve(REQUEST_MODULE)
-      const [filed] = await requests.createRequests([
+      const filed = await requests.createRequests([
         {
           type: "seller",
           submitter_id: shopper.authIdentityId,
           data: { member: { name: "Mallory", email: shopper.email } },
           status: "pending",
         },
+        // The older name for the same application, refused earlier.
+        { type: "seller_creation", submitter_id: shopper.authIdentityId, data: {}, status: "rejected" },
       ])
 
       const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
       expect(deleted.data).toMatchObject({
         login_revoked: true,
         login_kept: false,
-        seller_requests_removed: 1,
+        seller_requests_removed: 2,
       })
       expect(await identityOf(shopper.authIdentityId)).toBeNull()
-      expect(await requests.listRequests({ id: [filed.id] })).toHaveLength(0)
+      expect(await requests.listRequests({ id: filed.map((r: any) => r.id) })).toHaveLength(0)
     })
 
-    it("deleting the shopper account of a vendor approved before its login got seller_id keeps the login", async () => {
+    it("deleting the shopper account of a vendor team member whose login never got seller_id keeps the login", async () => {
       const shopper = await shopperOnLogin()
-      await container()
-        .resolve(REQUEST_MODULE)
-        .createRequests([{ type: "seller", submitter_id: shopper.authIdentityId, data: {}, status: "accepted" }])
+      // What approval leaves behind for vendors whose login was not linked: a
+      // member row with the applicant's email (here in another case).
+      const sellers = container().resolve(SELLER_MODULE)
+      const [seller] = await sellers.createSellers([{ name: "Spec Farm", handle: `spec-farm-${uid()}` }])
+      await sellers.createMembers([{ seller_id: seller.id, name: "Owner", email: shopper.email.toUpperCase() }])
 
       const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
       expect(deleted.data).toMatchObject({ login_revoked: false, login_kept: true, profile_unlinked: true })
@@ -300,8 +305,8 @@ medusaIntegrationTestRunner({
 
     it("when the check cannot be made, nothing changes and the person is asked to retry", async () => {
       const shopper = await shopperOnLogin()
-      const requests = container().resolve(REQUEST_MODULE)
-      const failing = jest.spyOn(requests, "listRequests").mockRejectedValueOnce(new Error("db down"))
+      const auth = container().resolve(Modules.AUTH)
+      const failing = jest.spyOn(auth, "listAuthIdentities").mockRejectedValueOnce(new Error("db down"))
       try {
         const refused = await call(api.post("/store/customers/me/deletion", {}, headers(shopper.token)))
         expect(refused.status).toBe(503)

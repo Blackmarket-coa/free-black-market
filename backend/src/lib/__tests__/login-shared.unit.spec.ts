@@ -1,6 +1,6 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../../modules/request"
-import { inspectLogin, removePendingSellerRequests } from "../login-shared"
+import { inspectLogin, removeSellerApplications } from "../login-shared"
 
 type Identity = Record<string, unknown> | undefined
 
@@ -9,9 +9,7 @@ function makeContainer(
   opts: { approved?: unknown[]; pending?: Array<{ id: string }>; members?: unknown[] } = {}
 ) {
   const listAuthIdentities = jest.fn().mockResolvedValue(identity ? [identity] : [])
-  const listRequests = jest.fn().mockImplementation(async (filters: { status: unknown }) =>
-    Array.isArray(filters.status) ? opts.approved ?? [] : opts.pending ?? []
-  )
+  const listRequests = jest.fn().mockResolvedValue(opts.pending ?? [])
   const deleteRequests = jest.fn().mockResolvedValue(undefined)
   const graph = jest.fn().mockResolvedValue({ data: opts.members ?? [] })
   const container = {
@@ -55,20 +53,13 @@ describe("inspectLogin", () => {
     await expect(inspectLogin(container, "authid_1")).resolves.toMatchObject({ keep: null })
   })
 
-  it("does not keep a login for a pending vendor application: anyone can file one by email", async () => {
-    const { container, listRequests } = makeContainer(shopperLogin(), { pending: [{ id: "req_1" }] })
+  it("does not look at vendor applications at all: anyone can file one by email, and an approved one outlives the vendor", async () => {
+    const { container, listRequests } = makeContainer(shopperLogin(), {
+      pending: [{ id: "req_1" }],
+      approved: [{ id: "req_2" }],
+    })
     await expect(inspectLogin(container, "authid_1")).resolves.toMatchObject({ keep: null })
-    // Only approved applications are asked about, by auth and provider identity.
-    expect(listRequests).toHaveBeenCalledWith(
-      { type: "seller", submitter_id: ["authid_1", "pi_1"], status: ["accepted", "completed"] },
-      { take: 1 }
-    )
-  })
-
-  it("keeps the login of a vendor approved before its login was given seller_id", async () => {
-    const { container } = makeContainer(shopperLogin(), { approved: [{ id: "req_1" }] })
-    const use = await inspectLogin(container, "authid_1")
-    expect(use.keep).toMatch(/approved vendor application/)
+    expect(listRequests).not.toHaveBeenCalled()
   })
 
   it("keeps the login of a vendor team member with the same email, matched exactly and ignoring case", async () => {
@@ -105,29 +96,29 @@ describe("inspectLogin", () => {
   })
 
   it("lets a check that fails throw, so the route can stop before writing anything", async () => {
-    const { container, listRequests } = makeContainer(shopperLogin())
-    listRequests.mockRejectedValueOnce(new Error("db down"))
+    const { container, graph } = makeContainer(shopperLogin())
+    graph.mockRejectedValueOnce(new Error("db down"))
     await expect(inspectLogin(container, "authid_1")).rejects.toThrow("db down")
   })
 })
 
-describe("removePendingSellerRequests", () => {
-  it("deletes the pending vendor applications made with the login", async () => {
+describe("removeSellerApplications", () => {
+  it("deletes the vendor applications made with the login that never became a vendor, under both type names", async () => {
     const { container, listRequests, deleteRequests } = makeContainer(shopperLogin(), {
       pending: [{ id: "req_1" }, { id: "req_2" }],
     })
-    await expect(removePendingSellerRequests(container, ["authid_1", "pi_1"])).resolves.toBe(2)
+    await expect(removeSellerApplications(container, ["authid_1", "pi_1"])).resolves.toBe(2)
     expect(listRequests).toHaveBeenCalledWith({
-      type: "seller",
+      type: ["seller", "seller_creation"],
       submitter_id: ["authid_1", "pi_1"],
-      status: "pending",
+      status: ["pending", "rejected", "cancelled"],
     })
     expect(deleteRequests).toHaveBeenCalledWith(["req_1", "req_2"])
   })
 
   it("deletes nothing when there are none", async () => {
     const { container, deleteRequests } = makeContainer(shopperLogin())
-    await expect(removePendingSellerRequests(container, ["authid_1"])).resolves.toBe(0)
+    await expect(removeSellerApplications(container, ["authid_1"])).resolves.toBe(0)
     expect(deleteRequests).not.toHaveBeenCalled()
   })
 })

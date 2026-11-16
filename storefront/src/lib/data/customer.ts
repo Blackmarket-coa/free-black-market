@@ -538,6 +538,15 @@ export async function deleteCustomerAccount(): Promise<
     })
   } catch (error) {
     logger.error("deleteCustomerAccount failed:", error)
+    // 503: the backend stopped before changing anything (it could not tell
+    // whether the login is shared), so trying again is the right advice.
+    if (getErrorStatus(error) === 503) {
+      return {
+        success: false,
+        error:
+          "We couldn't process the deletion just now. Nothing was changed; please try again in a few minutes.",
+      }
+    }
     return {
       success: false,
       error: "Could not delete your account. Please contact support.",

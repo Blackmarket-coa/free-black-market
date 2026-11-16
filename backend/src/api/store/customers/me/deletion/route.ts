@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { createLogger } from "../../../../../shared/logger"
 import { eraseCustomerAcrossRegistry } from "../../../../../lib/customer-erasure"
-import { inspectLogin, removePendingSellerRequests, type LoginUse } from "../../../../../lib/login-shared"
+import { inspectLogin, removeSellerApplications, type LoginUse } from "../../../../../lib/login-shared"
 
 const log = createLogger("api/store/customers/me/deletion")
 
@@ -14,7 +14,8 @@ const log = createLogger("api/store/customers/me/deletion")
  *  - anonymises the customer record (email / name / phone / company),
  *  - revokes the auth identity so the account can no longer sign in, and
  *    deletes the old password hashes kept against it (through the registry),
- *    along with any pending vendor application made with it,
+ *    along with any vendor application made with it that never became a
+ *    vendor (pending, rejected, cancelled),
  *  - unless that sign-in identity is shared: a vendor or a staff member signs
  *    in with the same email and password (lib/login-shared.ts says which facts
  *    count). Then the profile is unlinked from the login, as Medusa's own
@@ -128,14 +129,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const authModule = req.scope.resolve(Modules.AUTH)
     if (!loginKeptReason) {
       try {
-        sellerRequestsRemoved = await removePendingSellerRequests(
+        sellerRequestsRemoved = await removeSellerApplications(
           req.scope,
           loginUse?.submitterIds ?? [authIdentityId]
         )
       } catch (err) {
         sellerRequestsFailed = true
         log.warn(
-          `deletion: removing pending vendor applications failed for ${customerId}: ${(err as Error).message}`
+          `deletion: removing vendor applications failed for ${customerId}: ${(err as Error).message}`
         )
       }
       try {

@@ -2,6 +2,7 @@ import { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../modules/request"
 import { RequestStatus } from "../modules/request/models/request"
+import { REQUEST_TYPES } from "../modules/request/validators"
 
 /**
  * What else a shopper's sign-in identity is used for, decided before
@@ -19,12 +20,13 @@ import { RequestStatus } from "../modules/request/models/request"
  * not: POST /auth/seller/register-request (api/shared/seller-registration.ts)
  * files one for whatever login the email in its body names, with no token, so
  * anyone who knows a shopper's email could otherwise keep that shopper's login
- * from ever being deleted. An approved application (FBM approves on the email
- * owner's verification, or an admin does), or a vendor member row with the
- * login's email (made at approval or by accepting an emailed invite), does
- * count: approved vendors whose login was never given `seller_id` exist
- * (shared/seller-registration.ts writes it lazily; /admin/backfill-seller-auth
- * is for them), and their `app_metadata` is empty.
+ * from ever being deleted (SD-127). A vendor member row with the login's email
+ * does count: it is made at approval (on the email owner's verification, or by
+ * an admin) or by accepting an emailed invite, and it covers approved vendors
+ * whose login was never given `seller_id` (shared/seller-registration.ts
+ * writes it lazily; /admin/backfill-seller-auth is for them). An approved
+ * application on its own is not counted: it outlives the vendor, and the
+ * member row made by the same approval already covers that vendor.
  */
 export type LoginUse = {
   /** Why the login must outlive the shopper profile, or null. */
@@ -32,6 +34,9 @@ export type LoginUse = {
   /** The ids a seller request may name this login by. */
   submitterIds: string[]
 }
+
+/** Both names a vendor application has had (validators.ts keeps the alias). */
+const SELLER_REQUEST_TYPES = [REQUEST_TYPES.SELLER, REQUEST_TYPES.SELLER_CREATION]
 
 type RequestService = {
   listRequests: (
@@ -89,19 +94,6 @@ export async function inspectLogin(
     return { keep: `the login is also linked as ${otherActor[0]}`, submitterIds }
   }
 
-  const requestService = container.resolve(REQUEST_MODULE) as RequestService
-  const approved = await requestService.listRequests(
-    {
-      type: "seller",
-      submitter_id: submitterIds,
-      status: [RequestStatus.ACCEPTED, RequestStatus.COMPLETED],
-    },
-    { take: 1 }
-  )
-  if (approved.length > 0) {
-    return { keep: "an approved vendor application was made with this login", submitterIds }
-  }
-
   const emails = providers
     .filter((p) => p.provider === "emailpass" && p.entity_id)
     .map((p) => p.entity_id as string)
@@ -121,21 +113,23 @@ export async function inspectLogin(
 }
 
 /**
- * Delete the pending vendor applications made with a login that is being
- * revoked: they name the person, and one may have been filed in their name by
- * someone else. A real applicant can apply again.
+ * Delete the vendor applications made with a login that is being revoked and
+ * that never became a vendor (pending, rejected or cancelled): they name the
+ * person, and one may have been filed in their name by someone else (SD-127).
+ * A real applicant can apply again. Approved ones stay: they are the record of
+ * a vendor that exists.
  */
-export async function removePendingSellerRequests(
+export async function removeSellerApplications(
   container: MedusaContainer,
   submitterIds: string[]
 ): Promise<number> {
   const requestService = container.resolve(REQUEST_MODULE) as RequestService
-  const pending = await requestService.listRequests({
-    type: "seller",
+  const unapproved = await requestService.listRequests({
+    type: SELLER_REQUEST_TYPES,
     submitter_id: submitterIds,
-    status: RequestStatus.PENDING,
+    status: [RequestStatus.PENDING, RequestStatus.REJECTED, RequestStatus.CANCELLED],
   })
-  if (pending.length === 0) return 0
-  await requestService.deleteRequests(pending.map((r) => r.id))
-  return pending.length
+  if (unapproved.length === 0) return 0
+  await requestService.deleteRequests(unapproved.map((r) => r.id))
+  return unapproved.length
 }

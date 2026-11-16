@@ -67,6 +67,7 @@ vi.mock("@/lib/logger", () => ({
 
 import {
   addCustomerAddress,
+  deleteCustomerAccount,
   deleteCustomerAddress,
   login,
   retrieveCustomer,
@@ -561,5 +562,32 @@ describe("password reset", () => {
       success: false,
       error: "pw fail",
     })
+  })
+})
+
+describe("deleteCustomerAccount", () => {
+  it("tells the buyer to try again when the backend changed nothing (503)", async () => {
+    h.medusaFetch.mockRejectedValue({ status: 503 })
+    const res = await deleteCustomerAccount()
+    expect(res).toEqual({
+      success: false,
+      error: expect.stringMatching(/Nothing was changed; please try again/),
+    })
+    expect(h.removeAuthToken).not.toHaveBeenCalled()
+  })
+
+  it("points at support for any other failure", async () => {
+    h.medusaFetch.mockRejectedValue({ status: 500 })
+    await expect(deleteCustomerAccount()).resolves.toEqual({
+      success: false,
+      error: "Could not delete your account. Please contact support.",
+    })
+  })
+
+  it("signs the buyer out after a deletion", async () => {
+    h.medusaFetch.mockResolvedValue({ deleted: true })
+    h.authLogout.mockResolvedValue(undefined)
+    await expect(deleteCustomerAccount()).resolves.toEqual({ success: true })
+    expect(h.removeAuthToken).toHaveBeenCalled()
   })
 })
