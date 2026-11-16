@@ -16,6 +16,7 @@ import {
   isCartPaymentAmountRefusal,
   judgeCartPaymentAmount,
   minorUnitDigits,
+  paymentsLeftWithoutSession,
   sessionsNotForCartTotal,
   toMinorUnits,
 } from "../cart-payment-amount"
@@ -233,6 +234,85 @@ describe("sessionsNotForCartTotal: what is deleted so that the next session is t
     expect(sessionsNotForCartTotal(cart({ total: 36 }, [{ amount: 32, status: "canceled" }]))).toEqual([])
     // A session with no id cannot be named.
     expect(sessionsNotForCartTotal(cart({ total: 36 }, [{ id: null, amount: 32 }]))).toEqual([])
+  })
+})
+
+describe("paymentsLeftWithoutSession: the payments no completion can use and a capture would still take", () => {
+  type Payment = { id?: string | null; payment_session_id?: string | null; captured_at?: unknown; canceled_at?: unknown }
+  const withPayments = (sessionIds: Array<string | null> | null | undefined, payments: Array<Payment | null> | null | undefined, overrides: Partial<CartPaymentAmounts> = {}) =>
+    ({
+      id: "cart_1",
+      completed_at: null,
+      total: 36,
+      currency_code: "usd",
+      payment_collection: {
+        payment_sessions: sessionIds === null || sessionIds === undefined ? sessionIds : sessionIds.map((id) => (id === null ? null : { id, amount: 36, status: "pending" })),
+        payments,
+      },
+      ...overrides,
+    }) as CartPaymentAmounts
+
+  it("names a payment whose session is gone and that captured nothing, saying whether Medusa already cancelled it", () => {
+    // The authorized session for 32 was deleted (its intent cancelled) and
+    // the row stayed; and what a failed completion's compensation leaves once
+    // the next session replaced the old one: cancelled, session gone.
+    const cart = withPayments(
+      ["payses_new"],
+      [
+        { id: "pay_live_orphan", payment_session_id: "payses_deleted", captured_at: null, canceled_at: null },
+        { id: "pay_compensated", payment_session_id: "payses_replaced", captured_at: null, canceled_at: new Date() },
+      ]
+    )
+    expect(paymentsLeftWithoutSession(cart)).toEqual([
+      { id: "pay_live_orphan", canceled: false },
+      { id: "pay_compensated", canceled: true },
+    ])
+  })
+
+  it("leaves a payment whose session is still on the collection, whatever its state: that session is the one a completion would use", () => {
+    const cart = withPayments(
+      ["payses_held", "payses_compensated"],
+      [
+        { id: "pay_held", payment_session_id: "payses_held", captured_at: null, canceled_at: null },
+        { id: "pay_compensated", payment_session_id: "payses_compensated", captured_at: null, canceled_at: new Date() },
+      ]
+    )
+    expect(paymentsLeftWithoutSession(cart)).toEqual([])
+  })
+
+  it("never names a payment that captured: its money needs a refund, not a cancel", () => {
+    const cart = withPayments([], [{ id: "pay_taken", payment_session_id: "payses_deleted", captured_at: new Date(), canceled_at: null }])
+    expect(paymentsLeftWithoutSession(cart)).toEqual([])
+  })
+
+  it("never names a payment that names no session, or a row with no id: neither was left by a deleted session", () => {
+    const cart = withPayments(
+      [],
+      [{ id: "pay_bookkeeping", payment_session_id: null, captured_at: null }, { id: "", payment_session_id: "payses_deleted" }, { payment_session_id: "payses_deleted" }, null]
+    )
+    expect(paymentsLeftWithoutSession(cart)).toEqual([])
+  })
+
+  it("names nothing on a completed cart: its payments are its order's", () => {
+    const cart = withPayments([], [{ id: "pay_1", payment_session_id: "payses_deleted" }], { completed_at: new Date() })
+    expect(paymentsLeftWithoutSession(cart)).toEqual([])
+  })
+
+  it("names nothing when the sessions were not read: with no list of the sessions that remain, every payment would look orphaned", () => {
+    const orphan = [{ id: "pay_1", payment_session_id: "payses_1" }]
+    expect(paymentsLeftWithoutSession(withPayments(undefined, orphan))).toEqual([])
+    expect(paymentsLeftWithoutSession(withPayments(null, orphan))).toEqual([])
+    expect(paymentsLeftWithoutSession({ ...withPayments([], orphan), payment_collection: null })).toEqual([])
+  })
+
+  it("names nothing when the payments were not read", () => {
+    expect(paymentsLeftWithoutSession(withPayments([], undefined))).toEqual([])
+    expect(paymentsLeftWithoutSession(withPayments([], null))).toEqual([])
+  })
+
+  it("does not depend on the amounts: a payment without its session is unusable for any total, the right one included", () => {
+    const cart = withPayments([null], [{ id: "pay_1", payment_session_id: "payses_deleted" }], { total: null, currency_code: "xxx" })
+    expect(paymentsLeftWithoutSession(cart)).toEqual([{ id: "pay_1", canceled: false }])
   })
 })
 
