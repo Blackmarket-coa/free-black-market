@@ -877,6 +877,8 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     expect(res.statusCode).toBe(200)
     expect(service.recordProofOfDelivery).toHaveBeenCalledWith("fd_1", "PIN_CODE", expect.anything())
     expect(res.body.delivery).not.toHaveProperty("proof_pin_code")
+    // The PIN is the one thing the courier does not hold, so it alone is proof.
+    expect(res.body.message).toBe("Delivery completed with PIN_CODE proof")
   })
 
   it.each([
@@ -905,8 +907,14 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
       }
 
       const met = proof(COURIER, { proof_type: type, ...evidence }, required)
-      expect((await call(submitProof, met.req)).statusCode).toBe(200)
+      const accepted = await call(submitProof, met.req)
+      expect(accepted.statusCode).toBe(200)
       expect(met.service.recordProofOfDelivery).toHaveBeenCalledWith("fd_1", type, expect.anything())
+      // Accepted as what it is: the success message does not call the
+      // courier's own file or typed name proof either. It used to read
+      // "Proof of delivery recorded successfully" for every type.
+      expect(accepted.body.message).toBe(`Delivery completed with ${type} (courier-attested)`)
+      expect(String(accepted.body.message)).not.toMatch(/proof/i)
     }
   )
 

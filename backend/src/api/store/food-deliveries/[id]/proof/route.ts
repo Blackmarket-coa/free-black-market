@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
 import {
+  deliveryCompletedDescription,
   proofOfDeliveryError,
   retrieveDeliveryOrNull,
 } from "../../../../../modules/food-distribution/proof-of-delivery"
@@ -41,7 +42,10 @@ const proofOfDeliverySchema = z.object({
 // (`proofOfDeliveryError`); before this, submitting PHOTO skipped the PIN.
 // Only the PIN is proof the courier cannot make up: PHOTO and SIGNATURE (a
 // file in this platform's storage) and RECIPIENT_CONFIRMATION (a typed name)
-// are the courier's attestation, accepted as such and not verified.
+// are the courier's attestation, accepted as such and not verified. The 200
+// says so too (`deliveryCompletedDescription`, the same text as the saved
+// delivery event); it used to read "Proof of delivery recorded successfully"
+// whatever the type.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -89,7 +93,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     
     res.json({ 
       delivery: redactDelivery(updatedDelivery as unknown as Record<string, unknown>),
-      message: "Proof of delivery recorded successfully",
+      message: deliveryCompletedDescription(data.proof_type),
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

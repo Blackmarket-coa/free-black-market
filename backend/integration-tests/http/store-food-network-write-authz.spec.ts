@@ -88,6 +88,15 @@ medusaIntegrationTestRunner({
           ordered_at: new Date(),
           status: FoodOrderStatus.PENDING,
         })
+      // The completion events a delivery's producer reads back from
+      // GET /store/food-deliveries/:id (the saved rows, as served).
+      const completionEvents = async (deliveryId: string) => {
+        const read = await safe(api.get(`/store/food-deliveries/${deliveryId}`, producerOwner.headers))
+        expect(read.status).toBe(200)
+        return (read.data.delivery.events as Array<{ event_type: string; description: string | null }>)
+          .filter((event) => event.event_type === "proof_of_delivery")
+          .map((event) => event.description)
+      }
 
       // A pending trade is settled by its producer, not by whoever asks first.
       const trade = await order(TransactionType.TRADE)
@@ -193,6 +202,11 @@ medusaIntegrationTestRunner({
       expect(delivered.status).toBe(200)
       expect(delivered.data.delivery).not.toHaveProperty("proof_pin_code")
       expect((await foodDistribution.retrieveFoodDelivery(deliveryId)).status).toBe("DELIVERED")
+      // The PIN is the one thing the courier does not hold, so only it is
+      // called proof, in the 200 and in the saved event the delivery's
+      // principals read back.
+      expect(delivered.data.message).toBe("Delivery completed with PIN_CODE proof")
+      expect(await completionEvents(deliveryId)).toEqual(["Delivery completed with PIN_CODE proof"])
 
       // A PHOTO requirement is met by a file on the platform's storage, and
       // by nothing less. Courier-attested: the URL says where the file is,
@@ -239,6 +253,17 @@ medusaIntegrationTestRunner({
         "PHOTO",
         photoUrl,
       ])
+      // Accepted as the courier's attestation, and recorded as one: neither
+      // the 200 nor the saved delivery event, which GET serves to the
+      // producer and the recipient, calls the courier's own file proof. Both
+      // used to ("Proof of delivery recorded successfully", "Delivery
+      // completed with PHOTO proof").
+      expect(photoDelivered.data.message).toBe("Delivery completed with PHOTO (courier-attested)")
+      const photoEvents = await completionEvents(photoId)
+      expect(photoEvents).toEqual(["Delivery completed with PHOTO (courier-attested)"])
+      for (const text of [photoDelivered.data.message, ...photoEvents]) {
+        expect(String(text)).not.toMatch(/proof/i)
+      }
 
       // The PIN guess budget (5 per 15 minutes per courier per delivery) is
       // keyed on the delivery the handler looks up. It was keyed on the raw

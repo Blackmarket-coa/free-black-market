@@ -75,6 +75,20 @@ export function proofRequirementLabel(proofType: string | null | undefined): str
   return String(proofType)
 }
 
+/**
+ * What a closed delivery says about how it was closed: the delivery event
+ * `recordProofOfDelivery` saves (served by `GET /store/food-deliveries/:id`
+ * to the producer, courier and recipient) and the `/proof` 200 message. Built
+ * from `proofRequirementLabel`, so it calls PIN_CODE proof and names the other
+ * three as courier-attested. It used to read "Delivery completed with PHOTO
+ * proof" (and SIGNATURE, RECIPIENT_CONFIRMATION) beside a 200 of "Proof of
+ * delivery recorded successfully", after the refusals had stopped calling
+ * those proof.
+ */
+export function deliveryCompletedDescription(proofType: string | null | undefined): string {
+  return `Delivery completed with ${proofRequirementLabel(proofType)}`
+}
+
 function samePin(expected: string, submitted: string): boolean {
   const a = Buffer.from(expected, "utf8")
   const b = Buffer.from(submitted, "utf8")

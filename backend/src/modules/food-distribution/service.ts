@@ -15,6 +15,7 @@ import {
 import { CourierStatus } from "./models/courier"
 import { OperatingStatus } from "./models/food-producer"
 import { DeliveryStatus } from "./models/delivery"
+import { deliveryCompletedDescription } from "./proof-of-delivery"
 
 /**
  * FoodDistributionService
@@ -378,11 +379,12 @@ class FoodDistributionService extends MedusaService({
       delivered_at: new Date(),
     })
     
-    // Log event
+    // Log event. Only PIN_CODE is called proof: PHOTO, SIGNATURE and
+    // RECIPIENT_CONFIRMATION are the courier's attestation (proof-of-delivery.ts).
     await this.logDeliveryEvent(deliveryId, {
       event_type: "proof_of_delivery",
       new_status: DeliveryStatus.DELIVERED,
-      description: `Delivery completed with ${proofType} proof`,
+      description: deliveryCompletedDescription(proofType),
     })
     
     // Free up courier
