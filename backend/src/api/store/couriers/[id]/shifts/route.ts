@@ -106,6 +106,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // POST /couriers/:id/shifts
+//
+// A shift is put on a courier by an owner on record. `actorMayManage` lets
+// any signed-in account act on a courier with no `owner_id` (grandfathered),
+// and this verb checks the new shift against the ones already there: 400
+// "Shift overlaps with existing shift" against 201 told that account when
+// the courier is out, which the GET above keeps for the owner (seen on
+// Postgres, SD-110 follow-up). There is no way to make the write and not
+// say which, short of booking two shifts over each other, so the write is
+// refused, before the schedule is read. Same rule as the claim in
+// `../route.ts`.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -125,6 +135,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!actorMayManage(req, (courier as any).owner_id)) {
       res.status(403).json({ message: "This courier is not yours to manage" })
       return
+    }
+    // No grandfathering here: see the note above this handler.
+    if (!actorOwnsResource(req, (courier as { owner_id?: string | null }).owner_id)) {
+      return forbidden(res)
     }
 
     // Validate times

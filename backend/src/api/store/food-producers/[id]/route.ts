@@ -3,7 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../modules/food-distribution/models/food-producer"
-import { actorMayManage } from "../../../../shared/actor-scope"
+import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
 import { applyProducerAddressPrivacy } from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
@@ -103,6 +103,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // PUT /food-producers/:id
+//
+// The row is echoed whole to the producer's recorded owner only. The GET
+// above keeps a producer's street lines and coordinates back when
+// `hide_address` is set (a cottage-food producer working from home), for
+// every caller. This echo did not, and `actorMayManage` lets any signed-in
+// account write a producer with no owner on record (grandfathered): an empty
+// PUT from such an account answered with the address the GET had just kept
+// from it (seen on Postgres, SD-110 follow-up). `hide_address` is not in the
+// update schema, so the echo was that account's only way to it. A write let
+// through on an unknown owner is acknowledged with what the GET serves, as
+// the courier PUT acknowledges one with the public projection.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -129,7 +140,12 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       ...data,
     } as any)
     
-    res.json({ producer })
+    const updated = producer as unknown as Record<string, unknown>
+    res.json({
+      producer: actorOwnsResource(req, (existing as { owner_id?: string | null }).owner_id)
+        ? updated
+        : applyProducerAddressPrivacy(updated),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

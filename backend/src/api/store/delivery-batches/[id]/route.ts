@@ -131,10 +131,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 //   - naming their own courier made them a reader of the run. A courier is
 //     assigned by the recorded owner only.
 // Those three are reads, and a read takes the strict rule whatever is ruled
-// about writes. What is left open on such a batch is a write that tells its
-// caller nothing: status and notes here, and DELETE below. Whether a row
-// with no owner stays writable by any signed-in account is the operator's
-// ruling, for couriers and producers as for batches, and is not made here.
+// about writes; adding a delivery (POST below) is a fourth. What is left open
+// on such a batch is status and notes here, answered with `{ id, status }`,
+// and DELETE below, answered with `{ success, id }` or a 400 that it is in
+// progress: its status, and nothing of what it holds. Whether a row with no
+// owner stays writable by any signed-in account is the operator's ruling,
+// for couriers and producers as for batches, and is not made here.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -222,6 +224,16 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 // already read, a missing one refused as someone else's is, and nothing is
 // written until every delivery named has passed (the loop used to write each
 // delivery before it looked at the next).
+//
+// And only by the batch's recorded owner. On a batch with no owner on record
+// any signed-in account with one delivery of its own to add (a recipient has
+// one) was told how many deliveries the run holds, twice: in
+// `total_deliveries` here, and in the `batch_sequence` written onto its own
+// delivery, which it reads back through `GET /store/food-deliveries/:id`
+// (seen on Postgres, SD-110 follow-up: a batch of three, the answer 4 and
+// the sequence 4, and the GET of that batch 403). Leaving the total out of
+// the answer would not have closed it, so the write is the recorded owner's,
+// like a route entry and a courier in PUT above.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -233,7 +245,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
     const batch = await nullIfNotFound(foodDistribution.retrieveDeliveryBatch(id))
-    if (!batch || !actorMayManage(req, (batch as { owner_id?: string | null }).owner_id)) {
+    // `actorOwnsResource`, not `actorMayManage`: see the note above.
+    if (!batch || !actorOwnsResource(req, (batch as { owner_id?: string | null }).owner_id)) {
       return forbidden(res)
     }
 
@@ -289,8 +302,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 //
 // Still open to any signed-in account on a batch with no owner on record
 // (`actorMayManage`): it cancels the batch and takes its deliveries out of
-// it. The answer is `{ success, id }` and says nothing about them, so this
-// is a write on an ownerless row, which is the operator's ruling (see PUT).
+// it. The answer is `{ success, id }`, or a 400 that the batch is in progress
+// (its status, which the PUT acknowledgement also carries), and says nothing
+// about the deliveries, so this is a write on an ownerless row, which is the
+// operator's ruling (see PUT).
 // ===========================================
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
