@@ -72,6 +72,7 @@ import {
   optionalEmbedKey,
 } from "./middlewares/embed-key";
 import { installConnectStoreCorsHook } from "./middlewares/connect-cors";
+import { foodNetworkOwnerReadAuthMatchers } from "./middlewares/food-network-owner-read-auth";
 import {
   inventoryLedgerEventSchema,
   pickPackBatchSchema,
@@ -667,51 +668,11 @@ const communityWriteAuthMatchers = COMMUNITY_WRITE_PREFIXES.flatMap((prefix) => 
   },
 ])
 
-// ============================================================
-// Food-network reads that are scoped to an owner: know who is asking.
-//
-// The framework authenticates every /store route as a *customer*, optionally
-// (router.js: `authenticate("customer", [...], { allowUnauthenticated: true })`).
-// The matchers above admit a seller or a driver on the write verbs, so one can
-// register a courier, own a producer or plan a batch, and is then nobody on
-// GET: `auth_context` is unset, and every read below that is kept for the
-// record's owner refuses the seller or driver who owns it. Seen on Postgres
-// with a real seller token (SD-106): POST /store/couriers 201 with the
-// seller's actor id as `owner_id`, POST /store/couriers/:id/shifts 201, and
-// GET of the same shifts 403.
-//
-// Optional, like the framework's own: these prefixes also carry the public
-// catalogue reads (the courier and producer lists), which stay open to a
-// caller with no account. This identifies a caller and admits nobody. Every
-// GET handler under these prefixes that reads `auth_context` compares the
-// actor's id with the owner on record (`shared/community-read-access.ts`,
-// `actorOwnsResource`), so a seller or driver is served only what is theirs.
-// ============================================================
-const COMMUNITY_OWNER_READ_PREFIXES = [
-  "/store/food-producers",
-  "/store/couriers",
-  "/store/food-trades",
-  "/store/food-deliveries",
-  "/store/food-donations",
-  "/store/delivery-batches",
-]
-const communityOwnerReadAuthMatchers = COMMUNITY_OWNER_READ_PREFIXES.flatMap((prefix) =>
-  [prefix, `${prefix}/**`].map((matcher) => ({
-    matcher,
-    method: ["GET" as const],
-    middlewares: [
-      authenticate(COMMUNITY_WRITE_ACTORS, ["bearer", "session"], {
-        allowUnauthenticated: true,
-      }),
-    ],
-  }))
-)
-
 export default defineMiddlewares({
   routes: [
     ...communityWriteAuthMatchers,
     ...barePrefixAuthMiddlewareRoutes,
-    ...communityOwnerReadAuthMatchers,
+    ...foodNetworkOwnerReadAuthMatchers(COMMUNITY_WRITE_ACTORS),
     // ============================================================
     // GLOBAL: Strip 'q' parameter from all admin routes
     // ============================================================
