@@ -3,7 +3,9 @@ import { GET as workPartySignups } from "../work-parties/[id]/signups/route"
 import { GET as harvestClaims } from "../harvests/[id]/claims/route"
 import { GET as volunteerLogs } from "../volunteer-logs/route"
 import { GET as deliveryDetail } from "../food-deliveries/[id]/route"
+import { MedusaError } from "@medusajs/framework/utils"
 import { GET as deliveryTrack } from "../food-deliveries/[id]/track/route"
+import { GET as deliverySubscribe } from "../food-deliveries/[id]/subscribe/route"
 import { GET as batchDetail } from "../delivery-batches/[id]/route"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 
@@ -243,9 +245,20 @@ describe("deliveries — the enumerable-id pair", () => {
   // Keyed on the module's own registration constant rather than a literal:
   // the routes resolve with FOOD_DISTRIBUTION_MODULE, so a hand-typed key
   // silently misses and the mock never gets used.
-  const modules = (delivery: Record<string, unknown> | null) => ({
+  // A missing delivery is a thrown not-found, as the module's own retrieve
+  // answers it (seen on Postgres, store-food-network-write-authz.spec.ts),
+  // never a null. This mock used to return null, which the real service
+  // cannot: the "does not exist" case below passed on a branch no request
+  // reached, while the routes answered a missing id 404.
+  const modules = (delivery: Record<string, unknown> | null, failure?: Error) => ({
     [FOOD_DISTRIBUTION_MODULE]: {
-      retrieveFoodDelivery: jest.fn(async () => delivery),
+      retrieveFoodDelivery: jest.fn(async (id: string) => {
+        if (failure) throw failure
+        if (!delivery) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodDelivery with id: ${id} was not found`)
+        }
+        return delivery
+      }),
       listDeliveryEvents: jest.fn(async () => []),
       retrieveCourier: jest.fn(async () => null),
     },
@@ -310,12 +323,44 @@ describe("deliveries — the enumerable-id pair", () => {
   })
 
   it("refuses identically for a delivery that does not exist", async () => {
-    const res = createRes()
-    await deliveryTrack(
-      makeReq({ actorId: "cus_1", modules: modules(null), rows: {} }) as never,
-      res as never
+    // Detail, tracking and the SSE stream: the same code and body as for
+    // someone else's delivery, signed in or not.
+    const someoneElses = createRes()
+    await deliveryDetail(
+      makeReq({ actorId: "cus_stranger", modules: modules(DELIVERY), rows: {} }) as never,
+      someoneElses as never
     )
-    expect(res.statusCode).toBe(403)
+    expect(someoneElses.statusCode).toBe(403)
+
+    for (const read of [deliveryDetail, deliveryTrack, deliverySubscribe]) {
+      for (const actorId of ["cus_1", undefined]) {
+        const res = createRes()
+        await read(
+          makeReq({ actorId, modules: modules(null), rows: {} }) as never,
+          res as never
+        )
+        expect(res.statusCode).toBe(403)
+        expect(res.body).toEqual(someoneElses.body)
+      }
+    }
+  })
+
+  it("does not turn a failed lookup into a refusal", async () => {
+    // Only a not-found is "no such delivery". A database error is an error.
+    for (const read of [deliveryDetail, deliveryTrack, deliverySubscribe]) {
+      const res = createRes()
+      await expect(
+        read(
+          makeReq({
+            actorId: "cus_1",
+            modules: modules(DELIVERY, new Error("connection terminated")),
+            rows: {},
+          }) as never,
+          res as never
+        )
+      ).rejects.toThrow("connection terminated")
+      expect(res.statusCode).toBe(200)
+    }
   })
 })
 

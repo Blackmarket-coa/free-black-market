@@ -85,10 +85,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
-  const delivery = await foodDistribution.retrieveFoodDelivery(id)
-
   // Producer, courier or recipient only (D10-5). Same refusal for a missing
-  // delivery as for someone else's, because ids are enumerable.
+  // delivery as for someone else's, because ids are enumerable. The module's
+  // `retrieveFoodDelivery` throws a not-found instead of returning null, so
+  // read bare it answered a missing id 404 and someone else's 403, to
+  // callers with no account as well: `retrieveDeliveryOrNull` is what lets
+  // the `!delivery` below be reached.
+  const delivery = await retrieveDeliveryOrNull(foodDistribution, id)
   if (!delivery || !(await actorMayReadDelivery(req, delivery))) {
     return forbidden(res)
   }

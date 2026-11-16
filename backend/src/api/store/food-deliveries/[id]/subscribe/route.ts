@@ -7,6 +7,7 @@ const log = createLogger("api/store/food-deliveries/[id]/subscribe")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
+import { retrieveDeliveryOrNull } from "../../../../../modules/food-distribution/proof-of-delivery"
 
 /**
  * SSE Endpoint for real-time delivery tracking
@@ -21,8 +22,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   // Producer, courier or recipient only (D10-5). This one streams the
   // courier's position continuously, so an unauthenticated subscriber was not
-  // reading a location but following one.
-  const delivery = await foodDistribution.retrieveFoodDelivery(deliveryId)
+  // reading a location but following one. A delivery that does not exist is
+  // refused the same way (`retrieveDeliveryOrNull`: the bare retrieve threw,
+  // which answered 404).
+  const delivery = await retrieveDeliveryOrNull(foodDistribution, deliveryId)
   if (!delivery || !(await actorMayReadDelivery(req, delivery))) {
     return forbidden(res)
   }

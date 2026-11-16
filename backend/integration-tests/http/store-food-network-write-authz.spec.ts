@@ -14,7 +14,9 @@ jest.setTimeout(180 * 1000)
  * middleware stack: a pending trade is settled by its producer, a delivery is
  * attached to an order by that order's producer (once), only the assigned
  * courier writes the courier's position, and only that courier, with the PIN
- * on record, closes the delivery. Each was open to any signed-in account. The unit spec (`src/api/store/__tests__/community-write-authz.unit.spec.ts`)
+ * on record, closes the delivery. Each was open to any signed-in account. A
+ * delivery's reads refuse a missing id as they refuse someone else's (they
+ * answered 404 and 403). The unit spec (`src/api/store/__tests__/community-write-authz.unit.spec.ts`)
  * covers the same routes with a fake container; this one proves the guards
  * hold through `authenticate`, `actorOwnsProducer` / `actorOwnsCourier`'s real
  * lookups, and the `food_delivery` / `food_order` tables.
@@ -146,6 +148,34 @@ medusaIntegrationTestRunner({
       expect(tracked.status).toBe(200)
       const afterTrack = await foodDistribution.retrieveFoodDelivery(deliveryId)
       expect(afterTrack.last_known_latitude).toBeCloseTo(37.8)
+
+      // Reads are for the delivery's producer, courier and recipient, and a
+      // delivery that does not exist is refused exactly as someone else's
+      // is: same status, same body (`forbidden`). The three GETs read the
+      // delivery with a bare `retrieveFoodDelivery`, which throws a
+      // not-found instead of returning null, so a missing id answered 404
+      // and a real one 403. These reads need no sign-in to be attempted, so
+      // the pair of answers told anyone at all which delivery ids exist.
+      const missingId = `${deliveryId.slice(0, -1)}${deliveryId.endsWith("0") ? "1" : "0"}`
+      expect(await foodDistribution.listFoodDeliveries({ id: missingId })).toHaveLength(0)
+      const refusal = { message: "You do not have access to this record.", type: "not_allowed" }
+      const anonymous = { headers: { "x-publishable-api-key": pak } }
+      for (const read of ["", "/track", "/subscribe"]) {
+        for (const [who, caller] of [
+          ["stranger", stranger.headers],
+          ["anonymous", anonymous],
+        ] as const) {
+          const someoneElses = await safe(api.get(`/store/food-deliveries/${deliveryId}${read}`, caller))
+          const missing = await safe(api.get(`/store/food-deliveries/${missingId}${read}`, caller))
+          expect([read, who, someoneElses.status, someoneElses.data]).toEqual([read, who, 403, refusal])
+          expect([read, who, missing.status, missing.data]).toEqual([read, who, 403, refusal])
+        }
+      }
+      // Its own principals are still served, through the same lookup.
+      const producerTrack = await safe(api.get(`/store/food-deliveries/${deliveryId}/track`, producerOwner.headers))
+      expect([producerTrack.status, producerTrack.data?.delivery_id]).toEqual([200, deliveryId])
+      const courierDetail = await safe(api.get(`/store/food-deliveries/${deliveryId}`, courierOwner.headers))
+      expect([courierDetail.status, courierDetail.data?.delivery?.id]).toEqual([200, deliveryId])
 
       // Proof of delivery: the courier, with the PIN the delivery was created
       // with. Before the courier lookup read through the module, no courier
