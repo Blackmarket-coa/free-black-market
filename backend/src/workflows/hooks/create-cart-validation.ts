@@ -21,7 +21,7 @@ createCartWorkflow.hooks.validate(async ({ input }, { container }) => {
   const items = input.items ?? []
   if (!items.length) return
 
-  const variantIds = items.map((item) => item.variant_id).filter(Boolean) as string[]
+  const variantIds = [...new Set(items.map((item) => item.variant_id).filter(Boolean) as string[])]
   let variants: TicketRuleVariant[] = []
   if (variantIds.length) {
     const query = container.resolve(ContainerRegistrationKeys.QUERY)

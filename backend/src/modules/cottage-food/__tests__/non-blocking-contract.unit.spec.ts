@@ -26,10 +26,21 @@ const CART_VALIDATE_GUARDS = join(
   __dirname,
   "../../../workflows/hooks/complete-cart-guards.ts"
 )
-const ADD_TO_CART_HOOK = join(
-  __dirname,
-  "../../../workflows/hooks/add-to-cart-validation.ts"
-)
+const HOOKS_DIR = join(__dirname, "../../../workflows/hooks")
+// The workflows of the store's cart-line routes: create with items, add, update.
+const CART_LINE_WORKFLOW =
+  /\b(createCartWorkflow|addToCartWorkflow|updateLineItemInCartWorkflow)\b/
+// Every hook file that registers on one of them, and the rules they share.
+const CART_LINE_VALIDATORS = [
+  ...new Set([
+    ...readdirSync(HOOKS_DIR)
+      .filter((name) => name.endsWith(".ts"))
+      .filter((name) =>
+        CART_LINE_WORKFLOW.test(readFileSync(join(HOOKS_DIR, name), "utf8"))
+      ),
+    "ticket-line-rules.ts",
+  ]),
+]
 
 function walk(dir: string): string[] {
   const out: string[] = []
@@ -50,7 +61,7 @@ describe("cottage-food never blocks a sale", () => {
       const src = readFileSync(file, "utf8")
       return (
         /completeCartWorkflow/.test(src) ||
-        /addToCartWorkflow/.test(src) ||
+        CART_LINE_WORKFLOW.test(src) ||
         /hooks\.validate/.test(src)
       )
     })
@@ -65,9 +76,20 @@ describe("cottage-food never blocks a sale", () => {
     }
   })
 
-  it("is not referenced by the add-to-cart validator", () => {
-    const src = readFileSync(ADD_TO_CART_HOOK, "utf8")
-    expect(src).not.toMatch(/cottage/i)
+  it("is not referenced by any cart-line validator (create with items, add, update)", () => {
+    // The discovery above finds each route's hook, so it cannot pass on an empty list.
+    expect(CART_LINE_VALIDATORS).toEqual(
+      expect.arrayContaining([
+        "create-cart-validation.ts",
+        "add-to-cart-validation.ts",
+        "update-line-item-validation.ts",
+        "ticket-line-rules.ts",
+      ])
+    )
+    for (const name of CART_LINE_VALIDATORS) {
+      const src = readFileSync(join(HOOKS_DIR, name), "utf8")
+      expect(src).not.toMatch(/cottage/i)
+    }
   })
 
   it("never throws MedusaError from the module — advisories are prose, not faults", () => {
