@@ -16,7 +16,9 @@ const looksLikePlaceholderListing = (product: HttpTypes.StoreProduct) => {
 /**
  * A row of product cards.
  *
- * On the home page (`home`) it fetches and shows the newest products.
+ * On the home page (`home`) it fetches ten products itself, with the order it
+ * has always sent (`created_at`, which Medusa reads as oldest first, under a
+ * heading that says "newly added"; left as it was).
  * Elsewhere it shows the products it is given, which the caller has already
  * fetched from the listing: every card is rendered from a product
  * `GET /store/products` served, so it carries its price and its seller's

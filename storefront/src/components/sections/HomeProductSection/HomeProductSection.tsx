@@ -11,8 +11,8 @@ export const HomeProductSection = async ({
   locale?: string
   /**
    * The products to show, already fetched from the listing (the product
-   * page's "More from this seller"). Left out on the home page, which shows
-   * the newest products.
+   * page's "More from this seller"). Left out on the home page, where the
+   * row fetches its own.
    */
   products?: HttpTypes.StoreProduct[]
   home?: boolean

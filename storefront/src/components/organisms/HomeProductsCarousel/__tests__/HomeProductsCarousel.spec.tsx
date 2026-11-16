@@ -3,8 +3,8 @@ import React, { isValidElement, type ReactElement, type ReactNode } from "react"
 import type { HttpTypes } from "@medusajs/types"
 
 /**
- * The card row on its two pages. On the home page it fetches the newest
- * products itself; on a product page ("More from this seller") it renders the
+ * The card row on its two pages. On the home page it fetches ten products
+ * itself; on a product page ("More from this seller") it renders the
  * products it is handed and fetches nothing, so that a card can only ever be
  * a product the listing served.
  *
@@ -81,7 +81,10 @@ describe("HomeProductsCarousel", () => {
   })
 
   describe("on the home page", () => {
-    it("fetches the ten newest products and renders a card for each", async () => {
+    // `order: "created_at"` is what the home page has always sent. Medusa
+    // reads it as oldest first, under a heading that says "newly added";
+    // pinned as it is, not as it should be.
+    it("fetches ten products with the order it has always sent, and renders a card for each", async () => {
       h.medusaFetch.mockResolvedValue({ products: [listed("sweet-corn"), listed("basil")], count: 2 })
 
       const row = await HomeProductsCarousel({ locale: "us", sellerProducts: [], home: true })
