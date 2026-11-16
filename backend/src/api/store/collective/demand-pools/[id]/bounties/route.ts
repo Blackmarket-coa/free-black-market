@@ -4,6 +4,8 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../../modules/demand-pool/service"
+import { publicDemandBountyView } from "../../../../../../modules/demand-pool/public-view"
+import { poolNotFound, resolvePoolReader } from "../_pool-readers"
 
 const addBountySchema = z.object({
   objective: z.enum([
@@ -34,37 +36,39 @@ const addBountySchema = z.object({
 })
 
 // GET /store/collective/demand-pools/:id/bounties
+//
+// Who sees which bounty, as before: a PUBLIC bounty is everyone's to see, a
+// RESTRICTED one only its pool's creator's, its contributor's and its
+// assignee's. How much of it (`../_pool-readers.ts`): the creator and the
+// bounty's own contributor and assignee read it whole; anyone else what it
+// pays and for what, without who put it up, who claimed it or the escrow
+// entry. On a pool that is not public, someone who is neither its creator
+// nor a participant sees only the bounties they are on, and is answered as
+// a missing pool when that is none.
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
 
   try {
+    const reader = await resolvePoolReader(req, res)
+    if (!reader) return
+
     const demandPoolService = req.scope.resolve<DemandPoolModuleService>(
       DEMAND_POOL_MODULE
     )
-
-    const actorId = (req as any).auth_context?.actor_id as string | undefined
-
-    const posts = await demandPoolService.listDemandPosts({ id })
-    const creatorId = posts.length > 0 ? posts[0].creator_id : undefined
 
     const bounties = await demandPoolService.listDemandBounties({
       demand_post_id: id,
     })
 
-    // Visibility filter: PUBLIC bounties are always visible. RESTRICTED
-    // bounties are visible only to the pool creator, the bounty's
-    // contributor, or its assignee.
-    const visibleBounties = bounties.filter((b) => {
-      if (b.visibility !== "RESTRICTED") return true
-      if (!actorId) return false
-      return (
-        actorId === creatorId ||
-        actorId === b.contributor_id ||
-        actorId === b.assignee_id
-      )
-    })
+    const onBounty = (b: (typeof bounties)[number]) => reader.isCaller(b.contributor_id, b.assignee_id)
+    const visibleBounties = bounties.filter(
+      (b) => reader.creator || onBounty(b) || (reader.listed && b.visibility !== "RESTRICTED")
+    )
+    if (!reader.listed && visibleBounties.length === 0) return poolNotFound(res)
 
-    res.json({ bounties: visibleBounties })
+    res.json({
+      bounties: visibleBounties.map((b) => (reader.creator || onBounty(b) ? b : publicDemandBountyView(b))),
+    })
   } catch (error: any) {
     log.error(`[GET /store/collective/demand-pools/${id}/bounties] Error:`, error.message)
     res.status(500).json({ error: "Failed to retrieve bounties" })

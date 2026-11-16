@@ -79,3 +79,99 @@ export function publicDemandPoolDetails(details: Record<string, unknown>): Recor
     bounties: counts(details.bounties),
   }
 }
+
+/**
+ * What a pool's rows say to someone who is neither the pool's creator nor
+ * on the row (SD-118 follow-up).
+ *
+ * `GET /store/collective/demand-pools/:id/proposals`, `/bounties` and
+ * `/barter` need no customer, and returned their rows as stored, for any
+ * pool whatever its visibility (measured on Postgres): a supplier's notes,
+ * payment terms, compliance notes, counter-offer and metadata; the customer
+ * who put up a bounty, the one who claimed it and the escrow entry holding
+ * it; the customer who offered a trade, the creator who accepted it and the
+ * ledger entry recording it. The detail route had stopped serving those
+ * rows to strangers, so these were the way round it.
+ *
+ * Each list below is what describes the offer to someone deciding whether
+ * to vote, claim or trade: the price and quantities a supplier offers, what
+ * a bounty pays and for what, what a trade offers and wants. Allow-lists,
+ * so a column added tomorrow is private until it is named here. Nothing
+ * here names a person, a note, a term of payment, a ledger entry or
+ * metadata.
+ */
+const PUBLIC_SUPPLIER_PROPOSAL_FIELDS = [
+  "id",
+  "demand_post_id",
+  "status",
+  "unit_price",
+  "currency_code",
+  "min_quantity",
+  "max_quantity",
+  "volume_tiers",
+  "fulfillment_timeline_days",
+  "delivery_method",
+  "delivery_cost",
+  "certifications",
+  "votes_for",
+  "votes_against",
+  "vote_weight_for",
+  "vote_weight_against",
+  "submitted_at",
+] as const
+
+const PUBLIC_DEMAND_BOUNTY_FIELDS = [
+  "id",
+  "demand_post_id",
+  "objective",
+  "amount",
+  "currency_code",
+  "milestones",
+  "milestones_completed",
+  "status",
+  "visibility",
+] as const
+
+/** A bounty's milestones are free JSON; each is cut to the terms it states. */
+const PUBLIC_MILESTONE_FIELDS = ["description", "percentage", "condition", "completed"] as const
+
+const PUBLIC_BARTER_PROPOSAL_FIELDS = [
+  "id",
+  "demand_post_id",
+  "offering",
+  "wanting",
+  "estimated_hours",
+  "status",
+] as const
+
+function pick(row: object, fields: readonly string[]): Record<string, unknown> {
+  const source = row as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const field of fields) {
+    if (field in source) out[field] = source[field]
+  }
+  return out
+}
+
+/** A supplier's proposal as anyone but the pool's creator reads it. */
+export function publicSupplierProposalView(proposal: object): Record<string, unknown> {
+  return pick(proposal, PUBLIC_SUPPLIER_PROPOSAL_FIELDS)
+}
+
+/** A bounty as anyone but the pool's creator and the bounty's own people reads it. */
+export function publicDemandBountyView(bounty: object): Record<string, unknown> {
+  const out = pick(bounty, PUBLIC_DEMAND_BOUNTY_FIELDS)
+  if ("milestones" in out) {
+    out.milestones = Array.isArray(out.milestones)
+      ? out.milestones.map((milestone: unknown) =>
+          milestone && typeof milestone === "object" ? pick(milestone, PUBLIC_MILESTONE_FIELDS) : null
+        )
+      : null
+  }
+  return out
+}
+
+/** An offer of a trade as anyone but the pool's creator and its proposer reads it. */
+export function publicBarterProposalView(proposal: object): Record<string, unknown> {
+  return pick(proposal, PUBLIC_BARTER_PROPOSAL_FIELDS)
+}
