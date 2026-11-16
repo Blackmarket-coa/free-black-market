@@ -223,6 +223,23 @@ medusaIntegrationTestRunner({
       expect(logged).toContain(empty.id)
       expect(logged).not.toContain(right.id)
 
+      // The operator check recorded with SD-86 lists what the migration left
+      // for review, and only that.
+      const { rows: forReview } = await pg.raw(
+        `SELECT p.id, p.status FROM garden_proposal p
+           LEFT JOIN (SELECT proposal_id,
+                             COALESCE(SUM(voting_power) FILTER (WHERE vote = 'for'), 0) AS f,
+                             COALESCE(SUM(voting_power) FILTER (WHERE vote = 'against'), 0) AS a,
+                             COALESCE(SUM(voting_power) FILTER (WHERE vote = 'abstain'), 0) AS b,
+                             COALESCE(SUM(voting_power), 0) AS tot, COUNT(*) AS n
+                        FROM garden_vote WHERE deleted_at IS NULL GROUP BY proposal_id) t ON t.proposal_id = p.id
+          WHERE p.deleted_at IS NULL AND p.status <> 'active'
+            AND (p.votes_for <> COALESCE(t.f, 0) OR p.votes_against <> COALESCE(t.a, 0)
+                 OR p.votes_abstain <> COALESCE(t.b, 0) OR p.total_voting_power <> COALESCE(t.tot, 0)
+                 OR p.unique_voters <> COALESCE(t.n, 0))`
+      )
+      expect(forReview).toEqual([{ id: decided.id, status: "passed" }])
+
       // Once every active tally matches, a second run writes nothing.
       const repairedRow = await wholeRow(lost.id)
       await runAgain()
