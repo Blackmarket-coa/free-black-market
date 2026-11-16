@@ -22,9 +22,13 @@
  *
  * So this check is no longer what a buyer who edits delivery runs into. It
  * stays as the storefront's own: the last thing between the card form and
- * `confirmCardPayment` if that refresh fails or a writer was missed. It sees
- * only the cart this page rendered; a page rendered before the total changed
- * is stopped by the backend, not here.
+ * `confirmCardPayment` if that refresh fails, a writer was missed, or a
+ * session was opened while a change to the total was on its way (then the
+ * collection is right and the session is not). When it refuses, the pay
+ * button offers "Update payment", which has the backend bring the payment to
+ * the total and open the session again (`refreshCardPaymentSession`,
+ * `lib/data/cart.ts`). It sees only the cart this page rendered; a page
+ * rendered before the total changed is stopped by the backend, not here.
  *
  * Compared in the currency's minor unit, because that is what both sides come
  * down to: Stripe is sent the session amount rounded to it, and the buyer

@@ -20,6 +20,12 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
  * payment after the total changed (SD-115), so the page has no card session
  * and the buyer chooses the payment method again.
  *
+ * And what the notice for the second case offers: "Update payment", which has
+ * the backend bring the payment to the cart's total and open the card session
+ * again (`refreshCardPaymentSession`). What those two backend calls do, in
+ * both stale states, is run on Postgres in
+ * backend/integration-tests/http/cart-payment-refresh.spec.ts.
+ *
  * Same harness as the other file: a server render of the real components, so
  * hooks run and effects do not. Two things are replaced here that are real
  * there, because nothing after the first paint can be seen otherwise:
@@ -40,10 +46,14 @@ const h = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_STRIPE_KEY = "pk_test_checkout_render_spec"
   return {
     initiatePaymentSession: vi.fn(async (): Promise<unknown> => ({})),
+    refreshCardPaymentSession: vi.fn(async (): Promise<unknown> => ({})),
+    /** NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 as the components read it. */
+    subscriptionsOn: false,
     placeOrder: vi.fn(async () => ({ ok: true })),
     confirmCardPayment: vi.fn(async (): Promise<unknown> => ({ paymentIntent: { status: "requires_capture" } })),
     radioGroup: { onChange: undefined as undefined | ((value: string) => unknown) },
     payButton: { props: undefined as undefined | { disabled?: boolean; onClick?: () => unknown } },
+    updateButton: { props: undefined as undefined | { disabled?: boolean; onClick?: () => unknown } },
     stateUpdates: [] as unknown[],
     /**
      * The Stripe pay button starts disabled (`useState(true)`) and an effect
@@ -80,11 +90,21 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/data/cart", () => ({
   initiatePaymentSession: h.initiatePaymentSession,
+  refreshCardPaymentSession: h.refreshCardPaymentSession,
   placeOrder: h.placeOrder,
   placeTicketOrder: vi.fn(),
 }))
 
 vi.mock("@/lib/data/subscriptions", () => ({ completeSubscriptionCheckout: vi.fn() }))
+vi.mock("@/lib/feature-flags", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/feature-flags")>()
+  return {
+    ...actual,
+    phase1ModuleFlags: new Proxy(actual.phase1ModuleFlags, {
+      get: (flags, key) => (key === "consumerSubscriptions" ? h.subscriptionsOn : flags[key as keyof typeof flags]),
+    }),
+  }
+})
 // Reached only through the atoms barrel (LogoutButton); a server action.
 vi.mock("@/lib/data/customer", () => ({ signout: vi.fn() }))
 
@@ -110,6 +130,7 @@ vi.mock("@/components/atoms", async (importOriginal) => {
     // button was given.
     Button: (props: React.ComponentProps<typeof actual.Button>) => {
       if (props.children === "Place order") h.payButton.props = props as typeof h.payButton.props
+      if (props.children === "Update payment") h.updateButton.props = props as typeof h.updateButton.props
       return createElement(actual.Button, props)
     },
   }
@@ -144,6 +165,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   h.initiatePaymentSession.mockClear()
+  h.refreshCardPaymentSession.mockReset()
+  h.refreshCardPaymentSession.mockResolvedValue({})
+  h.subscriptionsOn = false
+  h.updateButton.props = undefined
   h.placeOrder.mockClear()
   h.confirmCardPayment.mockClear()
   h.radioGroup.onChange = undefined
@@ -205,7 +230,9 @@ function checkout(cart: ReturnType<typeof cartWith>, methods: string[]) {
 
 const NOT_OPENED = "We could not start the card payment. Choose the payment method again to retry."
 const AMOUNT_CHANGED =
-  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Delivery and choose your delivery option again, then choose your payment method again to pay the current total."
+  "Your order total changed after you chose how to pay, so your card has not been charged. Update the payment to pay the current total."
+const NOT_UPDATED =
+  "We could not update the payment for the new total, and your card has not been charged. Please try again."
 
 describe("picking the card when its session cannot be opened", () => {
   const refuse = () => h.initiatePaymentSession.mockRejectedValueOnce(new Error("Stripe said no."))
@@ -358,5 +385,66 @@ describe("the pay button when the card session is for another amount than the ca
 
     expect(html).toContain("Place order")
     expect(html).not.toContain(AMOUNT_CHANGED)
+  })
+})
+
+describe("Update payment, under the notice that the session is for another amount", () => {
+  beforeEach(() => {
+    h.cardEntered = true
+  })
+
+  it("is offered under the notice, and only there", () => {
+    const html = checkout(cartWith(13, [{ provider_id: CARD, amount: 20 }]), [CARD])
+    expect(html).toContain(AMOUNT_CHANGED)
+    expect(html).toContain('data-testid="stripe-payment-update"')
+    expect(h.updateButton.props?.disabled).toBe(false)
+
+    // A session for the total: no notice, no button.
+    h.updateButton.props = undefined
+    const fine = checkout(cartWith(20, [{ provider_id: CARD, amount: 20 }]), [CARD])
+    expect(fine).not.toContain('data-testid="stripe-payment-update"')
+    expect(h.updateButton.props).toBeUndefined()
+  })
+
+  it("has the backend put this cart's payment right for the session's provider, confirms nothing, and says nothing more when that works", async () => {
+    const cart = cartWith(13, [{ provider_id: CARD, amount: 20 }])
+    checkout(cart, [CARD])
+
+    await h.updateButton.props?.onClick?.()
+
+    expect(h.refreshCardPaymentSession).toHaveBeenCalledTimes(1)
+    expect(h.refreshCardPaymentSession).toHaveBeenCalledWith(cart, { provider_id: CARD })
+    // Busy, the earlier failure cleared, then idle; no failure message.
+    expect(h.stateUpdates).toEqual([true, null, false])
+    expect(h.confirmCardPayment).not.toHaveBeenCalled()
+    expect(h.placeOrder).not.toHaveBeenCalled()
+  })
+
+  it("says so when the backend could not do it, and the card is still not confirmed", async () => {
+    h.refreshCardPaymentSession.mockRejectedValueOnce(new Error("Failed to acquire lock for key cart_1."))
+    checkout(cartWith(13, [{ provider_id: CARD, amount: 20 }]), [CARD])
+
+    await expect(h.updateButton.props?.onClick?.()).resolves.toBeUndefined()
+
+    expect(h.stateUpdates).toEqual([true, null, NOT_UPDATED, false])
+    // The backend's own message is not what the buyer is shown.
+    expect(h.stateUpdates).not.toContain("Failed to acquire lock for key cart_1.")
+    expect(h.confirmCardPayment).not.toHaveBeenCalled()
+    expect(h.placeOrder).not.toHaveBeenCalled()
+  })
+
+  it("opens the session again with the off-session setup for an approved subscription cart, as the payment step does", async () => {
+    h.subscriptionsOn = true
+    const cart = cartWith(13, [{ provider_id: CARD, amount: 20 }]) as unknown as Record<string, unknown>
+    cart.items = [{ id: "item_1", variant_id: "variant_1", quantity: 1 }]
+    cart.metadata = { subscription_checkout: { interval: "monthly", auto_renew_approved: true, variant_id: "variant_1" } }
+    checkout(cart as unknown as HttpTypes.StoreCart, [CARD])
+
+    await h.updateButton.props?.onClick?.()
+
+    expect(h.refreshCardPaymentSession).toHaveBeenCalledWith(cart, {
+      provider_id: CARD,
+      data: { setup_future_usage: "off_session" },
+    })
   })
 })

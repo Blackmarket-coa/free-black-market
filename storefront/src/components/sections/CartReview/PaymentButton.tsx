@@ -2,7 +2,11 @@
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
 import { isManual, isStripe } from "../../../lib/constants"
-import { placeOrder, placeTicketOrder } from "@/lib/data/cart"
+import {
+  placeOrder,
+  placeTicketOrder,
+  refreshCardPaymentSession,
+} from "@/lib/data/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
 import React, { useContext, useEffect, useState } from "react"
@@ -15,6 +19,7 @@ import { phase1ModuleFlags } from "@/lib/feature-flags"
 import { completeSubscriptionCheckout } from "@/lib/data/subscriptions"
 import {
   intervalNoun,
+  paymentSessionDataFor,
   subscriptionCheckoutOf,
 } from "@/lib/subscriptions/auto-renew"
 
@@ -127,17 +132,26 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
  * cart's total. The backend refreshes a cart's payment collection after every
  * write that changes its total (SD-115), which deletes a session opened for
  * the old one, so a page rendered after such a write has no session and never
- * gets here: this is what is left when that refresh did not happen.
+ * gets here: this is what is left when that refresh did not happen, or when a
+ * session was opened while a change to the total was on its way (the
+ * collection right and the session not).
  *
- * The instruction has to be one that works from this state. Choosing the
- * payment method again does not: the radio group ignores a click on the
- * method it already shows, and a new session would take the same stale
- * amount. Choosing the delivery option again does: that request ends in the
- * refresh, which deletes this session, and the payment step then opens one
- * for the current total.
+ * The notice comes with the action that puts it right, "Update payment"
+ * (`refreshCardPaymentSession`), rather than with an instruction to find one.
+ * The instructions this notice gave before could not be followed from this
+ * state: choosing the payment method again is ignored by the radio group
+ * while that method is picked, and choosing the delivery option the cart
+ * already holds is refused by the backend before it writes ("Some of the
+ * shipping methods are doubled!", measured in review), so nothing is
+ * refreshed. What the action does was run against the backend in both stale
+ * states (backend/integration-tests/http/cart-payment-refresh.spec.ts).
  */
 const CARD_AMOUNT_CHANGED =
-  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Delivery and choose your delivery option again, then choose your payment method again to pay the current total."
+  "Your order total changed after you chose how to pay, so your card has not been charged. Update the payment to pay the current total."
+
+/** "Update payment" failed; nothing was charged, and a second try finishes what the first began. */
+const CARD_PAYMENT_NOT_UPDATED =
+  "We could not update the payment for the new total, and your card has not been charged. Please try again."
 
 const StripePaymentButton = ({
   cart,
@@ -193,6 +207,33 @@ const StripePaymentButton = ({
   // necessarily the total on this page (lib/helpers/card-charge.ts). If the
   // two differ, the card is not confirmed at all.
   const chargeIsCartTotal = cardChargeMatchesCartTotal(session, cart)
+
+  const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+
+  // "Update payment": the backend brings the cart's payment to its total and
+  // opens the card session again, and the page is rendered afresh with that
+  // session. The same provider, and for an approved subscription cart the
+  // same off-session setup the payment step asks for.
+  const updatePayment = async () => {
+    if (!session) return
+    setUpdating(true)
+    setUpdateError(null)
+    try {
+      const sessionData = paymentSessionDataFor(
+        cart,
+        phase1ModuleFlags.consumerSubscriptions
+      )
+      await refreshCardPaymentSession(cart, {
+        provider_id: session.provider_id,
+        ...(sessionData ? { data: sessionData } : {}),
+      })
+    } catch {
+      setUpdateError(CARD_PAYMENT_NOT_UPDATED)
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   useEffect(() => {
     //@ts-ignore
@@ -284,6 +325,22 @@ const StripePaymentButton = ({
       <ErrorMessage
         error={chargeIsCartTotal ? null : CARD_AMOUNT_CHANGED}
         data-testid="stripe-payment-amount-changed"
+      />
+      {chargeIsCartTotal ? null : (
+        <Button
+          variant="tonal"
+          onClick={updatePayment}
+          loading={updating}
+          disabled={updating}
+          className="w-full mt-2"
+          data-testid="stripe-payment-update"
+        >
+          Update payment
+        </Button>
+      )}
+      <ErrorMessage
+        error={updateError}
+        data-testid="stripe-payment-update-error"
       />
       <ErrorMessage
         error={errorMessage}

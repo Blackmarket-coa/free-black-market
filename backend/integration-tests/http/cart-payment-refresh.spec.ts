@@ -827,6 +827,93 @@ medusaIntegrationTestRunner({
     })
 
     /**
+     * SD-114 / SD-115 review: the storefront's pay button shows a notice when
+     * the card session on the page is not for the cart's total, and offers
+     * "Update payment" with it. That action is exactly two of the backend's
+     * store routes (storefront/src/lib/data/cart.ts, refreshCardPaymentSession):
+     * POST /store/carts/:id with nothing to change, then the card session
+     * opened again on the cart's collection. Run here in both states the
+     * notice can be shown in, and then the cart is completed. The instruction
+     * the notice gave before ("choose your delivery option again") was refused
+     * by Mercur before it wrote, measured in review.
+     */
+    describe("the notice's Update payment, in both stale states (SD-114, SD-115 review)", () => {
+      afterEach(settleBeforeTeardown)
+
+      /** refreshCardPaymentSession: Medusa's cart update with nothing to change, then the session opened again. */
+      async function updatePayment(w: World, cartId: string) {
+        expectStatus(await api.post(`/store/carts/${cartId}`, {}, w.pak).catch(answerOf), 200)
+        await openCardSession(w, cartId)
+      }
+
+      /** A two-seller cart at 32.00 with a card session for it, then left in one of the stale states at 36.00. */
+      async function staleTwoSellerCart(w: World, leave: (cartId: string) => Promise<void>) {
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA, w.productB], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await pickShipping(w, cart.id, w.optionB.id)
+        await openCardSession(w, cart.id)
+        expectInStep(await stateOf(cart.id), 32)
+        await leave(cart.id)
+        return { cart, customer }
+      }
+
+      const STATES: Array<[string, (cartId: string) => Promise<void>, number]> = [
+        ["the collection behind the total, as a missed writer or a failed refresh leaves it", (cartId) => repriceFirstLine(cartId, 14), 32],
+        ["the collection at the total and the session behind it, as a session opened while the total changed leaves it", (cartId) => sessionBehindCollection(cartId, 14), 36],
+      ]
+
+      it.each(STATES)("%s: one session, for the total, the old intent cancelled, the delivery kept, and the cart completes", async (_state, leave, collection) => {
+        const w = await world()
+        const { cart, customer } = await staleTwoSellerCart(w, leave)
+        expect(await stateOf(cart.id)).toMatchObject({ total: 36, collection, sessions: [{ amount: 32, status: "pending" }] })
+
+        await updatePayment(w, cart.id)
+
+        const healed = await stateOf(cart.id)
+        expectInStep(healed, 36)
+        expect(healed.sessions).toEqual([{ id: expect.any(String), amount: 36, status: "pending" }])
+        expect(healed.methods.map((m) => m.amount).sort()).toEqual([5, 7])
+        expect(stripe.cancel).toHaveBeenCalledWith("pi_test_cpr_1", expect.anything())
+        expect(lastIntent()).toMatchObject({ amount: 3600, currency: "usd" })
+
+        // The card is confirmed with that session and the order is placed.
+        expect(expectStatus(await complete(w, cart.id), 200).data.order_set?.id).toBeTruthy()
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(2)
+      })
+
+      it("what the notice said before does not work: choosing the delivery option the cart already holds is refused before anything is written", async () => {
+        const w = await world()
+        for (const leave of [(cartId: string) => repriceFirstLine(cartId, 14), (cartId: string) => sessionBehindCollection(cartId, 14)]) {
+          const { cart } = await staleTwoSellerCart(w, leave)
+          const before = await stateOf(cart.id)
+          const answer = expectStatus(
+            await api.post(`/store/carts/${cart.id}/shipping-methods`, { option_id: w.optionB.id }, w.pak).catch(answerOf),
+            400
+          )
+          expect(answer.data).toMatchObject({ type: "invalid_data", message: "Some of the shipping methods are doubled!" })
+          expect(await stateOf(cart.id)).toEqual(before)
+        }
+      })
+
+      it("why it is both calls: each alone leaves one of the two states behind", async () => {
+        const w = await world()
+
+        // The session opened again without the update first: it takes the
+        // collection's amount, which is still the old total.
+        const { cart: behind } = await staleTwoSellerCart(w, (cartId) => repriceFirstLine(cartId, 14))
+        await openCardSession(w, behind.id)
+        expect(await stateOf(behind.id)).toMatchObject({ total: 36, collection: 32, sessions: [{ amount: 32, status: "pending" }] })
+
+        // The update alone: Medusa's refresh sees a collection that agrees
+        // with the total and leaves the session for the old one.
+        const { cart: raced } = await staleTwoSellerCart(w, (cartId) => sessionBehindCollection(cartId, 14))
+        expectStatus(await api.post(`/store/carts/${raced.id}`, {}, w.pak).catch(answerOf), 200)
+        expect(await stateOf(raced.id)).toMatchObject({ total: 36, collection: 36, sessions: [{ amount: 32, status: "pending" }] })
+      })
+    })
+
+    /**
      * SD-115 review: every other way a cart completes runs Medusa's
      * completeCartWorkflow, whose validate hook FBM composes
      * (src/workflows/hooks/complete-cart-guards.ts). The payment-amount guard

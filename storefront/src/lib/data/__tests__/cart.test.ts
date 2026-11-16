@@ -65,6 +65,7 @@ import {
   getOrSetCart,
   listCartOptions,
   placeOrder,
+  refreshCardPaymentSession,
   removeShippingMethod,
   retrieveCart,
   setCartTier,
@@ -260,6 +261,56 @@ describe("shipping & promotions", () => {
         body: { promo_codes: ["SAVE10"] },
       })
     )
+  })
+})
+
+describe("refreshCardPaymentSession (the pay button's Update payment, SD-114/SD-115)", () => {
+  // backend/integration-tests/http/cart-payment-refresh.spec.ts runs these
+  // same two calls on Postgres, in both stale states, and completes the cart.
+  const cart = { id: "cart_1", payment_collection: { id: "pay_col_1" } } as any
+
+  it("has Medusa update the cart with nothing to change, then opens the session again, in that order, and then revalidates", async () => {
+    const order: string[] = []
+    h.cartUpdate.mockImplementation(async () => {
+      order.push("update")
+      return { cart }
+    })
+    h.paymentInitiate.mockImplementation(async () => {
+      order.push("session")
+      return { payment_collection: { id: "pay_col_1" } }
+    })
+    h.revalidateTag.mockImplementation(() => order.push("revalidate"))
+
+    await expect(refreshCardPaymentSession(cart, { provider_id: "pp_stripe_stripe" })).resolves.toEqual({
+      payment_collection: { id: "pay_col_1" },
+    })
+
+    expect(order).toEqual(["update", "session", "revalidate"])
+    expect(h.cartUpdate).toHaveBeenCalledWith("cart_1", {}, {}, authed)
+    expect(h.paymentInitiate).toHaveBeenCalledWith(cart, { provider_id: "pp_stripe_stripe" }, {}, authed)
+    expect(h.revalidateTag).toHaveBeenCalledWith("tag")
+  })
+
+  it("passes the session data on (an approved subscription cart's off-session setup)", async () => {
+    h.cartUpdate.mockResolvedValue({ cart })
+    h.paymentInitiate.mockResolvedValue({})
+    const data = { provider_id: "pp_stripe_stripe", data: { setup_future_usage: "off_session" } }
+    await refreshCardPaymentSession(cart, data)
+    expect(h.paymentInitiate).toHaveBeenCalledWith(cart, data, {}, authed)
+  })
+
+  it("throws and leaves the page as it was when the update fails: no session is opened, nothing is revalidated", async () => {
+    h.cartUpdate.mockRejectedValue(new Error("Failed to acquire lock for key cart_1"))
+    await expect(refreshCardPaymentSession(cart, { provider_id: "pp_stripe_stripe" })).rejects.toThrow()
+    expect(h.paymentInitiate).not.toHaveBeenCalled()
+    expect(h.revalidateTag).not.toHaveBeenCalled()
+  })
+
+  it("throws and leaves the page as it was when the session cannot be opened again", async () => {
+    h.cartUpdate.mockResolvedValue({ cart })
+    h.paymentInitiate.mockRejectedValue(new Error("Stripe said no"))
+    await expect(refreshCardPaymentSession(cart, { provider_id: "pp_stripe_stripe" })).rejects.toThrow()
+    expect(h.revalidateTag).not.toHaveBeenCalled()
   })
 })
 
