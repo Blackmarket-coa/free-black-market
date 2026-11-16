@@ -1,10 +1,16 @@
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { MedusaError } from "@medusajs/framework/utils"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../modules/food-distribution/models/food-producer"
 import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
-import { applyProducerAddressPrivacy } from "../../../../modules/food-distribution/public-view"
+import {
+  applyProducerAddressPrivacy,
+  producerProfileIsPublic,
+  publicProducerView,
+} from "../../../../modules/food-distribution/public-view"
+import { actorIsAnyOf } from "../../../../shared/community-read-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -87,12 +93,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
+    const row = producer as unknown as Record<string, unknown>
+    const owner = actorIsAnyOf(req, row.owner_id as string | null)
+
+    // A profile switched off answers exactly as an id that does not exist
+    // (the error `retrieveFoodProducer` raises for one), so the answer does
+    // not say which it is.
+    if (!owner && !producerProfileIsPublic(row)) {
+      throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodProducer with id: ${id} was not found`)
+    }
+
     // Check if currently open
     const isOpen = await foodDistribution.isProducerOpen(id)
-    
+
     res.json({
       producer: {
-        ...applyProducerAddressPrivacy(producer as unknown as Record<string, unknown>),
+        // The account that manages the producer reads its row whole; anyone
+        // else the public listing, with `hide_address` honoured.
+        ...(owner ? row : publicProducerView(row)),
         is_currently_open: isOpen,
       },
     })

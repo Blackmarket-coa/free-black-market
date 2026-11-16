@@ -9,6 +9,7 @@ import { BUYER_ARCHETYPE_CODES } from "../../../../modules/demand-pool/buyer-arc
 import { BUYER_NETWORK_MODULE } from "../../../../modules/buyer-network"
 import type BuyerNetworkModuleService from "../../../../modules/buyer-network/service"
 import { NetworkMemberStatus } from "../../../../modules/buyer-network/models/network-member"
+import { publicDemandPostViewAll } from "../../../../modules/demand-pool/public-view"
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -77,7 +78,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       offset: query.offset,
     })
 
-    res.json({ demand_pools: pools, count: pools.length, offset: query.offset, limit: query.limit })
+    // Anyone with the publishable key reads this list: the public view, not
+    // the stored row (its creator, delivery address and escrow account).
+    res.json({
+      demand_pools: publicDemandPostViewAll(pools as unknown as Record<string, unknown>[]),
+      count: pools.length,
+      offset: query.offset,
+      limit: query.limit,
+    })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })

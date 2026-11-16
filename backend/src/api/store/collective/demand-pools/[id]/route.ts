@@ -3,6 +3,8 @@ const log = createLogger("api/store/collective/demand-pools/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../modules/demand-pool/service"
+import { publicDemandPoolDetails } from "../../../../../modules/demand-pool/public-view"
+import { actorIsAnyOf } from "../../../../../shared/community-read-access"
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -26,7 +28,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
 
     const details = await demandPoolService.getDemandPoolDetails(id)
-    res.json({ demand_pool: details })
+    // The creator reads their own post whole. Anyone else, signed in or not,
+    // gets the public view and the counts: not the creator, the delivery
+    // address, or the participants' and suppliers' rows.
+    const creator = actorIsAnyOf(req, (details as { creator_id?: string | null }).creator_id)
+    res.json({
+      demand_pool: creator ? details : publicDemandPoolDetails(details as unknown as Record<string, unknown>),
+    })
   } catch (error: unknown) {
     const message = getErrorMessage(error)
     log.error(`[GET /store/collective/demand-pools/${id}] Error:`, message)
