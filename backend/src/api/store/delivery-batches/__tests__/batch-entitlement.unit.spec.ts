@@ -105,7 +105,8 @@ const setup = (opts: {
     }),
     listDeliveryBatches: jest.fn(async () => [BATCH]),
     updateFoodDeliveries: jest.fn(async (data: unknown) => data),
-    updateDeliveryBatches: jest.fn(async (data: Record<string, unknown>) => ({ ...BATCH, ...data })),
+    // Answers with the row as stored, the way the module does.
+    updateDeliveryBatches: jest.fn(async (data: Record<string, unknown>) => ({ ...(opts.batch ?? BATCH), ...data })),
   }
   const req = {
     params: opts.params ?? { id: "bat_1" },
@@ -243,6 +244,21 @@ describe("POST /store/delivery-batches — only deliveries the caller may alread
 
     await expect(createBatch(req, res as never)).rejects.toThrow("connection terminated")
   })
+
+  it("counts a delivery named twice once", async () => {
+    // The ids were passed on as sent, so the batch was created with
+    // `total_deliveries` 2 for one delivery, which was written twice.
+    const { req, res, service } = setup({ actorId: "cus_producer", body: { delivery_ids: ["del_1", "del_1"] } })
+
+    await createBatch(req, res as never)
+
+    expect(res.statusCode).toBe(201)
+    expect(service.createDeliveryBatch).toHaveBeenCalledWith(["del_1"], undefined, undefined, undefined, {
+      id: "cus_producer",
+      type: "customer",
+    })
+    expect(service.retrieveFoodDelivery).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe("the write verbs on /store/delivery-batches/:id", () => {
@@ -331,6 +347,23 @@ describe("POST /store/delivery-batches/:id — adding deliveries", () => {
     expect(service.updateFoodDeliveries).toHaveBeenCalledWith({ id: "del_1", batch_id: "bat_1", batch_sequence: 2 })
   })
 
+  it("adds a delivery named twice once, with one place in the sequence", async () => {
+    // It was written twice and the batch total counted it twice: 3 here.
+    const { req, res, service } = setup({
+      actorId: "cus_producer",
+      batch: OWN_BATCH,
+      inBatch: ["del_2"],
+      body: { delivery_ids: ["del_1", "del_1"] },
+    })
+
+    await addDeliveries(req, res as never)
+
+    expect([res.statusCode, res.body]).toEqual([200, { success: true, total_deliveries: 2 }])
+    expect(service.updateFoodDeliveries).toHaveBeenCalledTimes(1)
+    expect(service.updateFoodDeliveries).toHaveBeenCalledWith({ id: "del_1", batch_id: "bat_1", batch_sequence: 2 })
+    expect(service.updateDeliveryBatches).toHaveBeenCalledWith({ id: "bat_1", total_deliveries: 2 })
+  })
+
   it("tells the entitled caller that a delivery is already in a batch", async () => {
     const { req, res, service } = setup({
       actorId: "cus_producer",
@@ -414,5 +447,79 @@ describe("PUT /store/delivery-batches/:id — what a batch write reaches", () =>
 
     expect(res.statusCode).toBe(200)
     expect(service.updateDeliveryBatches).toHaveBeenCalledWith({ id: "bat_1", notes: "legacy" })
+  })
+})
+
+describe("PUT /store/delivery-batches/:id — what a batch write tells its caller", () => {
+  // A run as the table holds it: the route names every delivery in it.
+  const RUN = {
+    ...BATCH,
+    courier_id: "cour_1",
+    notes: "leave at the side gate",
+    optimized_route: [{ delivery_id: "del_1", sequence: 1 }, { delivery_id: "del_2", sequence: 2 }],
+  }
+
+  it("acknowledges a write on a batch with no recorded owner with its id and status, not the row", async () => {
+    // `actorMayManage` lets any signed-in account write such a batch
+    // (grandfathered), and GET refuses them the batch. Seen on Postgres, flag
+    // on: a stranger's empty PUT returned the whole row, `optimized_route`
+    // and the ids of the deliveries in it included.
+    const { req, res, service } = setup({ actorId: "cus_anyone", batch: { ...RUN, owner_id: null }, body: {} })
+
+    await updateBatch(req, res as never)
+
+    expect(res.statusCode).toBe(200)
+    expect(service.updateDeliveryBatches).toHaveBeenCalledWith({ id: "bat_1" })
+    expect(res.body).toEqual({ batch: { id: "bat_1", status: "PLANNING" } })
+    for (const value of ["del_1", "del_2", "cour_1", "side gate"]) {
+      expect(JSON.stringify(res.body)).not.toContain(value)
+    }
+  })
+
+  it("does not echo the row to the courier's owner on such a batch either", async () => {
+    // They read the run through GET, which redacts it; the echo here is the
+    // recorded owner's and nobody else's.
+    const { req, res } = setup({ actorId: "cus_driver", batch: { ...RUN, owner_id: null }, body: { notes: "x" } })
+
+    await updateBatch(req, res as never)
+
+    expect([res.statusCode, res.body]).toEqual([200, { batch: { id: "bat_1", status: "PLANNING" } }])
+  })
+
+  it("echoes the row to the batch's recorded owner", async () => {
+    const { req, res } = setup({ actorId: "cus_planner", batch: RUN, body: { notes: "front door" } })
+
+    await updateBatch(req, res as never)
+
+    expect(res.statusCode).toBe(200)
+    expect((res.body as { batch: Record<string, unknown> }).batch).toMatchObject({
+      id: "bat_1",
+      owner_id: "cus_planner",
+      courier_id: "cour_1",
+      notes: "front door",
+      optimized_route: RUN.optimized_route,
+    })
+  })
+
+  it("refuses a route entry on a batch with no recorded owner, whether or not the delivery is in it", async () => {
+    // It answered 200 for a delivery in the batch and 403 for one outside it,
+    // which told the caller what the batch holds, and it rewrote the sequence
+    // and arrival time of deliveries the caller may not read.
+    for (const deliveryId of ["del_1", "del_2", "del_nope"]) {
+      const { req, res, service } = setup({
+        actorId: "cus_anyone",
+        batch: { ...RUN, owner_id: null },
+        inBatch: ["del_1"],
+        body: { optimized_route: [{ delivery_id: deliveryId, sequence: 9 }] },
+      })
+
+      await updateBatch(req, res as never)
+
+      expect([deliveryId, res.statusCode, res.body]).toEqual([deliveryId, 403, REFUSAL])
+      expect(service.updateFoodDeliveries).not.toHaveBeenCalled()
+      expect(service.updateDeliveryBatches).not.toHaveBeenCalled()
+      // Refused before the batch's deliveries are read at all.
+      expect(service.listFoodDeliveries).not.toHaveBeenCalled()
+    }
   })
 })

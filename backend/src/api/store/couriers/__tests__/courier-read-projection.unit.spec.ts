@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
-import { GET as listCouriers } from "../route"
+import { GET as listCouriers, POST as registerCourier } from "../route"
 import { GET as getCourier, PUT as updateCourier, POST as claimDelivery } from "../[id]/route"
 import { GET as listShifts } from "../[id]/shifts/route"
 import { GET as getDeliveryBatch } from "../../delivery-batches/[id]/route"
@@ -105,6 +105,7 @@ const makeReq = (opts: {
       { id: "shift_1", scheduled_start: "2026-12-01T09:00:00.000Z", assigned_zone: "EAST", notes: "home by 5" },
     ]),
     updateCouriers: jest.fn(async (data: Record<string, unknown>) => ({ ...ROW, ...data })),
+    createCouriers: jest.fn(async (data: Record<string, unknown>) => ({ id: "cour_new", ...data })),
     retrieveFoodDelivery: jest.fn(async (_id: string): Promise<Record<string, unknown>> => DELIVERY),
     assignCourierToDelivery: jest.fn(async () => ({ ...DELIVERY, status: "ASSIGNED" })),
   }
@@ -114,7 +115,7 @@ const makeReq = (opts: {
       params: { id: "cour_1" },
       query: opts.query ?? {},
       body: opts.body ?? {},
-      ...(opts.actorId ? { auth_context: { actor_id: opts.actorId } } : {}),
+      ...(opts.actorId ? { auth_context: { actor_id: opts.actorId, actor_type: "customer" } } : {}),
       scope: {
         resolve: (key: string) => {
           if (key === FOOD_DISTRIBUTION_MODULE) return service
@@ -346,6 +347,85 @@ describe("POST /store/couriers/:id — claiming a delivery", () => {
   it("does not turn a failed lookup into a refusal", async () => {
     await expect(claim({ lookupFails: new Error("connection terminated") })).rejects.toThrow(
       "connection terminated"
+    )
+  })
+
+  it("refuses a claim through a courier with no recorded owner, and hands over nothing of the delivery", async () => {
+    // `actorMayManage` lets any signed-in account act on such a courier
+    // (grandfathered). Seen on Postgres: a stranger marked one AVAILABLE,
+    // claimed a pending delivery through it and was answered with the
+    // delivery (address, instructions, the recipient's name and phone),
+    // which it is refused on GET; and the delivery was left with a courier
+    // nobody owns, which no account can carry it as.
+    const { req, service } = makeReq({ actorId: "cus_anyone", body: { delivery_id: "del_x" } })
+    service.retrieveCourier.mockResolvedValue({ ...ROW, owner_id: null, status: "AVAILABLE", active: true })
+    service.retrieveFoodDelivery.mockResolvedValue({ ...DELIVERY, courier_id: null, status: "PENDING" })
+    const res = createRes()
+
+    await claimDelivery(req as never, res as never)
+
+    expect([res.statusCode, res.body]).toEqual([403, REFUSAL])
+    expect(service.assignCourierToDelivery).not.toHaveBeenCalled()
+    // Refused on the courier alone: the delivery is not looked up, so the
+    // answer cannot depend on whether it exists or is pending.
+    expect(service.retrieveFoodDelivery).not.toHaveBeenCalled()
+    const body = JSON.stringify(res.body)
+    for (const value of DELIVERY_VALUES) {
+      expect(body).not.toContain(value)
+    }
+  })
+
+  it("still tells an account that a courier with another owner is not theirs", async () => {
+    const { req, service } = makeReq({ actorId: "cus_someone_else", body: { delivery_id: "del_x" } })
+    service.retrieveCourier.mockResolvedValue({ ...ROW, status: "AVAILABLE", active: true })
+    const res = createRes()
+
+    await claimDelivery(req as never, res as never)
+
+    expect([res.statusCode, res.body]).toEqual([403, { message: "This courier is not yours to manage" }])
+    expect(service.assignCourierToDelivery).not.toHaveBeenCalled()
+  })
+})
+
+describe("POST /store/couriers — registering a courier", () => {
+  const BODY = {
+    email: "new@example.com",
+    first_name: "New",
+    last_name: "Courier",
+    phone: "5550111",
+    courier_type: "INDEPENDENT",
+    vehicle_type: "BIKE",
+  }
+  const register = async (body: Record<string, unknown>) => {
+    const { req, service } = makeReq({ actorId: "cus_owner", body })
+    // No courier has this email yet.
+    service.listCouriers.mockResolvedValue([])
+    const res = createRes()
+    await registerCourier(req as never, res as never)
+    return { res, service }
+  }
+
+  it.each([
+    ["no phone", (({ phone: _phone, ...rest }) => rest)(BODY)],
+    ["an empty phone", { ...BODY, phone: "" }],
+  ])("answers %s with a 400 that names the field, and creates nothing", async (_what, body) => {
+    // `phone` is NOT NULL in the table and was optional in the schema: the
+    // create passed validation and failed at the insert, a 500.
+    const { res, service } = await register(body)
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body.message).toBe("Validation failed")
+    const paths = (res.body.errors as Array<{ path: string[] }>).map((issue) => issue.path.join("."))
+    expect(paths).toEqual(["phone"])
+    expect(service.createCouriers).not.toHaveBeenCalled()
+  })
+
+  it("registers a courier that has one, owned by the account that created it", async () => {
+    const { res, service } = await register(BODY)
+
+    expect(res.statusCode).toBe(201)
+    expect(service.createCouriers).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: "5550111", owner_id: "cus_owner", owner_type: "customer" })
     )
   })
 })

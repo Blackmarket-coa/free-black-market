@@ -118,18 +118,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // And on a batch with no owner on record, which `actorMayManage` lets any
 // signed-in account write (grandfathered), nothing here tells that account
 // about the deliveries in it. The GET above refuses them the batch, and this
-// verb was their way round it (each seen on Postgres):
+// verb was their way round it (each seen on Postgres, SD-110 (iii)):
 //   - the 200 echoed the batch row, whose `optimized_route` lists the id of
 //     every delivery in the run. The row is echoed to the recorded owner
 //     only; a write let through on an unknown owner is acknowledged with
-//     `{ id, status }`.
+//     `{ id, status }`, as the producer-order PUT acknowledges one.
 //   - a route entry answered 200 for a delivery in the batch and 403 for one
-//     outside it, and rewrote the sequence and arrival time of deliveries the
-//     caller may not read. Route entries are the recorded owner's.
+//     outside it, which is a read of what the batch holds, and rewrote the
+//     sequence and arrival time of deliveries the caller may not read. Route
+//     entries are the recorded owner's, and are refused before the batch's
+//     deliveries are looked at.
 //   - naming their own courier made them a reader of the run. A courier is
 //     assigned by the recorded owner only.
-// Status and notes on such a batch, and DELETE, are still theirs to write:
-// ending the grandfathering is the operator's call, not made here.
+// Those three are reads, and a read takes the strict rule whatever is ruled
+// about writes. What is left open on such a batch is a write that tells its
+// caller nothing: status and notes here, and DELETE below. Whether a row
+// with no owner stays writable by any signed-in account is the operator's
+// ruling, for couriers and producers as for batches, and is not made here.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -281,6 +286,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // DELETE /delivery-batches/:id
+//
+// Still open to any signed-in account on a batch with no owner on record
+// (`actorMayManage`): it cancels the batch and takes its deliveries out of
+// it. The answer is `{ success, id }` and says nothing about them, so this
+// is a write on an ownerless row, which is the operator's ruling (see PUT).
 // ===========================================
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
