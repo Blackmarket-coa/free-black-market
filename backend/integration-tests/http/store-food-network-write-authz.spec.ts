@@ -1,7 +1,9 @@
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { createPublishableKeyToken } from "./_publishable-key"
-import { safe } from "./helpers/seller-auth"
+import { authHeader, createAuthenticatedSeller, safe } from "./helpers/seller-auth"
 import { FOOD_DISTRIBUTION_MODULE } from "../../src/modules/food-distribution"
+import { DeliveryStatus, ProofType } from "../../src/modules/food-distribution/models/delivery"
 import {
   FoodOrderStatus,
   TransactionType,
@@ -22,6 +24,15 @@ jest.setTimeout(180 * 1000)
  * covers the same routes with a fake container; this one proves the guards
  * hold through `authenticate`, `actorOwnsProducer` / `actorOwnsCourier`'s real
  * lookups, and the `food_delivery` / `food_order` tables.
+ *
+ * The sections after the PIN budget are the routes that still handed a
+ * delivery to someone who may not read it, or told callers which ids exist,
+ * once those reads were closed (SD-106, SD-107): the courier read and its
+ * shifts, the producer-order PUT, the courier claim, batching (behind
+ * FF_PICK_PACK_V1) and `/vendor/deliveries/:id`. They are in this one case,
+ * with its three customers, because signing a customer in costs three of
+ * the 20 requests a minute the auth rate limit allows one address, and the
+ * two sellers below take four more.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -500,6 +511,466 @@ medusaIntegrationTestRunner({
         expect([url, attempt.status]).toEqual([url, 429])
       }
       expect((await foodDistribution.retrieveFoodDelivery(guardedId)).status).toBe("ARRIVED_AT_DESTINATION")
+
+      // ---------------------------------------------------------------
+      // SD-106 / SD-107. A delivery to someone's home, made through the real
+      // POST by its producer, with values no other row in this case holds.
+      // ---------------------------------------------------------------
+      const HOME = {
+        delivery_address: "14 Orchard Lane",
+        delivery_instructions: "gate code 7731",
+        recipient_name: "Rita Okafor",
+        recipient_phone: "+15550199",
+        proof_pin_code: "6042817395",
+      }
+      const homeOrder = (producerId: string = producer.id) =>
+        foodDistribution.createFoodOrders({
+          order_number: `FO-${uid()}`,
+          transaction_type: TransactionType.SALE,
+          producer_id: producerId,
+          recipient_name: HOME.recipient_name,
+          recipient_phone: HOME.recipient_phone,
+          delivery_address_line_1: HOME.delivery_address,
+          items: {},
+          ordered_at: new Date(),
+          status: FoodOrderStatus.PENDING,
+        })
+      const homeDelivery = async () => {
+        const forOrder = await homeOrder()
+        const created = await safe(
+          api.post(
+            "/store/food-deliveries",
+            { order_id: forOrder.id, pickup_address: "1 Kitchen Way", proof_type: "PIN_CODE", ...HOME },
+            producerOwner.headers
+          )
+        )
+        expect(created.status).toBe(201)
+        return { id: created.data.delivery.id as string, orderId: forOrder.id as string }
+      }
+      // Nothing of a delivery: not where it goes, who it is for, its PIN, or
+      // the ids its reads and the claim are keyed on.
+      const expectNothingOfDelivery = (who: string, body: unknown, ids: string[]) => {
+        const text = JSON.stringify(body)
+        for (const value of [...ids, ...Object.values(HOME)]) {
+          expect([who, value, text.includes(value)]).toEqual([who, value, false])
+        }
+      }
+
+      // The courier read. GET /store/couriers/:id returned
+      // `active_deliveries`, each the whole food_delivery row (75 keys: the
+      // address, the recipient's name and phone, the instructions), to a
+      // caller with no account and to a signed-in stranger, both of whom are
+      // refused the delivery itself. The courier's id comes from the list.
+      const runner = await foodDistribution.createCouriers({
+        first_name: "Run",
+        last_name: "Ner",
+        email: `runner-${uid()}@example.com`,
+        phone: "5550144",
+        owner_id: courierOwner.id,
+      })
+      const carried = await homeDelivery()
+      await foodDistribution.updateFoodDeliveries({
+        id: carried.id,
+        courier_id: runner.id,
+        status: DeliveryStatus.ASSIGNED,
+      })
+      const listed = await safe(api.get("/store/couriers?limit=100", anonymous))
+      expect(listed.status).toBe(200)
+      const listedRunner = (listed.data.couriers as Array<Record<string, unknown>>).find((row) => row.id === runner.id)
+      expect(listedRunner).toBeDefined()
+      for (const field of ["email", "phone", "last_name", "owner_id", "current_latitude", "total_earnings"]) {
+        expect(listedRunner).not.toHaveProperty(field)
+      }
+      for (const [who, caller] of [
+        ["anonymous", anonymous],
+        ["stranger", stranger.headers],
+      ] as const) {
+        const read = await safe(api.get(`/store/couriers/${runner.id}`, caller))
+        // Still answers whether the courier is free.
+        expect([who, read.status, read.data?.courier?.active_delivery_count]).toEqual([who, 200, 1])
+        expect(read.data.courier).not.toHaveProperty("active_deliveries")
+        expect(read.data.courier).not.toHaveProperty("email")
+        expectNothingOfDelivery(who, read.data, [carried.id, carried.orderId])
+        const direct = await safe(api.get(`/store/food-deliveries/${carried.id}`, caller))
+        expect([who, direct.status, direct.data]).toEqual([who, 403, refusal])
+      }
+      // The courier's owner is still served the run, without the PIN.
+      const ownRun = await safe(api.get(`/store/couriers/${runner.id}`, courierOwner.headers))
+      expect([ownRun.status, ownRun.data?.courier?.active_delivery_count]).toEqual([200, 1])
+      const ownRunDeliveries = ownRun.data.courier.active_deliveries as Array<Record<string, unknown>>
+      expect(ownRunDeliveries).toHaveLength(1)
+      expect(ownRunDeliveries[0]).toMatchObject({
+        id: carried.id,
+        delivery_address: HOME.delivery_address,
+        recipient_phone: HOME.recipient_phone,
+      })
+      expect(ownRunDeliveries[0]).not.toHaveProperty("proof_pin_code")
+      expect(ownRun.data.courier.email).toBe(runner.email)
+
+      // The courier's shifts: when a named person works, in which zone, and
+      // what the shift earned. Served to anyone; the owner's now.
+      const shift = await safe(
+        api.post(
+          `/store/couriers/${runner.id}/shifts`,
+          { scheduled_start: "2026-12-01T09:00:00.000Z", scheduled_end: "2026-12-01T17:00:00.000Z", notes: "home by 5" },
+          courierOwner.headers
+        )
+      )
+      expect(shift.status).toBe(201)
+      for (const [who, caller] of [
+        ["anonymous", anonymous],
+        ["stranger", stranger.headers],
+      ] as const) {
+        const shifts = await safe(api.get(`/store/couriers/${runner.id}/shifts`, caller))
+        expect([who, shifts.status, shifts.data]).toEqual([who, 403, refusal])
+      }
+      const ownShifts = await safe(api.get(`/store/couriers/${runner.id}/shifts`, courierOwner.headers))
+      expect([ownShifts.status, ownShifts.data?.shifts?.map((row: { id: string }) => row.id)]).toEqual([
+        200,
+        [shift.data.shift.id],
+      ])
+
+      // A courier with no owner on record can be written by any signed-in
+      // account (grandfathered). The echo of that write was the whole row.
+      const unownedCourier = await foodDistribution.createCouriers({
+        first_name: "No",
+        last_name: "Owner-On-Record",
+        email: `unowned-${uid()}@example.com`,
+        phone: "+15550122",
+        emergency_contact_phone: "+15550133",
+      })
+      const echoed = await safe(api.put(`/store/couriers/${unownedCourier.id}`, {}, stranger.headers))
+      expect([echoed.status, echoed.data?.courier?.id]).toEqual([200, unownedCourier.id])
+      for (const value of [unownedCourier.email, "+15550122", "+15550133", "Owner-On-Record"]) {
+        expect([value, JSON.stringify(echoed.data).includes(value)]).toEqual([value, false])
+      }
+
+      // PUT /store/food-producers/:id/orders/:orderId, as the owner of a
+      // different producer: 404 for an order that does not exist beside 403
+      // "Order does not belong to this producer", after GET was closed.
+      for (const [what, id] of [
+        ["another producer's", sale.id],
+        ["missing", missingOrderId],
+      ] as const) {
+        const answer = await safe(
+          api.put(`/store/food-producers/${otherProducer.id}/orders/${id}`, { status: "CANCELLED" }, stranger.headers)
+        )
+        expect([what, answer.status, answer.data]).toEqual([what, 403, refusal])
+      }
+      expect((await foodDistribution.retrieveFoodOrder(sale.id)).status).toBe("PENDING")
+      const confirmed = await safe(
+        api.put(`/store/food-producers/${producer.id}/orders/${sale.id}`, { status: "CONFIRMED" }, producerOwner.headers)
+      )
+      expect([confirmed.status, confirmed.data?.order?.id, confirmed.data?.order?.recipient_name]).toEqual([
+        200,
+        sale.id,
+        "Recipient",
+      ])
+      // On a producer with no owner on record any signed-in account may act
+      // (grandfathered); the echo of the order was its read of the recipient.
+      const unownedProducer = await foodDistribution.createFoodProducers({
+        name: "Unowned kitchen",
+        handle: `unowned-${uid()}`,
+        email: `unowned-kitchen-${uid()}@example.com`,
+      })
+      const unownedOrder = await homeOrder(unownedProducer.id)
+      const acknowledged = await safe(
+        api.put(
+          `/store/food-producers/${unownedProducer.id}/orders/${unownedOrder.id}`,
+          { producer_notes: "noted" },
+          stranger.headers
+        )
+      )
+      expect([acknowledged.status, acknowledged.data]).toEqual([
+        200,
+        { order: { id: unownedOrder.id, status: "PENDING" } },
+      ])
+      // The owner's read of an order serves its delivery without the PIN.
+      const ownOrderRead = await safe(
+        api.get(`/store/food-producers/${producer.id}/orders/${carried.orderId}`, producerOwner.headers)
+      )
+      expect([ownOrderRead.status, ownOrderRead.data?.order?.delivery?.id]).toEqual([200, carried.id])
+      expect(ownOrderRead.data.order.delivery).not.toHaveProperty("proof_pin_code")
+
+      // POST /store/couriers/:id (claim). Any account can register a courier
+      // and mark it available. A delivery that does not exist answered 404,
+      // one already assigned 400, and a pending one 200 with the row and the
+      // PIN its recipient is meant to read out to the courier.
+      const registered = await safe(
+        api.post(
+          "/store/couriers",
+          {
+            email: `own-courier-${uid()}@example.com`,
+            first_name: "S",
+            last_name: "T",
+            phone: "5550111",
+            courier_type: "INDEPENDENT",
+            vehicle_type: "BIKE",
+          },
+          stranger.headers
+        )
+      )
+      expect(registered.status).toBe(201)
+      const strangersCourier = registered.data.courier.id as string
+      const markAvailable = () =>
+        safe(api.put(`/store/couriers/${strangersCourier}`, { status: "AVAILABLE" }, stranger.headers))
+      expect((await markAvailable()).status).toBe(200)
+      const pending = await homeDelivery()
+      const missingHomeDeliveryId = flipLast(pending.id)
+      expect(await foodDistribution.listFoodDeliveries({ id: missingHomeDeliveryId })).toHaveLength(0)
+      for (const [what, id] of [
+        ["someone else's, assigned", carried.id],
+        ["missing", missingHomeDeliveryId],
+      ] as const) {
+        const answer = await safe(api.post(`/store/couriers/${strangersCourier}`, { delivery_id: id }, stranger.headers))
+        expect([what, answer.status, answer.data]).toEqual([what, 403, refusal])
+      }
+      expect((await foodDistribution.retrieveFoodDelivery(carried.id)).courier_id).toBe(runner.id)
+      const claimed = await safe(
+        api.post(`/store/couriers/${strangersCourier}`, { delivery_id: pending.id }, stranger.headers)
+      )
+      expect([claimed.status, claimed.data?.delivery?.id, claimed.data?.delivery?.delivery_address]).toEqual([
+        200,
+        pending.id,
+        HOME.delivery_address,
+      ])
+      expect(claimed.data.delivery).not.toHaveProperty("proof_pin_code")
+      expect(JSON.stringify(claimed.data)).not.toContain(HOME.proof_pin_code)
+      // Its courier now, so it is told the delivery is no longer claimable.
+      expect((await markAvailable()).status).toBe(200)
+      const claimedAgain = await safe(
+        api.post(`/store/couriers/${strangersCourier}`, { delivery_id: pending.id }, stranger.headers)
+      )
+      expect([claimedAgain.status, claimedAgain.data]).toEqual([400, { message: "Delivery is not available for claiming" }])
+
+      // Batching, behind FF_PICK_PACK_V1. With it on, a signed-in stranger
+      // batched anyone's delivery and got the row back with its address and
+      // PIN (201), added another (200), wrote a sequence onto a third
+      // through `optimized_route` (200), and every batch was listed to a
+      // caller with no account. The interim rule: a caller batches only a
+      // delivery they may already read.
+      const theirs = await homeDelivery()
+      const alsoTheirs = await homeDelivery()
+      const untouched = await homeDelivery()
+      const unownedBatch = await foodDistribution.createDeliveryBatches({ batch_number: `B-${uid()}` })
+      const batchIds = (answer: { data?: { batches?: Array<{ id: string }> } }) =>
+        (answer.data?.batches ?? []).map((row) => row.id).sort()
+      try {
+        process.env.FF_PICK_PACK_V1 = "true"
+
+        for (const [what, id] of [
+          ["someone else's", theirs.id],
+          ["missing", flipLast(theirs.id)],
+        ] as const) {
+          const answer = await safe(api.post("/store/delivery-batches", { delivery_ids: [id] }, stranger.headers))
+          expect([what, answer.status, answer.data]).toEqual([what, 403, refusal])
+        }
+        expect((await foodDistribution.retrieveFoodDelivery(theirs.id)).batch_id).toBeNull()
+        expect(await foodDistribution.listDeliveryBatches({ owner_id: stranger.id })).toHaveLength(0)
+        // The delivery's producer batches it, and the 201 carries no PIN.
+        const producersBatch = await safe(
+          api.post("/store/delivery-batches", { delivery_ids: [theirs.id] }, producerOwner.headers)
+        )
+        expect(producersBatch.status).toBe(201)
+        const producersBatchId = producersBatch.data.batch.id as string
+        expect(producersBatch.data.batch.deliveries).toHaveLength(1)
+        expect(producersBatch.data.batch.deliveries[0]).toMatchObject({
+          id: theirs.id,
+          delivery_address: HOME.delivery_address,
+        })
+        expect(producersBatch.data.batch.deliveries[0]).not.toHaveProperty("proof_pin_code")
+        // The stranger is the courier of the delivery claimed above, so may
+        // read it, so may batch it.
+        const strangersBatch = await safe(
+          api.post("/store/delivery-batches", { delivery_ids: [pending.id] }, stranger.headers)
+        )
+        expect(strangersBatch.status).toBe(201)
+        const strangersBatchId = strangersBatch.data.batch.id as string
+
+        // Adding to a batch: the same rule, and nothing written on a refusal.
+        for (const [what, id] of [
+          ["someone else's", alsoTheirs.id],
+          ["missing", flipLast(alsoTheirs.id)],
+        ] as const) {
+          const answer = await safe(
+            api.post(`/store/delivery-batches/${strangersBatchId}`, { delivery_ids: [id] }, stranger.headers)
+          )
+          expect([what, answer.status, answer.data]).toEqual([what, 403, refusal])
+        }
+        expect((await foodDistribution.retrieveFoodDelivery(alsoTheirs.id)).batch_id).toBeNull()
+        const added = await safe(
+          api.post(`/store/delivery-batches/${producersBatchId}`, { delivery_ids: [alsoTheirs.id] }, producerOwner.headers)
+        )
+        expect([added.status, added.data]).toEqual([200, { success: true, total_deliveries: 2 }])
+
+        // A route entry writes only onto a delivery in the batch.
+        for (const [what, id] of [
+          ["in no batch of theirs", untouched.id],
+          ["missing", flipLast(untouched.id)],
+        ] as const) {
+          const answer = await safe(
+            api.put(
+              `/store/delivery-batches/${strangersBatchId}`,
+              { optimized_route: [{ delivery_id: id, sequence: 7 }] },
+              stranger.headers
+            )
+          )
+          expect([what, answer.status, answer.data]).toEqual([what, 403, refusal])
+        }
+        expect((await foodDistribution.retrieveFoodDelivery(untouched.id)).batch_sequence).toBeNull()
+        const sequenced = await safe(
+          api.put(
+            `/store/delivery-batches/${strangersBatchId}`,
+            { optimized_route: [{ delivery_id: pending.id, sequence: 3 }] },
+            stranger.headers
+          )
+        )
+        expect(sequenced.status).toBe(200)
+        expect((await foodDistribution.retrieveFoodDelivery(pending.id)).batch_sequence).toBe(3)
+
+        // The write verbs on one batch: someone else's as a missing one.
+        // They answered 403 "This batch is not yours to manage" and 404.
+        for (const [verb, call] of [
+          ["PUT", (id: string) => api.put(`/store/delivery-batches/${id}`, { notes: "x" }, stranger.headers)],
+          ["POST", (id: string) => api.post(`/store/delivery-batches/${id}`, { delivery_ids: [pending.id] }, stranger.headers)],
+          ["DELETE", (id: string) => api.delete(`/store/delivery-batches/${id}`, stranger.headers)],
+        ] as const) {
+          for (const [what, id] of [
+            ["someone else's", batch.id],
+            ["missing", missingBatchId],
+          ] as const) {
+            const answer = await safe(call(id))
+            expect([verb, what, answer.status, answer.data]).toEqual([verb, what, 403, refusal])
+          }
+        }
+        const afterWrites = await foodDistribution.retrieveDeliveryBatch(batch.id)
+        expect([afterWrites.status, afterWrites.notes]).toEqual(["PLANNING", null])
+        // Naming a courier decides who reads the run, so only the batch's
+        // recorded owner does it: not whoever writes a batch with no owner.
+        const takeover = await safe(
+          api.put(`/store/delivery-batches/${unownedBatch.id}`, { courier_id: strangersCourier }, stranger.headers)
+        )
+        expect([takeover.status, takeover.data]).toEqual([403, refusal])
+        expect((await foodDistribution.retrieveDeliveryBatch(unownedBatch.id)).courier_id).toBeNull()
+
+        // The list: nobody without an account, and each caller their own.
+        const listedAnonymous = await safe(api.get("/store/delivery-batches", anonymous))
+        expect([listedAnonymous.status, listedAnonymous.data]).toEqual([403, refusal])
+        const listedStranger = await safe(api.get("/store/delivery-batches", stranger.headers))
+        expect([listedStranger.status, batchIds(listedStranger), listedStranger.data?.count]).toEqual([
+          200,
+          [strangersBatchId],
+          1,
+        ])
+        const listedPlanner = await safe(api.get("/store/delivery-batches", producerOwner.headers))
+        expect([listedPlanner.status, batchIds(listedPlanner)]).toEqual([200, [batch.id, producersBatchId].sort()])
+        // A courier's runs are listed to the courier's owner, and naming a
+        // courier that is not the caller's widens nothing.
+        const courierRuns = await safe(api.get(`/store/delivery-batches?courier_id=${courier.id}`, courierOwner.headers))
+        expect([courierRuns.status, batchIds(courierRuns)]).toEqual([200, [batch.id]])
+        const notTheirCourier = await safe(api.get(`/store/delivery-batches?courier_id=${courier.id}`, stranger.headers))
+        expect([notTheirCourier.status, batchIds(notTheirCourier)]).toEqual([200, []])
+
+        // Operator check, for an environment where the flag was ever on: the
+        // rule above stops new batches, it does not undo old ones. This lists
+        // each delivery sitting in a batch whose planner is not the delivery's
+        // producer, courier or recipient, and so reads its address through
+        // GET /store/delivery-batches/:id. None of the batches made through
+        // the routes above is listed; a delivery put into the stranger's batch
+        // the way the old route allowed is, until the stranger is made its
+        // recipient.
+        const FOREIGN_DELIVERIES_IN_BATCHES =
+          "SELECT b.id AS batch_id, b.owner_id AS planner, d.id AS delivery_id " +
+          "FROM food_delivery_batch b " +
+          "JOIN food_delivery d ON d.batch_id = b.id AND d.deleted_at IS NULL " +
+          "LEFT JOIN food_producer p ON p.id = d.producer_id " +
+          "LEFT JOIN food_courier c ON c.id = d.courier_id " +
+          "LEFT JOIN food_order o ON o.id = d.order_id " +
+          "WHERE b.deleted_at IS NULL " +
+          "AND b.owner_id IS DISTINCT FROM p.owner_id " +
+          "AND b.owner_id IS DISTINCT FROM c.owner_id " +
+          "AND b.owner_id IS DISTINCT FROM o.customer_id " +
+          "ORDER BY b.id, d.id;"
+        const pg = getContainer().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        expect((await pg.raw(FOREIGN_DELIVERIES_IN_BATCHES)).rows).toEqual([])
+        await foodDistribution.updateFoodDeliveries({ id: untouched.id, batch_id: strangersBatchId })
+        expect((await pg.raw(FOREIGN_DELIVERIES_IN_BATCHES)).rows).toEqual([
+          { batch_id: strangersBatchId, planner: stranger.id, delivery_id: untouched.id },
+        ])
+        await foodDistribution.updateFoodOrders({ id: untouched.orderId, customer_id: stranger.id })
+        expect((await pg.raw(FOREIGN_DELIVERIES_IN_BATCHES)).rows).toEqual([])
+      } finally {
+        if (savedPickPack === undefined) delete process.env.FF_PICK_PACK_V1
+        else process.env.FF_PICK_PACK_V1 = savedPickPack
+      }
+
+      // /vendor/deliveries/:id, as a seller with a producer profile: 404 for
+      // a delivery that does not exist beside 403 "This delivery does not
+      // belong to your store", on GET and on POST.
+      const sellerA = await createAuthenticatedSeller({ api, getContainer })
+      const sellerB = await createAuthenticatedSeller({ api, getContainer })
+      const storeA = await foodDistribution.createFoodProducers({
+        name: "Store A",
+        handle: `store-a-${uid()}`,
+        email: `store-a-${uid()}@example.com`,
+        seller_id: sellerA.seller.id,
+      })
+      await foodDistribution.createFoodProducers({
+        name: "Store B",
+        handle: `store-b-${uid()}`,
+        email: `store-b-${uid()}@example.com`,
+        seller_id: sellerB.seller.id,
+      })
+      // Created through the module with no status history. The vendor POST
+      // reads the history as a list and answers 500 for one written by
+      // `createDeliveryForOrder` (an `{ entries }` object): seen here, a
+      // separate defect, left as it is.
+      const storeDelivery = await foodDistribution.createFoodDeliveries({
+        delivery_number: `DEL-${uid()}`,
+        order_id: (await homeOrder(storeA.id)).id,
+        producer_id: storeA.id,
+        pickup_address: "1 Store Way",
+        delivery_address: "9 Vendor Home St",
+        recipient_name: "Vera",
+        proof_type: ProofType.PIN_CODE,
+        proof_pin_code: "9911273650",
+      })
+      const missingStoreDeliveryId = flipLast(storeDelivery.id)
+      expect(await foodDistribution.listFoodDeliveries({ id: missingStoreDeliveryId })).toHaveLength(0)
+      for (const [verb, call] of [
+        ["GET", (id: string) => api.get(`/vendor/deliveries/${id}`, authHeader(sellerB.token))],
+        ["POST", (id: string) => api.post(`/vendor/deliveries/${id}`, { status: "CANCELLED" }, authHeader(sellerB.token))],
+      ] as const) {
+        for (const [what, id] of [
+          ["another store's", storeDelivery.id],
+          ["missing", missingStoreDeliveryId],
+        ] as const) {
+          const answer = await safe(call(id))
+          expect([verb, what, answer.status, answer.data]).toEqual([verb, what, 403, refusal])
+        }
+      }
+      expect((await foodDistribution.retrieveFoodDelivery(storeDelivery.id)).status).toBe("PENDING")
+      // The store's own seller is served, without the PIN, on all three.
+      const vendorRead = await safe(api.get(`/vendor/deliveries/${storeDelivery.id}`, authHeader(sellerA.token)))
+      expect([vendorRead.status, vendorRead.data?.delivery?.id, vendorRead.data?.delivery?.delivery_address]).toEqual([
+        200,
+        storeDelivery.id,
+        "9 Vendor Home St",
+      ])
+      const vendorList = await safe(api.get("/vendor/deliveries", authHeader(sellerA.token)))
+      expect([vendorList.status, vendorList.data?.deliveries?.map((row: { id: string }) => row.id)]).toEqual([
+        200,
+        [storeDelivery.id],
+      ])
+      const vendorWrite = await safe(
+        api.post(`/vendor/deliveries/${storeDelivery.id}`, { status: "WAITING_FOR_ORDER" }, authHeader(sellerA.token))
+      )
+      expect(vendorWrite.status).toBe(200)
+      expect((await foodDistribution.retrieveFoodDelivery(storeDelivery.id)).status).toBe("WAITING_FOR_ORDER")
+      for (const answer of [vendorRead, vendorList, vendorWrite]) {
+        expect(JSON.stringify(answer.data)).not.toContain("proof_pin_code")
+        expect(JSON.stringify(answer.data)).not.toContain("9911273650")
+      }
     })
   },
 })
