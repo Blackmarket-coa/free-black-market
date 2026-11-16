@@ -282,66 +282,18 @@ export function escrowTransitionFor(
 }
 
 /**
- * Digits in a currency's minor unit: 2 for USD, 0 for JPY, 3 for KWD.
- *
- * Read from Intl, the same lookup the admin panel's Disputes screen formats
- * with (`admin-panel/src/routes/disputes/dispute-rules.ts`, `minorDigits`),
- * so a figure stored here reads back there as the amount that was meant. A
- * missing or unknown code counts as two digits.
+ * Medusa amounts as integer minor units, and the `amount_unit` mark rows
+ * written in minor units carry. They live in `shared/minor-units.ts` since
+ * creator attribution needed the same conversion (SD-95); re-exported here so
+ * the dispute code and its tests keep their imports.
  */
-export function currencyMinorDigits(currencyCode: string | null | undefined): number {
-  try {
-    return (
-      new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: String(currencyCode ?? "usd").toUpperCase(),
-      }).resolvedOptions().maximumFractionDigits ?? 2
-    )
-  } catch {
-    return 2
-  }
-}
-
-/**
- * A Medusa amount as an integer in the currency's minor unit.
- *
- * Medusa v2 keeps money in MAJOR units: an item total of 25.99 is $25.99,
- * usually handed back as a BigNumber (which `Number()` reads through its
- * `valueOf`). `order_dispute` stores minor units. The intake used to floor
- * the major figure and store that, so a $25.99 claim became 25 and every
- * screen that followed the declared unit showed it as $0.25.
- *
- * Rounded to the nearest minor unit; the `toFixed` step drops binary noise
- * first, so 25.99 × 100 (2598.9999999999995) is 2599 and a half-cent from
- * tax rounds up rather than down. Anything unreadable is 0, which the
- * callers already treat as "nothing to claim" for that line.
- */
-export function toMinorUnits(amount: unknown, currencyCode: string | null | undefined): number {
-  const major = Number(amount)
-  if (!Number.isFinite(major)) return 0
-  const scaled = major * 10 ** currencyMinorDigits(currencyCode)
-  return Math.round(Number(scaled.toFixed(6)))
-}
-
-/**
- * The mark every dispute row written since the minor-unit fix carries:
- * `metadata.amount_unit = "minor"`, set by `OrderDisputeService.open`.
- *
- * A row the old intake wrote (claim = floor of the major-unit total) and a
- * row written since, whose buyer typed a claim equal to that same floored
- * figure, have identical amounts. Only this mark tells them apart, so the
- * corrective script (`minor-unit-correction.ts`) never touches a marked row.
- */
-export const AMOUNT_UNIT_METADATA_KEY = "amount_unit"
-export const AMOUNT_UNIT_MINOR = "minor"
-
-export function isMarkedMinorUnits(metadata: unknown): boolean {
-  return (
-    !!metadata &&
-    typeof metadata === "object" &&
-    (metadata as Record<string, unknown>)[AMOUNT_UNIT_METADATA_KEY] === AMOUNT_UNIT_MINOR
-  )
-}
+export {
+  AMOUNT_UNIT_METADATA_KEY,
+  AMOUNT_UNIT_MINOR,
+  currencyMinorDigits,
+  isMarkedMinorUnits,
+  toMinorUnits,
+} from "../../shared/minor-units"
 
 export type OrderLineForDispute = {
   seller_id?: string | null

@@ -80,6 +80,14 @@ export interface AttributeOrderInput {
   visitorToken?: string | null
   shortCode?: string | null
   appliedPromoCodes?: string[] | null
+  /**
+   * The order subtotal as an integer in the currency's MINOR unit (cents for
+   * USD). Medusa's `order.subtotal` is MAJOR units; convert it with
+   * `toMinorUnits` (`shared/minor-units.ts`) first. It is stored as-is in
+   * `attributed_subtotal_cents` / `commission_basis_cents`, and the
+   * commission taken on it is what the payout breakdown, the ledger credit
+   * and its refund reversal read as cents (SD-95).
+   */
   subtotalCents: number
   currencyCode?: string
   source?: AttributionSource
@@ -364,6 +372,17 @@ class CreatorAttributionService extends MedusaService({
     // through their own link, not to gate anonymous buyers.
     if (input.buyerSellerId && input.buyerSellerId === chosen.creatorSellerId) {
       return null
+    }
+
+    // A fraction of a cent is never a minor-unit amount: it is a major-unit
+    // figure ($25.50 as 25.5) handed in unconverted, which is how SD-95
+    // stored every commission at 1/100. Refused rather than stored, so the
+    // mistake is a logged error, not a wrong payout. (A whole-dollar major
+    // figure cannot be told apart here; the caller's conversion is the fix.)
+    if (!Number.isSafeInteger(input.subtotalCents) || input.subtotalCents <= 0) {
+      throw new Error(
+        `attributeOrder: subtotalCents must be a positive integer in minor units, got ${String(input.subtotalCents)}`
+      )
     }
 
     const commissionPercent = chosen.commissionPercent ?? this.resolveDefaultCommissionPercent()

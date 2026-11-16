@@ -14,6 +14,11 @@ import {
   resolveSellerIdByMxid,
 } from "../lib/blackout-identity"
 import { getOrderCartMetadata } from "../lib/cart-metadata-recovery"
+import {
+  AMOUNT_UNIT_METADATA_KEY,
+  AMOUNT_UNIT_MINOR,
+  toMinorUnits,
+} from "../shared/minor-units"
 
 /**
  * Subscriber: attribute the order to a creator (if applicable) and emit
@@ -89,8 +94,16 @@ export default async function attributeOrderOnPlacedSubscriber({
     const promotions = (order.promotions || []) as Array<{ code?: string | null }>
     const appliedPromoCodes = promotions.map((p) => p.code).filter((c): c is string => !!c)
 
-    const subtotalCents = Number(order.subtotal ?? order.total ?? 0)
-    if (!Number.isFinite(subtotalCents) || subtotalCents <= 0) {
+    // SD-95: Medusa v2 amounts are MAJOR units ($25.00 is 25) and every
+    // `*_cents` column on order_attribution is minor units, read as cents by
+    // the payout breakdown, the commission ledger credit and its refund
+    // reversal, and every screen. This passed the major figure straight
+    // through, so a $25 order at 10% stored a commission of 2 where 250 is
+    // right. Converted here, once, by the currency's own exponent (JPY has
+    // none, KWD has three).
+    const currencyCode = order.currency_code || "usd"
+    const subtotalCents = toMinorUnits(order.subtotal ?? order.total ?? 0, currencyCode)
+    if (subtotalCents <= 0) {
       return
     }
 
@@ -114,7 +127,12 @@ export default async function attributeOrderOnPlacedSubscriber({
       shortCode,
       appliedPromoCodes,
       subtotalCents,
-      currencyCode: order.currency_code || "usd",
+      currencyCode,
+      // Tells the rows this writes from the ones written before the fix,
+      // which can hold the same figures; the corrective script
+      // (scripts/fix-creator-commission-minor-units.ts) never touches a
+      // marked row.
+      metadata: { [AMOUNT_UNIT_METADATA_KEY]: AMOUNT_UNIT_MINOR },
     })
 
     if (!attribution) return

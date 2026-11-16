@@ -93,5 +93,6 @@ both together. Then even a word lost some other way leaves it previewing.
 | `reencrypt-channel-credentials.ts` | `apply` | `apply` or `dry-run` |
 | `backfill-vendor-plan-assignments.ts` | `apply` | `default-plan=<code>` (required), `apply` or `dry-run`; `PLAN_BACKFILL_DRY_RUN=1` forces a dry run |
 | `fix-order-dispute-minor-units.ts` | `apply` | `before=<ISO time with a zone>` (required), `apply` or `dry-run` |
+| `fix-creator-commission-minor-units.ts` | `apply` | `apply` or `dry-run` (SD-95; commission already credited is listed, never changed) |
 | `backfill-promoted-listings.ts` | no word: writes unless `dry-run` | `dry-run`. Its grants are additive and idempotent (an open-ended entitlement for a seller already featured), and the `expire-promoted-listings` job tells operators to run it bare |
 | `ingest-irs-exempt-orgs.ts` | no word (behind `FF_NONPROFIT_PARITY_V1`) | source names: `pub78`, `revocation`, `eo_bmf`; none means all three |
