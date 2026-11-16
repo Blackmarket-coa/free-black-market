@@ -9,8 +9,8 @@
  * `fulfilled_quantity`, ...) live on OrderItem and computed totals (`total`,
  * `subtotal`, ...) on no table at all, so `items.quantity` and `items.total`
  * name nothing. The read does not fail: the line comes back WITHOUT the
- * field (and as `null` when nothing else on it was asked for), which a caller
- * then counts as zero. Until SD-117 the same read threw "Entity
+ * field (and as an empty slot when nothing else on it was asked for), which a
+ * caller then counts as zero. Until SD-117 the same read threw "Entity
  * 'OrderLineItem' does not have property ..." for any order that has a line,
  * because MikroORM 6.6.14 made the unresolvable path a populate hint;
  * `scripts/patch-mikro-orm.js` no longer lets it, which is how MikroORM
