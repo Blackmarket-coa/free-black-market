@@ -36,7 +36,8 @@ import { readRouteFileExports } from "./route-file-exports"
  *      (a second declarator, a destructured name, `export { a as POST }`),
  *      read from its syntax tree the way Medusa's RoutesLoader registers them
  *      (`route-file-exports.ts`); a file whose verbs cannot be read that way
- *      (`export *`, a default export) is listed as unreviewed;
+ *      (`export *`, a default export) is listed as unreviewed, and REVIEWED
+ *      may name verbs only, so such a file can be fixed but not reviewed;
  *   2. a route REVIEWED says a middleware guards is reached with no
  *      credentials, with the wrong actor's token, or through a re-spelled URL
  *      (re-cased, trailing slash, percent-encoded id; SD-86 and SD-87 were
@@ -368,6 +369,15 @@ const STORE_TWINS: Record<string, Guard> = {
 }
 const GUARDS: Record<string, Guard> = { ...REVIEWED, ...STORE_TWINS }
 
+const VERB_KEY = new RegExp(`^(${HTTP_METHODS.join("|")}) /`)
+/**
+ * Entries that are not a verb and a path. A `(no verb)` or `(unreadable: …)`
+ * key stands for a file the walk could not read verbs from; reviewing it would
+ * turn the walk green while the file's live verbs go unlisted and unprobed,
+ * so the only answer to one is to fix the route file.
+ */
+const nonVerbKeys = (guards: Record<string, Guard>) => Object.keys(guards).filter((key) => !VERB_KEY.test(key))
+
 // ---------------------------------------------------------------------------
 // The walk
 // ---------------------------------------------------------------------------
@@ -416,8 +426,9 @@ function routesOf(rel: string, text: string): WalkedRoute[] {
   // A route file that exports no verb is not a reviewed nothing: say so.
   if (read.verbs.length === 0) routes.push({ key: `(no verb) ${matcher}`, method: "", matcher, file: rel, handler: "" })
   // `export *`, a default export or a CommonJS write can register verbs that
-  // no export in the file names. None exists; one that appears is unreviewed
-  // until the file exports its verbs by name.
+  // no export in the file names. None exists; one that appears stays
+  // unreviewed, because REVIEWED may name verbs only (nonVerbKeys), until the
+  // file exports its verbs by name.
   for (const why of read.unreadable) {
     routes.push({ key: `(unreadable: ${why}) ${matcher}`, method: "", matcher, file: rel, handler: "" })
   }
@@ -634,6 +645,10 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
   it("the reviewed list names no route that is gone", () => {
     const live = new Set(walked.map((r) => r.key))
     expect(Object.keys(REVIEWED).filter((key) => !live.has(key))).toEqual([])
+  })
+
+  it("the reviewed list names verbs only: a file whose verbs cannot be read is fixed, not reviewed", () => {
+    expect(nonVerbKeys(GUARDS)).toEqual([])
   })
 
   it("a public entry says why, and a handler-guarded route still contains its guard", () => {
@@ -919,10 +934,15 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       )
     })
 
-    it("a route file whose verbs cannot be read is listed as unreviewed, so the walk fails on it", () => {
+    it("a route file whose verbs cannot be read is listed as unreviewed, and reviewing that entry is refused", () => {
       const keys = routesOf(path.join("health", "route.ts"), 'export * from "./handlers"').map((r) => r.key)
       expect(keys).toEqual(["(no verb) /health", '(unreadable: export * from "./handlers" (line 1)) /health'])
       expect(keys.filter((key) => key in REVIEWED)).toEqual([])
+      // Writing the entry into the reviewed list would silence the walk while
+      // the re-exported verbs stay live and unprobed; the verbs-only check
+      // refuses it.
+      const silenced = { ...REVIEWED, [keys[1]]: pub("re-exported handlers, reviewed as public for now") }
+      expect(nonVerbKeys(silenced)).toEqual([keys[1]])
     })
   })
 
