@@ -513,7 +513,13 @@ medusaIntegrationTestRunner({
         { delivery_id: first.id, sequence: 1 },
         { delivery_id: second.id, sequence: 2 },
       ]
-      await foodDistribution.updateDeliveryBatches({ id: run.id, optimized_route: ROUTE, notes: "leave at the side gate" })
+      await foodDistribution.updateDeliveryBatches({
+        id: run.id,
+        // A list, as PUT /store/delivery-batches/:id writes it; the column is
+        // json, which the generated type calls a record.
+        optimized_route: ROUTE as unknown as Record<string, unknown>,
+        notes: "leave at the side gate",
+      })
       expect((await foodDistribution.retrieveDeliveryBatch(run.id)).owner_id).toBeNull()
 
       process.env.FF_PICK_PACK_V1 = "true"
