@@ -5,6 +5,7 @@ import type FoodDistributionService from "../../../../../../modules/food-distrib
 import { DeliveryStatus } from "../../../../../../modules/food-distribution/models/delivery"
 import { actorMayManage, actorOwnsResource } from "../../../../../../shared/actor-scope"
 import { forbidden } from "../../../../../../shared/community-read-access"
+import { nullIfNotFound } from "../../../../../../shared/null-if-not-found"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -48,6 +49,14 @@ const updateProducerSchema = z.object({
  * learn which order ids exist, and with `actorOwnsResource` (no grandfathering
  * of a null `owner_id`), as the list route does, because this is a PII read.
  * Refusals use `forbidden()`: 403 for "not signed in" and "not yours" alike.
+ *
+ * The owner of one producer is a stranger to every other producer's orders,
+ * and any account can own a producer. For them an order id that does not
+ * exist used to answer 404 (the bare `retrieveFoodOrder` throws) and another
+ * producer's order 403 "Order does not belong to this producer", which told
+ * them which order ids exist. Both are now the one `forbidden()`. A producer
+ * that does not exist keeps its 404: producers are a public catalogue
+ * (`GET /store/food-producers`), so that says nothing new.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id: producerId, orderId } = req.params
@@ -66,16 +75,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
   
-  // Get order
-  const order = await foodDistribution.retrieveFoodOrder(orderId)
-  if (!order) {
-    res.status(404).json({ message: "Order not found" })
-    return
-  }
-  
-  // Verify order belongs to producer
-  if (order.producer_id !== producerId) {
-    res.status(403).json({ message: "Order does not belong to this producer" })
+  // The order, when it is this producer's. Missing and another producer's
+  // are refused alike.
+  const order = await nullIfNotFound(foodDistribution.retrieveFoodOrder(orderId))
+  if (!order || order.producer_id !== producerId) {
+    forbidden(res)
     return
   }
   

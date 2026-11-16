@@ -7,6 +7,7 @@ import { MedusaError } from "@medusajs/framework/utils"
 import { GET as deliveryTrack } from "../food-deliveries/[id]/track/route"
 import { GET as deliverySubscribe } from "../food-deliveries/[id]/subscribe/route"
 import { GET as batchDetail } from "../delivery-batches/[id]/route"
+import { GET as tradeDetail } from "../food-trades/[id]/route"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 
 /**
@@ -366,9 +367,21 @@ describe("deliveries — the enumerable-id pair", () => {
 
 describe("delivery batches — a courier's run", () => {
   const BATCH = { id: "bat_1", owner_id: "cus_planner", courier_id: "cour_1" }
-  const modules = (batch: Record<string, unknown> | null) => ({
+  // A missing batch is a thrown not-found, as the module answers it (seen on
+  // Postgres with FF_PICK_PACK_V1 on: 404 "FoodDeliveryBatch with id: … was
+  // not found"). This mock returned null, which the service never does, so
+  // "a batch that does not exist" below passed on the route's `!batch`
+  // branch while every real request for a missing batch answered 404: the
+  // same false green the delivery mock above had.
+  const modules = (batch: Record<string, unknown> | null, failure?: Error) => ({
     [FOOD_DISTRIBUTION_MODULE]: {
-      retrieveDeliveryBatch: jest.fn(async () => batch),
+      retrieveDeliveryBatch: jest.fn(async (id: string) => {
+        if (failure) throw failure
+        if (!batch) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodDeliveryBatch with id: ${id} was not found`)
+        }
+        return batch
+      }),
       listFoodDeliveries: jest.fn(async () => [
         { id: "del_1", delivery_address: "12 Elm Street" },
       ]),
@@ -427,11 +440,121 @@ describe("delivery batches — a courier's run", () => {
   })
 
   it("refuses identically for a batch that does not exist", async () => {
-    const res = createRes()
+    const someoneElses = createRes()
     await batchDetail(
-      makeReq({ actorId: "cus_planner", modules: modules(null), rows: {} }) as never,
+      makeReq({ actorId: "cus_stranger", modules: modules(BATCH), rows: COURIER_ROWS }) as never,
+      someoneElses as never
+    )
+    expect(someoneElses.statusCode).toBe(403)
+
+    for (const actorId of ["cus_planner", undefined]) {
+      const res = createRes()
+      await batchDetail(makeReq({ actorId, modules: modules(null), rows: {} }) as never, res as never)
+      expect(res.statusCode).toBe(403)
+      expect(res.body).toEqual(someoneElses.body)
+    }
+  })
+
+  it("does not turn a failed lookup into a refusal", async () => {
+    const res = createRes()
+    await expect(
+      batchDetail(
+        makeReq({
+          actorId: "cus_planner",
+          modules: modules(BATCH, new Error("connection terminated")),
+          rows: COURIER_ROWS,
+        }) as never,
+        res as never
+      )
+    ).rejects.toThrow("connection terminated")
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe("one trade — /store/food-trades/:id", () => {
+  const TRADE = {
+    id: "fo_trade",
+    transaction_type: "TRADE",
+    producer_id: "prd_1",
+    customer_id: "cus_trader",
+    recipient_name: "Ada Okafor",
+    metadata: { trade_offer_items: [{ name: "eggs" }] },
+  }
+  const SALE = { ...TRADE, id: "fo_sale", transaction_type: "SALE" }
+  const PRODUCER_ROWS = { food_producer: [{ id: "prd_1", owner_id: "cus_producer" }] }
+  // Missing is a thrown not-found, as the module answers it on Postgres.
+  const modules = (order: Record<string, unknown> | null, failure?: Error) => ({
+    [FOOD_DISTRIBUTION_MODULE]: {
+      retrieveFoodOrder: jest.fn(async (id: string) => {
+        if (failure) throw failure
+        if (!order) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodOrder with id: ${id} was not found`)
+        }
+        return order
+      }),
+      retrieveFoodProducer: jest.fn(async () => ({ id: "prd_1", name: "Kitchen", producer_type: "HOME_COOK" })),
+      listFoodOrderItems: jest.fn(async () => []),
+    },
+  })
+  const read = async (opts: { actorId?: string; order: Record<string, unknown> | null }) => {
+    const res = createRes()
+    await tradeDetail(
+      makeReq({ actorId: opts.actorId, modules: modules(opts.order), rows: PRODUCER_ROWS }) as never,
       res as never
     )
+    return res
+  }
+
+  it("refuses a trade, another kind of order and a missing id alike", async () => {
+    // It gave three answers to a caller with no account: 403 for a trade,
+    // 400 for an order that is not one, 404 for an id that does not exist.
+    for (const actorId of [undefined, "cus_stranger"]) {
+      const someoneElses = await read({ actorId, order: TRADE })
+      expect(someoneElses.statusCode).toBe(403)
+      expect(JSON.stringify(someoneElses.body)).not.toContain("Okafor")
+
+      for (const order of [null, SALE]) {
+        const res = await read({ actorId, order })
+        expect([order?.id ?? "missing", res.statusCode]).toEqual([order?.id ?? "missing", 403])
+        expect(res.body).toEqual(someoneElses.body)
+      }
+    }
+  })
+
+  it("serves the trade to its producer and to the customer on it", async () => {
+    for (const actorId of ["cus_producer", "cus_trader"]) {
+      const res = await read({ actorId, order: TRADE })
+      expect([actorId, res.statusCode]).toEqual([actorId, 200])
+      expect((res.body.trade as { id: string }).id).toBe("fo_trade")
+    }
+  })
+
+  it("tells only a principal of the order that it is not a trade", async () => {
+    for (const actorId of ["cus_producer", "cus_trader"]) {
+      const res = await read({ actorId, order: SALE })
+      expect([actorId, res.statusCode, res.body]).toEqual([actorId, 400, { message: "Order is not a trade" }])
+    }
+  })
+
+  it("refuses a principal a missing id the same way", async () => {
+    const stranger = await read({ actorId: "cus_stranger", order: TRADE })
+    const res = await read({ actorId: "cus_producer", order: null })
     expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual(stranger.body)
+  })
+
+  it("does not turn a failed lookup into a refusal", async () => {
+    const res = createRes()
+    await expect(
+      tradeDetail(
+        makeReq({
+          actorId: "cus_producer",
+          modules: modules(TRADE, new Error("connection terminated")),
+          rows: PRODUCER_ROWS,
+        }) as never,
+        res as never
+      )
+    ).rejects.toThrow("connection terminated")
+    expect(res.statusCode).toBe(200)
   })
 })

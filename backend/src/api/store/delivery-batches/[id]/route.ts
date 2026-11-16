@@ -11,6 +11,7 @@ import {
   publicCourierView,
   redactDeliveries,
 } from "../../../../modules/food-distribution/public-view"
+import { nullIfNotFound } from "../../../../shared/null-if-not-found"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -40,13 +41,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
-  const batch = await foodDistribution.retrieveDeliveryBatch(id)
-
   // D10-5. A batch is a courier's run: the account that planned it and the
   // courier driving it. Everyone else is refused, and refused identically
   // whether the batch is missing or merely not theirs — batch ids are
   // enumerable and the payload is a list of people's delivery addresses.
   //
+  // `nullIfNotFound`: the module's retrieve throws for a missing batch, so
+  // read bare it answered 404 where a real batch answered 403, and the
+  // `!batch` below was never reached.
+  const batch = await nullIfNotFound(foodDistribution.retrieveDeliveryBatch(id))
+
   // `actorOwnsResource`, not the `actorMayManage` the write verbs below use:
   // that one grandfathers a null `owner_id` so pre-ownership batches stay
   // manageable, which is defensible for a write behind the authenticated

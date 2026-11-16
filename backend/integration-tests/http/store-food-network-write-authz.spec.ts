@@ -16,7 +16,9 @@ jest.setTimeout(180 * 1000)
  * courier writes the courier's position, and only that courier, with the PIN
  * on record, closes the delivery. Each was open to any signed-in account. A
  * delivery's reads refuse a missing id as they refuse someone else's (they
- * answered 404 and 403). The unit spec (`src/api/store/__tests__/community-write-authz.unit.spec.ts`)
+ * answered 404 and 403), and so do the reads of one trade, one of a
+ * producer's orders and one delivery batch (`d10-5-read-scoping.unit.spec.ts`
+ * has the same cases on a fake container). The unit spec (`src/api/store/__tests__/community-write-authz.unit.spec.ts`)
  * covers the same routes with a fake container; this one proves the guards
  * hold through `authenticate`, `actorOwnsProducer` / `actorOwnsCourier`'s real
  * lookups, and the `food_delivery` / `food_order` tables.
@@ -176,6 +178,109 @@ medusaIntegrationTestRunner({
       expect([producerTrack.status, producerTrack.data?.delivery_id]).toEqual([200, deliveryId])
       const courierDetail = await safe(api.get(`/store/food-deliveries/${deliveryId}`, courierOwner.headers))
       expect([courierDetail.status, courierDetail.data?.delivery?.id]).toEqual([200, deliveryId])
+
+      // The other reads of one record by id refuse the same way. Each read
+      // its record with a bare module retrieve, which throws a not-found, so
+      // the `!record` refusal written under it was never reached and a
+      // missing id answered 404 beside a real one's 403.
+      const flipLast = (id: string) => `${id.slice(0, -1)}${id.endsWith("0") ? "1" : "0"}`
+
+      // One trade. No sign-in is needed to try it, and it gave three
+      // answers: 403 for a trade, 400 "Order is not a trade" for another
+      // kind of order, 404 for an id that does not exist.
+      const missingOrderId = flipLast(trade.id)
+      expect(await foodDistribution.listFoodOrders({ id: missingOrderId })).toHaveLength(0)
+      for (const [who, caller] of [
+        ["stranger", stranger.headers],
+        ["anonymous", anonymous],
+      ] as const) {
+        for (const [what, id] of [
+          ["a trade", trade.id],
+          ["a sale", sale.id],
+          ["missing", missingOrderId],
+        ] as const) {
+          const answer = await safe(api.get(`/store/food-trades/${id}`, caller))
+          expect([what, who, answer.status, answer.data]).toEqual([what, who, 403, refusal])
+        }
+      }
+      // Its principals are served: the producer, and the customer on it.
+      // Only they are told when an order of theirs is not a trade.
+      await foodDistribution.updateFoodOrders({ id: trade.id, customer_id: courierOwner.id })
+      for (const [who, caller] of [
+        ["producer", producerOwner.headers],
+        ["customer", courierOwner.headers],
+      ] as const) {
+        const own = await safe(api.get(`/store/food-trades/${trade.id}`, caller))
+        expect([who, own.status, own.data?.trade?.id]).toEqual([who, 200, trade.id])
+      }
+      const notATrade = await safe(api.get(`/store/food-trades/${sale.id}`, producerOwner.headers))
+      expect([notATrade.status, notATrade.data]).toEqual([400, { message: "Order is not a trade" }])
+      const producerMissing = await safe(api.get(`/store/food-trades/${missingOrderId}`, producerOwner.headers))
+      expect([producerMissing.status, producerMissing.data]).toEqual([403, refusal])
+
+      // One of a producer's orders. Its owner reads it; to the owner of a
+      // different producer it is refused as an order that does not exist is.
+      // That pair was 403 "Order does not belong to this producer" and 404,
+      // and any account can own a producer.
+      const otherProducer = await foodDistribution.createFoodProducers({
+        name: "Other kitchen",
+        handle: `other-${uid()}`,
+        email: `other-${uid()}@example.com`,
+        owner_id: stranger.id,
+      })
+      const ownOrder = await safe(api.get(`/store/food-producers/${producer.id}/orders/${sale.id}`, producerOwner.headers))
+      expect([ownOrder.status, ownOrder.data?.order?.id]).toEqual([200, sale.id])
+      for (const [what, id] of [
+        ["another producer's", sale.id],
+        ["missing", missingOrderId],
+      ] as const) {
+        const answer = await safe(api.get(`/store/food-producers/${otherProducer.id}/orders/${id}`, stranger.headers))
+        expect([what, answer.status, answer.data]).toEqual([what, 403, refusal])
+      }
+
+      // One delivery batch: the account that planned it and its courier. The
+      // prefix is behind FF_PICK_PACK_V1 (off by default, read per request),
+      // where a real and a missing batch answer the same 404; with it on
+      // they answered 403 and 404.
+      const batch = await foodDistribution.createDeliveryBatches({
+        batch_number: `B-${uid()}`,
+        owner_id: producerOwner.id,
+        owner_type: "customer",
+        courier_id: courier.id,
+      })
+      const missingBatchId = flipLast(batch.id)
+      expect(await foodDistribution.listDeliveryBatches({ id: missingBatchId })).toHaveLength(0)
+      const savedPickPack = process.env.FF_PICK_PACK_V1
+      try {
+        delete process.env.FF_PICK_PACK_V1
+        for (const id of [batch.id, missingBatchId]) {
+          const dark = await safe(api.get(`/store/delivery-batches/${id}`, anonymous))
+          expect([dark.status, dark.data?.type]).toEqual([404, "feature_disabled"])
+        }
+        process.env.FF_PICK_PACK_V1 = "true"
+        for (const [who, caller] of [
+          ["stranger", stranger.headers],
+          ["anonymous", anonymous],
+        ] as const) {
+          for (const [what, id] of [
+            ["someone else's", batch.id],
+            ["missing", missingBatchId],
+          ] as const) {
+            const answer = await safe(api.get(`/store/delivery-batches/${id}`, caller))
+            expect([what, who, answer.status, answer.data]).toEqual([what, who, 403, refusal])
+          }
+        }
+        for (const [who, caller] of [
+          ["planner", producerOwner.headers],
+          ["courier", courierOwner.headers],
+        ] as const) {
+          const own = await safe(api.get(`/store/delivery-batches/${batch.id}`, caller))
+          expect([who, own.status, own.data?.batch?.id]).toEqual([who, 200, batch.id])
+        }
+      } finally {
+        if (savedPickPack === undefined) delete process.env.FF_PICK_PACK_V1
+        else process.env.FF_PICK_PACK_V1 = savedPickPack
+      }
 
       // Proof of delivery: the courier, with the PIN the delivery was created
       // with. Before the courier lookup read through the module, no courier
