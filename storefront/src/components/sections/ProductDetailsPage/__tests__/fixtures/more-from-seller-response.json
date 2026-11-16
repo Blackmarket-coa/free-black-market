@@ -1,0 +1,99 @@
+{
+  "products": [
+    {
+      "id": "prod_01M7HN3R6ABZJA2XS2259ZM9HB",
+      "title": "Basil",
+      "handle": "basil",
+      "thumbnail": null,
+      "created_at": "2026-11-16T07:45:56.429Z",
+      "metadata": null,
+      "variants": [
+        {
+          "id": "variant_01M7HN3R6AX336F9DK93YQWDRD",
+          "metadata": null
+        }
+      ],
+      "categories": [],
+      "type": null,
+      "seller": {
+        "id": "sel_01M7HN3R655D61ZV09DRA3FTMS",
+        "name": "Riverbend Farm",
+        "handle": "riverbend-farm",
+        "store_status": "ACTIVE"
+      },
+      "sales_channels": [
+        {
+          "id": "sc_01M7HN3R5SM07NQTQHB714ER56",
+          "name": "Storefront"
+        }
+      ]
+    },
+    {
+      "id": "prod_01M7HN3R6A6FX09KE3E2W4AD0B",
+      "title": "Sweet Corn",
+      "handle": "sweet-corn",
+      "thumbnail": "https://cdn.example.com/corn-thumb.jpg",
+      "created_at": "2026-11-16T07:45:56.429Z",
+      "metadata": null,
+      "variants": [
+        {
+          "id": "variant_01M7HN3R6A08B5GATW0E34MK1R",
+          "metadata": null,
+          "calculated_price": {
+            "id": "pset_01M7HN3R8KT3P9RBP6ZPQFS28E",
+            "is_calculated_price_price_list": false,
+            "is_calculated_price_tax_inclusive": false,
+            "calculated_amount": 3,
+            "raw_calculated_amount": {
+              "value": "3",
+              "precision": 20
+            },
+            "is_original_price_price_list": false,
+            "is_original_price_tax_inclusive": false,
+            "original_amount": 3,
+            "raw_original_amount": {
+              "value": "3",
+              "precision": 20
+            },
+            "currency_code": "usd",
+            "calculated_price": {
+              "id": "price_01M7HN3R8K62B3Q07KBGFMZPQW",
+              "price_list_id": null,
+              "price_list_type": null,
+              "min_quantity": null,
+              "max_quantity": null
+            },
+            "original_price": {
+              "id": "price_01M7HN3R8K62B3Q07KBGFMZPQW",
+              "price_list_id": null,
+              "price_list_type": null,
+              "min_quantity": null,
+              "max_quantity": null
+            },
+            "calculated_amount_with_tax": 3,
+            "calculated_amount_without_tax": 3,
+            "original_amount_with_tax": 3,
+            "original_amount_without_tax": 3
+          }
+        }
+      ],
+      "categories": [],
+      "type": null,
+      "seller": {
+        "id": "sel_01M7HN3R655D61ZV09DRA3FTMS",
+        "name": "Riverbend Farm",
+        "handle": "riverbend-farm",
+        "store_status": "ACTIVE"
+      },
+      "sales_channels": [
+        {
+          "id": "sc_01M7HN3R5SM07NQTQHB714ER56",
+          "name": "Storefront"
+        }
+      ]
+    }
+  ],
+  "count": 2,
+  "offset": 0,
+  "limit": 3
+}

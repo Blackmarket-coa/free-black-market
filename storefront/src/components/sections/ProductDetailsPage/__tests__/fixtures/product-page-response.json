@@ -1,19 +1,19 @@
 {
   "products": [
     {
-      "id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
+      "id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
       "title": "Heirloom Tomatoes",
       "handle": "heirloom-tomatoes",
       "thumbnail": "https://cdn.example.com/tomatoes-thumb.jpg",
       "status": "published",
       "description": "<p>Vine ripened.</p>",
-      "created_at": "2026-11-16T06:12:41.413Z",
+      "created_at": "2026-11-16T07:45:56.429Z",
       "metadata": {
         "harvest": "weekly"
       },
       "variants": [
         {
-          "id": "variant_01M7HFS09ZF90HAWF5A3GXNK80",
+          "id": "variant_01M7HN3R6A8786B4GGNC2MJRN5",
           "title": "Crate",
           "sku": "TOM-CRATE",
           "barcode": null,
@@ -32,32 +32,32 @@
           "metadata": null,
           "variant_rank": 0,
           "thumbnail": null,
-          "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-          "created_at": "2026-11-16T06:12:41.414Z",
-          "updated_at": "2026-11-16T06:12:41.414Z",
+          "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+          "created_at": "2026-11-16T07:45:56.429Z",
+          "updated_at": "2026-11-16T07:45:56.429Z",
           "deleted_at": null,
           "options": [
             {
-              "id": "optval_01M7HFS0A3P81HBX2E96K1YNYH",
+              "id": "optval_01M7HN3R6BHZPQWM7S0KPWNNTS",
               "value": "Crate",
               "metadata": null,
-              "option_id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
+              "option_id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
               "option": {
-                "id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
+                "id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
                 "title": "Size",
                 "metadata": null,
-                "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-                "created_at": "2026-11-16T06:12:41.413Z",
-                "updated_at": "2026-11-16T06:12:41.413Z",
+                "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+                "created_at": "2026-11-16T07:45:56.429Z",
+                "updated_at": "2026-11-16T07:45:56.429Z",
                 "deleted_at": null
               },
-              "created_at": "2026-11-16T06:12:41.414Z",
-              "updated_at": "2026-11-16T06:12:41.414Z",
+              "created_at": "2026-11-16T07:45:56.429Z",
+              "updated_at": "2026-11-16T07:45:56.429Z",
               "deleted_at": null
             }
           ],
           "calculated_price": {
-            "id": "pset_01M7HFS0BPZ2XJ6DDF27T1XTKD",
+            "id": "pset_01M7HN3R8718QSAVATSN3QVFJQ",
             "is_calculated_price_price_list": false,
             "is_calculated_price_tax_inclusive": false,
             "calculated_amount": 40,
@@ -74,14 +74,14 @@
             },
             "currency_code": "usd",
             "calculated_price": {
-              "id": "price_01M7HFS0BN4XWHBPHTE2H46X33",
+              "id": "price_01M7HN3R87EJJEZJAM08ASQFGJ",
               "price_list_id": null,
               "price_list_type": null,
               "min_quantity": null,
               "max_quantity": null
             },
             "original_price": {
-              "id": "price_01M7HFS0BN4XWHBPHTE2H46X33",
+              "id": "price_01M7HN3R87EJJEZJAM08ASQFGJ",
               "price_list_id": null,
               "price_list_type": null,
               "min_quantity": null,
@@ -94,7 +94,7 @@
           }
         },
         {
-          "id": "variant_01M7HFS09ZGJ5TFB8T7XTSZ36K",
+          "id": "variant_01M7HN3R6ASG64DA95FDS5HPYP",
           "title": "Pint",
           "sku": "TOM-PINT",
           "barcode": null,
@@ -113,32 +113,32 @@
           "metadata": null,
           "variant_rank": 0,
           "thumbnail": null,
-          "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-          "created_at": "2026-11-16T06:12:41.414Z",
-          "updated_at": "2026-11-16T06:12:41.414Z",
+          "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+          "created_at": "2026-11-16T07:45:56.429Z",
+          "updated_at": "2026-11-16T07:45:56.429Z",
           "deleted_at": null,
           "options": [
             {
-              "id": "optval_01M7HFS0A3YG21103D651MTMD7",
+              "id": "optval_01M7HN3R6B514SBYTF14DJTJCD",
               "value": "Pint",
               "metadata": null,
-              "option_id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
+              "option_id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
               "option": {
-                "id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
+                "id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
                 "title": "Size",
                 "metadata": null,
-                "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-                "created_at": "2026-11-16T06:12:41.413Z",
-                "updated_at": "2026-11-16T06:12:41.413Z",
+                "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+                "created_at": "2026-11-16T07:45:56.429Z",
+                "updated_at": "2026-11-16T07:45:56.429Z",
                 "deleted_at": null
               },
-              "created_at": "2026-11-16T06:12:41.413Z",
-              "updated_at": "2026-11-16T06:12:41.413Z",
+              "created_at": "2026-11-16T07:45:56.429Z",
+              "updated_at": "2026-11-16T07:45:56.429Z",
               "deleted_at": null
             }
           ],
           "calculated_price": {
-            "id": "pset_01M7HFS0B3HZ76GS7SJ7ATE6JE",
+            "id": "pset_01M7HN3R7WYA0WX5WYEK1RYN32",
             "is_calculated_price_price_list": false,
             "is_calculated_price_tax_inclusive": false,
             "calculated_amount": 5,
@@ -155,14 +155,14 @@
             },
             "currency_code": "usd",
             "calculated_price": {
-              "id": "price_01M7HFS0B3BC3E03PCCQH54GBE",
+              "id": "price_01M7HN3R7VHCWGZC48086M15QC",
               "price_list_id": null,
               "price_list_type": null,
               "min_quantity": null,
               "max_quantity": null
             },
             "original_price": {
-              "id": "price_01M7HFS0B3BC3E03PCCQH54GBE",
+              "id": "price_01M7HN3R7VHCWGZC48086M15QC",
               "price_list_id": null,
               "price_list_type": null,
               "min_quantity": null,
@@ -178,115 +178,140 @@
       ],
       "images": [
         {
-          "id": "img_01M7HFS0A4C7WACR08ZQKMRJV3",
+          "id": "img_01M7HN3R6B63R1W5KKEZWN2N9X",
           "url": "https://cdn.example.com/tomatoes-1.jpg",
           "metadata": null,
           "rank": 0,
-          "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-          "created_at": "2026-11-16T06:12:41.414Z",
-          "updated_at": "2026-11-16T06:12:41.414Z",
+          "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+          "created_at": "2026-11-16T07:45:56.429Z",
+          "updated_at": "2026-11-16T07:45:56.429Z",
           "deleted_at": null
         },
         {
-          "id": "img_01M7HFS0A422XN69FNZNNK3HTA",
+          "id": "img_01M7HN3R6BJK7F6WJF4Z4K99CB",
           "url": "https://cdn.example.com/tomatoes-2.jpg",
           "metadata": null,
           "rank": 1,
-          "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-          "created_at": "2026-11-16T06:12:41.414Z",
-          "updated_at": "2026-11-16T06:12:41.414Z",
+          "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+          "created_at": "2026-11-16T07:45:56.429Z",
+          "updated_at": "2026-11-16T07:45:56.429Z",
           "deleted_at": null
         }
       ],
       "tags": [
         {
-          "id": "ptag_01M7HFS09T2ZRH6C7DRT2FZMVR",
+          "id": "ptag_01M7HN3R67YHVBKYPA9C31FXAT",
           "value": "organic",
           "external_id": null,
           "metadata": null,
-          "created_at": "2026-11-16T06:12:41.402Z",
-          "updated_at": "2026-11-16T06:12:41.402Z",
+          "created_at": "2026-11-16T07:45:56.423Z",
+          "updated_at": "2026-11-16T07:45:56.423Z",
           "deleted_at": null
         }
       ],
       "options": [
         {
-          "id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
+          "id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
           "title": "Size",
           "metadata": null,
-          "product_id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-          "created_at": "2026-11-16T06:12:41.413Z",
-          "updated_at": "2026-11-16T06:12:41.413Z",
+          "product_id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+          "created_at": "2026-11-16T07:45:56.429Z",
+          "updated_at": "2026-11-16T07:45:56.429Z",
           "deleted_at": null,
           "values": [
             {
-              "id": "optval_01M7HFS0A3P81HBX2E96K1YNYH",
+              "id": "optval_01M7HN3R6BHZPQWM7S0KPWNNTS",
               "value": "Crate",
               "metadata": null,
-              "option_id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
-              "created_at": "2026-11-16T06:12:41.414Z",
-              "updated_at": "2026-11-16T06:12:41.414Z",
+              "option_id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
+              "created_at": "2026-11-16T07:45:56.429Z",
+              "updated_at": "2026-11-16T07:45:56.429Z",
               "deleted_at": null
             },
             {
-              "id": "optval_01M7HFS0A3YG21103D651MTMD7",
+              "id": "optval_01M7HN3R6B514SBYTF14DJTJCD",
               "value": "Pint",
               "metadata": null,
-              "option_id": "opt_01M7HFS0A3YPJJBH5ZAKVD8G22",
-              "created_at": "2026-11-16T06:12:41.413Z",
-              "updated_at": "2026-11-16T06:12:41.413Z",
+              "option_id": "opt_01M7HN3R6BY0R8XYCGM21RJWQT",
+              "created_at": "2026-11-16T07:45:56.429Z",
+              "updated_at": "2026-11-16T07:45:56.429Z",
               "deleted_at": null
             }
           ]
         }
       ],
       "seller": {
-        "id": "sel_01M7HFS09QZWW7VGJTT3KQQ74F",
+        "id": "sel_01M7HN3R655D61ZV09DRA3FTMS",
         "name": "Riverbend Farm",
         "handle": "riverbend-farm",
         "photo": "https://cdn.example.com/farm.png",
         "store_status": "ACTIVE",
         "reviews": [
           {
-            "id": "rev_01M7HFS0CRZT0MDFFTTSMB5KF7",
+            "id": "rev_01M7HN3RA2Z6ESKBQ0X6YM23CB",
             "rating": 5,
             "customer_note": "Great tomatoes",
             "seller_note": null,
-            "created_at": "2026-11-16T06:12:41.496Z",
-            "updated_at": "2026-11-16T06:12:41.496Z",
+            "created_at": "2026-11-16T07:45:56.546Z",
+            "updated_at": "2026-11-16T07:45:56.546Z",
             "customer": {
               "first_name": "Ada",
               "last_name": "Buyer",
-              "id": "cus_01M7HFS0CNBXTHNKS7HXK38BSB"
+              "id": "cus_01M7HN3RA0DS4MD2EC5FM1YNC5"
             },
             "seller": {
               "name": "Riverbend Farm",
-              "id": "sel_01M7HFS09QZWW7VGJTT3KQQ74F"
+              "id": "sel_01M7HN3R655D61ZV09DRA3FTMS"
+            }
+          },
+          {
+            "id": "rev_01M7HN3RA9J3WXVP9DTK2MWN32",
+            "rating": 4,
+            "customer_note": "Fresh and sweet",
+            "seller_note": null,
+            "created_at": "2026-11-16T07:45:56.553Z",
+            "updated_at": "2026-11-16T07:45:56.553Z",
+            "seller": {
+              "name": "Riverbend Farm",
+              "id": "sel_01M7HN3R655D61ZV09DRA3FTMS"
             }
           }
         ],
         "products": [
           {
-            "id": "prod_01M7HFS09Z1T3DJ24G7KC417S3",
-            "handle": "heirloom-tomatoes",
-            "title": "Heirloom Tomatoes",
-            "thumbnail": "https://cdn.example.com/tomatoes-thumb.jpg"
+            "id": "prod_01M7HN3R6A6FX09KE3E2W4AD0B",
+            "handle": "sweet-corn",
+            "status": "published"
           },
           {
-            "id": "prod_01M7HFS09Z7RAH08YDCDY6JVAS",
+            "id": "prod_01M7HN3R6AA732J7W4K95MD3KJ",
+            "handle": "wholesale-pallet",
+            "status": "published"
+          },
+          {
+            "id": "prod_01M7HN3R6ABZJA2XS2259ZM9HB",
             "handle": "basil",
-            "title": "Basil",
-            "thumbnail": null
+            "status": "published"
+          },
+          {
+            "id": "prod_01M7HN3R6ACJBSSF8PJV841GSY",
+            "handle": "heirloom-tomatoes",
+            "status": "published"
+          },
+          {
+            "id": "prod_01M7HN3R6ANFKC5V5VMTEDJDFR",
+            "handle": "unreleased-hot-sauce",
+            "status": "draft"
           }
         ]
       },
       "attribute_values": [
         {
-          "attribute_id": "attr_01M7HFS0D5M4RFHZN6ZF71RY88",
-          "id": "attr_val_01M7HFS0D7G2QV0E708G6JTQK7",
+          "attribute_id": "attr_01M7HN3RAF44PTWM83NBK7BZ1F",
+          "id": "attr_val_01M7HN3RAGGE17JJ1CQTGZT19V",
           "value": "Organic",
           "attribute": {
-            "id": "attr_01M7HFS0D5M4RFHZN6ZF71RY88",
+            "id": "attr_01M7HN3RAF44PTWM83NBK7BZ1F",
             "name": "Growing method"
           }
         }

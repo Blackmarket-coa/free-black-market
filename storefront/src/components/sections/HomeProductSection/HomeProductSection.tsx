@@ -1,5 +1,5 @@
 import { HomeProductsCarousel } from "@/components/organisms"
-import { Product } from "@/types/product"
+import { HttpTypes } from "@medusajs/types"
 
 export const HomeProductSection = async ({
   heading,
@@ -9,7 +9,12 @@ export const HomeProductSection = async ({
 }: {
   heading: string
   locale?: string
-  products?: Product[]
+  /**
+   * The products to show, already fetched from the listing (the product
+   * page's "More from this seller"). Left out on the home page, which shows
+   * the newest products.
+   */
+  products?: HttpTypes.StoreProduct[]
   home?: boolean
 }) => {
   return (
@@ -33,7 +38,7 @@ export const HomeProductSection = async ({
 
       <HomeProductsCarousel
         locale={locale}
-        sellerProducts={products.slice(0, 4)}
+        sellerProducts={products}
         home={home}
       />
     </section>

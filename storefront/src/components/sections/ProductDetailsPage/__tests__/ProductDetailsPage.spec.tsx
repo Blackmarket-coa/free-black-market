@@ -7,13 +7,19 @@ import type { HttpTypes } from "@medusajs/types"
  * The product page, from its fetch to its Add to Cart button, on a product
  * shaped like the backend's real answer.
  *
- * `fixtures/product-page-response.json` is not hand-written: it is the body
- * `GET /store/products` returned for the storefront's product-page query in
- * `backend/integration-tests/http/store-product-page-query.spec.ts` (real
- * Postgres; that spec rewrites the file when run with
- * PRODUCT_PAGE_FIXTURE_OUT). Two variants of one product: the pint is counted
- * by Medusa and has 7 in stock, the crate is not counted, so it carries no
- * `inventory_quantity` at all.
+ * The two fixtures are not hand-written. `product-page-response.json` is the
+ * body `GET /store/products` returned for the storefront's product-page query
+ * in `backend/integration-tests/http/store-product-page-query.spec.ts` (real
+ * Postgres), and `more-from-seller-response.json` is what the listing
+ * answered there when asked for that seller's other products; the spec
+ * rewrites both when run with PRODUCT_PAGE_FIXTURE_OUT.
+ *
+ * Two variants of one product: the pint is counted by Medusa and has 7 in
+ * stock, the crate is not counted, so it carries no `inventory_quantity` at
+ * all. The seller has four more products, and the backend's link returns all
+ * of them: sweet corn and basil (no price in the region), a hot sauce still
+ * in draft and a pallet sold only through another sales channel. One of the
+ * seller's two reviews has no customer.
  *
  * From 2026-06-16 the page fetched `id,title,handle,thumbnail,status` and no
  * region. The last case renders the header on exactly that and shows what a
@@ -67,6 +73,7 @@ vi.mock("@/components/atoms", () => ({
     h.buttons.push(props)
     return <button disabled={props.disabled}>{props.children}</button>
   },
+  StarRating: ({ rate }: { rate: number }) => <span data-rate={rate} />,
   Chip: ({ value, selected }: { value?: string; selected?: boolean }) => (
     <span data-chip={value} data-selected={String(Boolean(selected))} />
   ),
@@ -85,7 +92,13 @@ vi.mock("@/components/cells", async () => ({
       "@/components/cells/ProductCarousel/ProductCarousel"
     )
   ).ProductCarousel,
+  // The card row, without the embla carousel around it.
+  Carousel: ({ items }: { items: ReactNode[] }) => <div>{items}</div>,
 }))
+vi.mock("next/link", () => ({
+  default: ({ href, children }: { href: string; children?: ReactNode }) => <a href={href}>{children}</a>,
+}))
+vi.mock("next/navigation", () => ({ useParams: () => ({ locale: "us" }) }))
 vi.mock("@/components/providers", () => ({
   useCartContext: () => ({ onAddToCart: h.onAddToCart, cart: h.cart.current }),
 }))
@@ -104,11 +117,21 @@ vi.mock("next/image", () => ({
 }))
 
 import response from "./fixtures/product-page-response.json"
-import { PRODUCT_PAGE_FIELDS } from "@/lib/data/product-query"
+import moreFromSellerResponse from "./fixtures/more-from-seller-response.json"
+import {
+  PRODUCT_LIST_FIELDS,
+  PRODUCT_PAGE_FIELDS,
+  PRODUCT_PAGE_FIELDS_WITHOUT_STOCK,
+} from "@/lib/data/product-query"
 import { ProductDetails, ProductGallery as GallerySlot } from "@/components/organisms"
 import { ProductGallery } from "@/components/organisms/ProductGallery/ProductGallery"
+import { HomeProductsCarousel } from "@/components/organisms/HomeProductsCarousel/HomeProductsCarousel"
+import { ProductCard } from "@/components/organisms/ProductCard/ProductCard"
 import { ProductDetailsHeader } from "@/components/cells/ProductDetailsHeader/ProductDetailsHeader"
+import { SellerInfo } from "@/components/molecules/SellerInfo/SellerInfo"
 import type { ProductPageProduct as PageProduct } from "@/lib/data/products"
+import type { SellerProps } from "@/types/seller"
+import { HomeProductSection } from "../../HomeProductSection/HomeProductSection"
 import { ProductDetailsPage } from "../ProductDetailsPage"
 
 const fixture = response.products[0]
@@ -131,17 +154,38 @@ const walk = (node: ReactNode, out: ReactElement[] = []): ReactElement[] => {
   return out
 }
 
-/** The page as the route renders it, and the props it hands its two halves. */
+/**
+ * The page as the route renders it, and the props it hands its parts: the
+ * gallery, the details (which pass the product whole to client components)
+ * and, when there is one, the "More from this seller" section.
+ */
 async function renderPage() {
   const tree = await ProductDetailsPage({ handle: "heirloom-tomatoes", locale: "us" })
   const elements = walk(tree)
   const gallery = elements.find((el) => el.type === GallerySlot)
   const details = elements.find((el) => el.type === ProductDetails)
+  const section = elements.find((el) => el.type === HomeProductSection)
   if (!gallery || !details) throw new Error("the page rendered no gallery or no details")
   return {
     images: (gallery.props as { images: HttpTypes.StoreProduct["images"] }).images,
     product: (details.props as { product: PageProduct }).product,
+    moreFromSeller: section?.props as { heading: string; products: HttpTypes.StoreProduct[] } | undefined,
   }
+}
+
+type FetchOptions = { query: { fields: string; handle?: string[] } }
+
+/** The requests the page made for products, by the field list they carried. */
+const productRequests = (fields: string) =>
+  (h.medusaFetch.mock.calls as [string, FetchOptions][]).filter(
+    ([path, options]) => path === "/store/products" && options.query.fields === fields
+  )
+
+/** What the fixture's seller is linked to that no shopper may be shown. */
+const linkedTo = (handle: string) => {
+  const stub = fixture.seller.products.find((p) => p.handle === handle)
+  if (!stub) throw new Error(`the fixture's seller is not linked to ${handle}`)
+  return stub
 }
 
 /** The header's markup, and its main Add to Cart button (the first it renders). */
@@ -169,26 +213,126 @@ describe("the product page on a real /store/products response", () => {
     h.cart.current = null
     h.searchParams.current = {}
     h.addToCart.mockResolvedValue(undefined)
-    h.medusaFetch.mockImplementation(async (path: string) => {
-      if (path === "/store/products") return response
+    h.medusaFetch.mockImplementation(async (path: string, options: FetchOptions) => {
       if (path.endsWith("/listing-type")) return { catalog_id: null }
-      throw new Error(`unexpected request ${path}`)
+      if (path !== "/store/products") throw new Error(`unexpected request ${path}`)
+      // The backend as the integration spec recorded it: the page's query,
+      // and the listing asked for the seller's other products.
+      if (options.query.fields === PRODUCT_PAGE_FIELDS) return response
+      if (options.query.fields === PRODUCT_LIST_FIELDS) return moreFromSellerResponse
+      throw new Error(`unexpected product query ${options.query.fields}`)
     })
   })
 
   it("fetches the product with the page's fields in the visitor's region", async () => {
     await renderPage()
 
-    const productRequests = h.medusaFetch.mock.calls.filter(([path]) => path === "/store/products")
-    expect(productRequests).toHaveLength(1)
-    expect(productRequests[0][1].query).toEqual({
-      handle: ["heirloom-tomatoes"],
-      limit: 1,
-      offset: 0,
-      region_id: "reg_us",
-      country_code: "us",
-      fields: PRODUCT_PAGE_FIELDS,
+    // Once for the product and once for its seller's other products; the
+    // same request, which Next serves from its cache the second time.
+    const requests = productRequests(PRODUCT_PAGE_FIELDS)
+    expect(requests.length).toBeGreaterThanOrEqual(1)
+    for (const [, options] of requests) {
+      expect(options.query).toEqual({
+        handle: ["heirloom-tomatoes"],
+        limit: 1,
+        offset: 0,
+        region_id: "reg_us",
+        country_code: "us",
+        fields: PRODUCT_PAGE_FIELDS,
+      })
+    }
+  })
+
+  // The backend's seller link returns every product of the seller. The page
+  // hands the product whole to `ProductDetails`, whose header is a client
+  // component: whatever is on it is serialised into the page.
+  it("hands the client no list of the seller's products: not the draft, not another channel's", async () => {
+    // The real response does carry them.
+    expect(linkedTo("unreleased-hot-sauce").status).toBe("draft")
+    expect(linkedTo("wholesale-pallet").status).toBe("published")
+
+    const { product } = await renderPage()
+
+    expect(product.seller).toMatchObject({ name: "Riverbend Farm", handle: "riverbend-farm" })
+    expect(product.seller).not.toHaveProperty("products")
+    const sentToTheBrowser = JSON.stringify(product)
+    for (const handle of ["unreleased-hot-sauce", "wholesale-pallet", "basil", "sweet-corn"]) {
+      expect(sentToTheBrowser).not.toContain(handle)
+      expect(sentToTheBrowser).not.toContain(linkedTo(handle).id)
+    }
+  })
+
+  it("shows under \"More from this seller\" only what the listing served, never the linked stubs", async () => {
+    const { moreFromSeller } = await renderPage()
+
+    // The listing was asked for the seller's other published products, not
+    // for the draft and not for the product being viewed.
+    const [listRequest] = productRequests(PRODUCT_LIST_FIELDS)
+    expect(productRequests(PRODUCT_LIST_FIELDS)).toHaveLength(1)
+    expect(listRequest[1].query).toMatchObject({ region_id: "reg_us", country_code: "us" })
+    expect([...(listRequest[1].query.handle ?? [])].sort()).toEqual(["basil", "sweet-corn", "wholesale-pallet"])
+
+    // It served the two in the storefront's channel; basil has no price in
+    // the region, so one card.
+    expect(moreFromSeller?.heading).toBe("More from this seller")
+    expect(moreFromSeller?.products.map((p) => p.handle)).toEqual(["sweet-corn"])
+    const sentToTheBrowser = JSON.stringify(moreFromSeller?.products)
+    for (const handle of ["unreleased-hot-sauce", "wholesale-pallet", "heirloom-tomatoes"]) {
+      expect(sentToTheBrowser).not.toContain(handle)
+    }
+
+    // The row renders one card per product it was given, from that product.
+    const row = await HomeProductsCarousel({
+      locale: "us",
+      sellerProducts: moreFromSeller?.products ?? [],
+      home: false,
     })
+    const cards = walk(row).flatMap((el) =>
+      walk((el.props as { items?: ReactNode[] }).items ?? []).filter((item) => item.type === ProductCard)
+    )
+    expect(cards).toHaveLength(1)
+    const card = cards[0].props as { product: HttpTypes.StoreProduct; api_product: HttpTypes.StoreProduct }
+    expect(card.product).toBe(moreFromSeller?.products[0])
+    expect(card.api_product).toBe(moreFromSeller?.products[0])
+
+    const html = renderToStaticMarkup(<ProductCard {...card} />)
+    expect(html).toContain("Sweet Corn")
+    expect(html).toContain("$3.00")
+    expect(html).toContain('href="/us/products/sweet-corn"')
+    // The card names the seller, which the listing's product carries.
+    expect(html).toContain("Riverbend Farm")
+    expect(html).not.toContain("Community Vendor")
+  })
+
+  it("renders no \"More from this seller\" section when the listing serves none of the seller's other products", async () => {
+    h.medusaFetch.mockImplementation(async (path: string, options: FetchOptions) => {
+      if (path.endsWith("/listing-type")) return { catalog_id: null }
+      if (options.query.fields === PRODUCT_PAGE_FIELDS) return response
+      return { products: [], count: 0 }
+    })
+
+    const { moreFromSeller, product } = await renderPage()
+
+    expect(product.id).toBe(fixture.id)
+    expect(moreFromSeller).toBeUndefined()
+  })
+
+  it("renders the seller block when a review has no customer", async () => {
+    // As the backend returns a review whose customer is gone: no `customer`
+    // key at all.
+    const orphan = fixture.seller.reviews.find((r) => r.customer_note === "Fresh and sweet")
+    expect(orphan).toBeDefined()
+    expect(orphan).not.toHaveProperty("customer")
+
+    const { product } = await renderPage()
+    const html = renderToStaticMarkup(<SellerInfo seller={product.seller as SellerProps} />)
+
+    expect(html).toContain("Riverbend Farm")
+    expect(html).toContain("2 reviews")
+    expect(html).toContain("Ada Buyer")
+    expect(html).toContain("Great tomatoes")
+    expect(html).toContain("Verified buyer")
+    expect(html).toContain("Fresh and sweet")
   })
 
   it("hands the gallery the product's images, and the gallery renders them", async () => {
@@ -263,6 +407,50 @@ describe("the product page on a real /store/products response", () => {
 
     expect(html).toContain("OUT OF STOCK")
     expect(addToCartButton.disabled).toBe(true)
+  })
+
+  // Medusa answers the stock count only for a publishable key on exactly one
+  // sales channel, and refuses the whole request otherwise (pinned in the
+  // backend spec, where the query without the count returns the counted pint
+  // as `manage_inventory: true` with no `inventory_quantity`).
+  it("still sells when the backend refuses the stock count: the page asks again without it", async () => {
+    const withoutCounts = {
+      ...response,
+      products: response.products.map((p) => ({
+        ...p,
+        variants: p.variants.map((v) => {
+          const variant: Record<string, unknown> = { ...v }
+          delete variant.inventory_quantity
+          return variant
+        }),
+      })),
+    }
+    h.medusaFetch.mockImplementation(async (path: string, options: FetchOptions) => {
+      if (path.endsWith("/listing-type")) return { catalog_id: null }
+      if (options.query.fields === PRODUCT_PAGE_FIELDS) {
+        throw Object.assign(new Error("Inventory availability cannot be calculated in the given context."), {
+          status: 400,
+        })
+      }
+      if (options.query.fields === PRODUCT_PAGE_FIELDS_WITHOUT_STOCK) return withoutCounts
+      return moreFromSellerResponse
+    })
+
+    const { product } = await renderPage()
+
+    expect(productRequests(PRODUCT_PAGE_FIELDS_WITHOUT_STOCK).length).toBeGreaterThanOrEqual(1)
+    const pint = product.variants?.find((v) => v.id === PINT)
+    expect(pint?.manage_inventory).toBe(true)
+    expect(pint).not.toHaveProperty("inventory_quantity")
+
+    const { html, addToCartButton } = renderHeader(product, { size: "Pint" })
+
+    expect(html).toContain("$5.00")
+    expect(html).toContain("ADD TO CART")
+    expect(html).not.toContain("OUT OF STOCK")
+    expect(addToCartButton.disabled).toBe(false)
+    await addToCartButton.onClick?.()
+    expect(h.addToCart).toHaveBeenCalledWith({ variantId: PINT, quantity: 1, countryCode: "us" })
   })
 
   it("could sell nothing on the five fields the page used to fetch", () => {

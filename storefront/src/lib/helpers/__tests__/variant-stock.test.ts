@@ -17,12 +17,19 @@ describe("purchasableQuantity", () => {
     expect(purchasableQuantity({ manage_inventory: true, allow_backorder: true, inventory_quantity: 0 })).toBe(Infinity)
   })
 
-  it("is zero when stock is unknown: no variant, or a counted one with no quantity", () => {
+  it("is zero when there is no variant to add", () => {
     expect(purchasableQuantity(undefined)).toBe(0)
     expect(purchasableQuantity(null)).toBe(0)
-    expect(purchasableQuantity({ manage_inventory: true })).toBe(0)
-    // A shape that does not say whether it is counted is treated as counted.
-    expect(purchasableQuantity({})).toBe(0)
-    expect(purchasableQuantity({ inventory_quantity: null })).toBe(0)
+  })
+
+  it("is unlimited for a counted variant whose count was not reported: the cart decides, not a missing number", () => {
+    // As the page's query without the stock count returns the counted pint
+    // (a publishable key on more than one sales channel): `manage_inventory:
+    // true`, no `inventory_quantity` key.
+    expect(purchasableQuantity({ manage_inventory: true, allow_backorder: false })).toBe(Infinity)
+    expect(purchasableQuantity({ manage_inventory: true, inventory_quantity: null })).toBe(Infinity)
+    expect(purchasableQuantity({})).toBe(Infinity)
+    // A reported zero is still none left.
+    expect(purchasableQuantity({ manage_inventory: true, inventory_quantity: 0 })).toBe(0)
   })
 })

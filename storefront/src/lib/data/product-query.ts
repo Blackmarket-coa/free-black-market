@@ -15,6 +15,13 @@
  * component is serialised to the browser, so the seller is never asked for
  * with `*seller`.
  *
+ * One thing the page asks for is not for rendering and must not reach a
+ * browser: `seller.products`. The link returns every product of the seller,
+ * drafts and products outside the storefront's sales channel included, so it
+ * is only the list of handles to ask the listing for (`moreFromSellerHandles`),
+ * and `lib/data/products.ts` takes it off the product before any component
+ * sees it.
+ *
  * Pure and import-free on purpose:
  * `backend/integration-tests/http/store-product-page-query.spec.ts` loads this
  * file and issues these queries against a real database, so a field the
@@ -35,13 +42,32 @@ export const PRODUCT_PAGE_FIELDS = [
   "seller.reviews.id,seller.reviews.rating,seller.reviews.customer_note,seller.reviews.seller_note",
   "seller.reviews.created_at,seller.reviews.updated_at",
   "seller.reviews.customer.first_name,seller.reviews.customer.last_name,seller.reviews.seller.name",
-  // "More from this seller".
-  "seller.products.id,seller.products.handle,seller.products.title,seller.products.thumbnail",
+  // Which of the seller's other products to ask the listing for ("More from
+  // this seller"). Never rendered and never sent to the browser: see above.
+  "seller.products.id,seller.products.handle,seller.products.status",
   // "Additional attributes".
   "attribute_values.id,attribute_values.value,attribute_values.attribute.id,attribute_values.attribute.name",
 ].join(",")
 
-/** Grids, carousels and feeds: what a product card, its filters and its sort read. */
+/**
+ * The count of each variant left in stock. Medusa answers it only when exactly
+ * one sales channel resolves for the request: with a publishable key linked to
+ * none or to several it refuses the whole request (400, "Inventory
+ * availability cannot be calculated in the given context").
+ */
+export const STOCK_FIELD = "variants.inventory_quantity"
+
+/**
+ * The page's fields without the stock count, for a storefront whose
+ * publishable key does not resolve to one sales channel. The page then sells
+ * every priced variant and the cart, which does know the stock, refuses the
+ * ones with none left.
+ */
+export const PRODUCT_PAGE_FIELDS_WITHOUT_STOCK = PRODUCT_PAGE_FIELDS.split(",")
+  .filter((field) => field !== STOCK_FIELD)
+  .join(",")
+
+/** Grids and carousels: what a product card, its filters and its sort read. */
 export const PRODUCT_LIST_FIELDS = [
   "id,title,handle,thumbnail,created_at,metadata",
   // The card's price, the price sort and range filter, the size/colour facets.
@@ -51,6 +77,13 @@ export const PRODUCT_LIST_FIELDS = [
   // The category, type and sales-channel facets.
   "categories.id,categories.name,type.id,type.value,sales_channels.id,sales_channels.name",
 ].join(",")
+
+/**
+ * `/feed`: a card's fields, and the two more a feed item shows, the seller's
+ * avatar and the product's description. Kept off the grids, which fetch up to
+ * a hundred products at a time and show neither.
+ */
+export const PRODUCT_FEED_FIELDS = `${PRODUCT_LIST_FIELDS},description,seller.photo`
 
 /**
  * Medusa calculates a variant's price only for a region, and refuses the
@@ -74,22 +107,67 @@ export const pricingContext = (
     ? { region_id: regionId, country_code: countryCode }
     : {}
 
-/** The product page's request for one product by its handle. */
+/**
+ * The product page's request for one product by its handle. `stock: false`
+ * leaves the stock count out (`PRODUCT_PAGE_FIELDS_WITHOUT_STOCK`).
+ */
 export const productPageQuery = ({
   handle,
   regionId,
   countryCode,
+  stock = true,
 }: {
   handle: string
   regionId: string
   countryCode?: string
-}) => ({
-  handle: [handle],
-  limit: 1,
-  offset: 0,
-  ...pricingContext(PRODUCT_PAGE_FIELDS, regionId, countryCode),
-  fields: PRODUCT_PAGE_FIELDS,
-})
+  stock?: boolean
+}) => {
+  const fields = stock ? PRODUCT_PAGE_FIELDS : PRODUCT_PAGE_FIELDS_WITHOUT_STOCK
+  return {
+    handle: [handle],
+    limit: 1,
+    offset: 0,
+    ...pricingContext(fields, regionId, countryCode),
+    fields,
+  }
+}
+
+/** How many of the seller's other products the page asks the listing for. */
+export const MORE_FROM_SELLER_CANDIDATES = 8
+
+/** How many of them "More from this seller" shows. */
+export const MORE_FROM_SELLER_SHOWN = 4
+
+type SellerProductCandidate = {
+  id?: string | null
+  handle?: string | null
+  status?: string | null
+}
+
+/**
+ * The handles to ask the listing for to fill "More from this seller": the
+ * seller's other published products, a few more than are shown.
+ *
+ * `seller.products` is every product linked to the seller. The status check
+ * keeps drafts, proposals and rejected products from using up the candidates,
+ * but it is not the gate: a published product outside the storefront's sales
+ * channel passes it. The gate is the listing itself (`GET /store/products`
+ * serves only published products in the publishable key's channel), and the
+ * section renders only what that returns.
+ */
+export const moreFromSellerHandles = (product: {
+  id: string
+  seller?: { products?: (SellerProductCandidate | null)[] | null } | null
+}): string[] => {
+  const handles: string[] = []
+  for (const candidate of product.seller?.products ?? []) {
+    if (handles.length === MORE_FROM_SELLER_CANDIDATES) break
+    if (!candidate || candidate.status !== "published") continue
+    if (!candidate.handle || candidate.id === product.id) continue
+    handles.push(candidate.handle)
+  }
+  return handles
+}
 
 /** A listing's request, before the caller's own filters are spread over it. */
 export const productListQuery = ({

@@ -1,5 +1,9 @@
 import { ProductDetails, ProductGallery } from "@/components/organisms"
-import { getProductListingType, retrieveProductByHandle } from "@/lib/data/products"
+import {
+  getProductListingType,
+  listMoreFromSeller,
+  retrieveProductByHandle,
+} from "@/lib/data/products"
 import { HomeProductSection } from "../HomeProductSection/HomeProductSection"
 import NotFound from "@/app/not-found"
 import type { Presentation } from "@/lib/listing/presentation"
@@ -27,6 +31,14 @@ export const ProductDetailsPage = async ({
   const catalogId = await getProductListingType(prod.id)
   const listingType = selectListingTypePresentation(catalogId)
 
+  // The seller's other products as the listing serves them: published, in
+  // this storefront's sales channel and priced here. `prod` itself carries no
+  // list of the seller's products (see ProductPageProduct).
+  const moreFromSeller =
+    presentation === "marketplace"
+      ? await listMoreFromSeller({ handle, countryCode: locale })
+      : []
+
   return (
     <>
       <div
@@ -45,12 +57,11 @@ export const ProductDetailsPage = async ({
           />
         </div>
       </div>
-      {presentation === "marketplace" && (
+      {moreFromSeller.length > 0 && (
         <div className="my-8">
           <HomeProductSection
             heading="More from this seller"
-            products={prod.seller?.products}
-            // seller_handle={prod.seller?.handle}
+            products={moreFromSeller}
             locale={locale}
           />
         </div>

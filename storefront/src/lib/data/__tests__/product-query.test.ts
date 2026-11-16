@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  MORE_FROM_SELLER_CANDIDATES,
+  PRODUCT_FEED_FIELDS,
   PRODUCT_LIST_FIELDS,
   PRODUCT_PAGE_FIELDS,
+  PRODUCT_PAGE_FIELDS_WITHOUT_STOCK,
   asksForPrices,
+  moreFromSellerHandles,
   pricingContext,
   productListQuery,
   productPageQuery,
@@ -36,7 +40,8 @@ describe("PRODUCT_PAGE_FIELDS", () => {
     ["the seller link and trust lookup", "seller.handle"],
     ["the suspended-seller gate", "seller.store_status"],
     ["the seller's reviews", "seller.reviews.rating"],
-    ["more from this seller", "seller.products.handle"],
+    ["the handles to ask the listing for (more from this seller)", "seller.products.handle"],
+    ["what tells a draft from a published product among them", "seller.products.status"],
     ["additional attributes", "attribute_values.attribute.name"],
   ])("asks for %s", (_what, field) => {
     expect(fieldsOf(PRODUCT_PAGE_FIELDS)).toContain(field)
@@ -44,6 +49,40 @@ describe("PRODUCT_PAGE_FIELDS", () => {
 
   it("is not the five scalar fields the workaround sent", () => {
     expect(PRODUCT_PAGE_FIELDS).not.toBe("id,title,handle,thumbnail,status")
+  })
+
+  it("asks the seller's product link for candidates only, nothing to render", () => {
+    // The link returns drafts and other sales channels' products too; their
+    // titles and thumbnails are not asked for, and the cards are rendered
+    // from what the listing serves.
+    expect(fieldsOf(PRODUCT_PAGE_FIELDS).filter((field) => field.startsWith("seller.products")).sort()).toEqual([
+      "seller.products.handle",
+      "seller.products.id",
+      "seller.products.status",
+    ])
+    expect(PRODUCT_PAGE_FIELDS).not.toMatch(/\*seller\.products/)
+  })
+})
+
+describe("PRODUCT_PAGE_FIELDS_WITHOUT_STOCK", () => {
+  it("is the page's fields without the stock count, and nothing else removed", () => {
+    expect(fieldsOf(PRODUCT_PAGE_FIELDS)).toContain("variants.inventory_quantity")
+    expect(fieldsOf(PRODUCT_PAGE_FIELDS_WITHOUT_STOCK)).toEqual(
+      fieldsOf(PRODUCT_PAGE_FIELDS).filter((field) => field !== "variants.inventory_quantity")
+    )
+    expect(PRODUCT_PAGE_FIELDS_WITHOUT_STOCK).not.toContain("inventory_quantity")
+    expect(asksForPrices(PRODUCT_PAGE_FIELDS_WITHOUT_STOCK)).toBe(true)
+  })
+})
+
+describe("PRODUCT_FEED_FIELDS", () => {
+  it("is a card's fields with what a feed item also shows", () => {
+    expect(fieldsOf(PRODUCT_FEED_FIELDS)).toEqual([...fieldsOf(PRODUCT_LIST_FIELDS), "description", "seller.photo"])
+  })
+
+  it("is not what a grid is sent", () => {
+    expect(fieldsOf(PRODUCT_LIST_FIELDS)).not.toContain("description")
+    expect(fieldsOf(PRODUCT_LIST_FIELDS)).not.toContain("seller.photo")
   })
 })
 
@@ -70,7 +109,9 @@ describe("PRODUCT_LIST_FIELDS", () => {
 describe("the seller on either list", () => {
   it.each([
     ["page", PRODUCT_PAGE_FIELDS],
+    ["page without stock", PRODUCT_PAGE_FIELDS_WITHOUT_STOCK],
     ["list", PRODUCT_LIST_FIELDS],
+    ["feed", PRODUCT_FEED_FIELDS],
   ])("%s fields name the seller's public columns and never expand the row", (_name, list) => {
     // `*seller` returns the seller's email, phone, address and tax id, and the
     // product is serialised to the browser by the client components it is
@@ -110,6 +151,79 @@ describe("productPageQuery", () => {
       country_code: "us",
       fields: PRODUCT_PAGE_FIELDS,
     })
+  })
+})
+
+describe("productPageQuery without the stock count", () => {
+  it("asks for the same product in the same region, leaving only the count out", () => {
+    expect(
+      productPageQuery({ handle: "heirloom-tomatoes", regionId: "reg_us", countryCode: "us", stock: false })
+    ).toEqual({
+      handle: ["heirloom-tomatoes"],
+      limit: 1,
+      offset: 0,
+      region_id: "reg_us",
+      country_code: "us",
+      fields: PRODUCT_PAGE_FIELDS_WITHOUT_STOCK,
+    })
+  })
+})
+
+describe("moreFromSellerHandles", () => {
+  const stub = (handle: string, status = "published") => ({ id: `prod_${handle}`, handle, status })
+
+  it("names the seller's other published products", () => {
+    // The seller's link as the backend returned it in the integration spec:
+    // the product itself, a draft and a wholesale-only product among them.
+    const product = {
+      id: "prod_heirloom-tomatoes",
+      seller: {
+        products: [
+          stub("sweet-corn"),
+          stub("wholesale-pallet"),
+          stub("basil"),
+          stub("heirloom-tomatoes"),
+          stub("unreleased-hot-sauce", "draft"),
+        ],
+      },
+    }
+    // The wholesale-only product is published, so it is still a candidate:
+    // the listing is what leaves it out.
+    expect(moreFromSellerHandles(product)).toEqual(["sweet-corn", "wholesale-pallet", "basil"])
+  })
+
+  it("leaves out anything not published, or with no status to go by", () => {
+    const product = {
+      id: "prod_x",
+      seller: {
+        products: [
+          stub("a", "draft"),
+          stub("b", "proposed"),
+          stub("c", "rejected"),
+          { id: "prod_d", handle: "d" },
+          { id: "prod_e", handle: "e", status: null },
+          null,
+          { id: "prod_f", status: "published" },
+          stub("g"),
+        ],
+      },
+    }
+    expect(moreFromSellerHandles(product)).toEqual(["g"])
+  })
+
+  it("asks for a few more than are shown, and no more", () => {
+    const many = Array.from({ length: 30 }, (_, i) => stub(`p${i}`))
+    const handles = moreFromSellerHandles({ id: "prod_p0", seller: { products: many } })
+    expect(handles).toHaveLength(MORE_FROM_SELLER_CANDIDATES)
+    expect(handles).not.toContain("p0")
+    expect(handles[0]).toBe("p1")
+  })
+
+  it("is empty for a product with no seller or no linked products", () => {
+    expect(moreFromSellerHandles({ id: "prod_x" })).toEqual([])
+    expect(moreFromSellerHandles({ id: "prod_x", seller: null })).toEqual([])
+    expect(moreFromSellerHandles({ id: "prod_x", seller: {} })).toEqual([])
+    expect(moreFromSellerHandles({ id: "prod_x", seller: { products: null } })).toEqual([])
   })
 })
 

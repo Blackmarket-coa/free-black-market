@@ -36,8 +36,10 @@ type Query = Record<string, string | number | string[] | undefined>
 type StorefrontProductQuery = {
   PRODUCT_PAGE_FIELDS: string
   PRODUCT_LIST_FIELDS: string
+  PRODUCT_FEED_FIELDS: string
   pricingContext: (fields: string, regionId: string, countryCode?: string) => Query
-  productPageQuery: (input: { handle: string; regionId: string; countryCode?: string }) => Query
+  productPageQuery: (input: { handle: string; regionId: string; countryCode?: string; stock?: boolean }) => Query
+  moreFromSellerHandles: (product: { id: string; seller?: { products?: unknown[] | null } | null }) => string[]
   productListQuery: (input: {
     fields?: string
     regionId: string
@@ -89,14 +91,22 @@ medusaIntegrationTestRunner({
 
     /**
      * A storefront as production has one: a sales channel behind a
-     * publishable key, a US region in dollars, and a seller with two
-     * published products. The tomatoes come in two sizes at $5.00 and $40.00:
-     * the pint is counted (7 in stock at a location serving the channel), the
-     * crate is not counted at all. They carry two images, a tag, an
-     * attribute, and the seller a review from a buyer.
+     * publishable key, a US region in dollars, and a seller. The tomatoes
+     * come in two sizes at $5.00 and $40.00: the pint is counted (7 in stock
+     * at a location serving the channel), the crate is not counted at all.
+     * They carry two images, a tag and an attribute.
+     *
+     * The seller has four more products, as a Mercur vendor does: sweet corn
+     * at $3.00 and basil with no price in the region, both published in the
+     * storefront's channel; a hot sauce still in draft; and a pallet that is
+     * published but sold only through a wholesale channel. And two reviews:
+     * one from a buyer, one whose customer is gone (a deleted customer loses
+     * the link, and so does an imported review).
      */
     async function makeStorefront() {
-      const [channel] = await container().resolve(Modules.SALES_CHANNEL).createSalesChannels([{ name: "Storefront" }])
+      const [channel, wholesale] = await container()
+        .resolve(Modules.SALES_CHANNEL)
+        .createSalesChannels([{ name: "Storefront" }, { name: "Wholesale" }])
       const [key] = await container()
         .resolve(Modules.API_KEY)
         .createApiKeys([{ title: "storefront", type: "publishable", created_by: "test" }])
@@ -121,7 +131,7 @@ medusaIntegrationTestRunner({
 
       const products = container().resolve(Modules.PRODUCT)
       const [tag] = await products.createProductTags([{ value: "organic" }])
-      const [tomatoes, basil] = await products.createProducts([
+      const [tomatoes, basil, corn, sauce, pallet] = await products.createProducts([
         {
           title: "Heirloom Tomatoes",
           handle: "heirloom-tomatoes",
@@ -144,22 +154,50 @@ medusaIntegrationTestRunner({
           options: [{ title: "Size", values: ["Bunch"] }],
           variants: [{ title: "Bunch", sku: "BASIL", manage_inventory: false, options: { Size: "Bunch" } }],
         },
+        {
+          title: "Sweet Corn",
+          handle: "sweet-corn",
+          status: "published",
+          thumbnail: "https://cdn.example.com/corn-thumb.jpg",
+          options: [{ title: "Size", values: ["Dozen"] }],
+          variants: [{ title: "Dozen", sku: "CORN", manage_inventory: false, options: { Size: "Dozen" } }],
+        },
+        {
+          title: "Unreleased Hot Sauce",
+          handle: "unreleased-hot-sauce",
+          status: "draft",
+          thumbnail: "https://cdn.example.com/secret-sauce.jpg",
+          options: [{ title: "Size", values: ["Bottle"] }],
+          variants: [{ title: "Bottle", sku: "SAUCE", manage_inventory: false, options: { Size: "Bottle" } }],
+        },
+        {
+          title: "Wholesale Pallet",
+          handle: "wholesale-pallet",
+          status: "published",
+          thumbnail: "https://cdn.example.com/pallet.jpg",
+          options: [{ title: "Size", values: ["Pallet"] }],
+          variants: [{ title: "Pallet", sku: "PALLET", manage_inventory: false, options: { Size: "Pallet" } }],
+        },
       ])
-      for (const product of [tomatoes, basil]) {
+      for (const product of [tomatoes, basil, corn, sauce, pallet]) {
         await link().create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.PRODUCT]: { product_id: product.id } })
         await link().create({
           [Modules.PRODUCT]: { product_id: product.id },
-          [Modules.SALES_CHANNEL]: { sales_channel_id: channel.id },
+          [Modules.SALES_CHANNEL]: { sales_channel_id: product.id === pallet.id ? wholesale.id : channel.id },
         })
       }
 
-      const bySku = (sku: string) => tomatoes.variants.find((v: { sku: string }) => v.sku === sku) as { id: string }
+      const bySku = (sku: string) =>
+        [tomatoes, corn, sauce, pallet].flatMap((p) => p.variants).find((v: { sku: string }) => v.sku === sku) as { id: string }
       const pint = bySku("TOM-PINT")
       const crate = bySku("TOM-CRATE")
       const pricing = container().resolve(Modules.PRICING)
       for (const [variant, amount] of [
         [pint, 5],
         [crate, 40],
+        [bySku("CORN"), 3],
+        [bySku("SAUCE"), 9],
+        [bySku("PALLET"), 400],
       ] as const) {
         const [priceSet] = await pricing.createPriceSets([{ prices: [{ amount, currency_code: "usd" }] }])
         await link().create({
@@ -190,6 +228,11 @@ medusaIntegrationTestRunner({
       const review = (Array.isArray(createdReview) ? createdReview[0] : createdReview) as { id: string }
       await link().create({ [SELLER_MODULE]: { seller_id: seller.id }, [REVIEW_MODULE]: { review_id: review.id } })
       await link().create({ [Modules.CUSTOMER]: { customer_id: customer.id }, [REVIEW_MODULE]: { review_id: review.id } })
+      const createdOrphan = await container()
+        .resolve(REVIEW_MODULE)
+        .createReviews({ reference: "seller", rating: 4, customer_note: "Fresh and sweet" })
+      const orphan = (Array.isArray(createdOrphan) ? createdOrphan[0] : createdOrphan) as { id: string }
+      await link().create({ [SELLER_MODULE]: { seller_id: seller.id }, [REVIEW_MODULE]: { review_id: orphan.id } })
 
       const attributes = container().resolve(ATTRIBUTE_MODULE)
       const createdAttribute = await attributes.createAttributes({ name: "Growing method", handle: "growing-method" })
@@ -203,8 +246,21 @@ medusaIntegrationTestRunner({
 
       const pak = { headers: { "x-publishable-api-key": key.token as string } }
       const get = (query: Query) => safe(api.get(`/store/products?${toQueryString(query)}`, pak))
-      return { get, region: region as { id: string }, seller, tomatoes, basil, pint, crate }
+      /** Link the storefront's publishable key to the wholesale channel as well. */
+      const addSecondChannelToKey = () =>
+        link().create({
+          [Modules.API_KEY]: { publishable_key_id: key.id },
+          [Modules.SALES_CHANNEL]: { sales_channel_id: wholesale.id },
+        })
+      return { get, region: region as { id: string }, seller, tomatoes, basil, corn, sauce, pallet, pint, crate, addSecondChannelToKey }
     }
+
+    /** A listing's request for the given handles, as `listMoreFromSeller` sends it through `listProducts`. */
+    const listByHandle = (regionId: string, handles: string[]) => ({
+      ...storefront!.productListQuery({ regionId, countryCode: "us", limit: handles.length, offset: 0 }),
+      handle: handles,
+      order: "created_at",
+    })
 
     describe("GET /store/products as the storefront asks", () => {
       run("the product page's query returns what the page renders: variants, prices, stock, options, images and the seller", async () => {
@@ -214,12 +270,6 @@ medusaIntegrationTestRunner({
 
         expect(res.status).toBe(200)
         expect(res.data.products).toHaveLength(1)
-        // The storefront renders its product page from this response in
-        // `ProductDetailsPage/__tests__/fixtures/product-page-response.json`;
-        // run with PRODUCT_PAGE_FIXTURE_OUT=<that path> to rewrite it.
-        if (process.env.PRODUCT_PAGE_FIXTURE_OUT) {
-          fs.writeFileSync(process.env.PRODUCT_PAGE_FIXTURE_OUT, `${JSON.stringify(res.data, null, 2)}\n`)
-        }
         const product = res.data.products[0]
         expect(product).toMatchObject({
           id: tomatoes.id,
@@ -258,7 +308,7 @@ medusaIntegrationTestRunner({
         expect(variant(crate.id).manage_inventory).toBe(false)
         expect(variant(crate.id)).not.toHaveProperty("inventory_quantity")
 
-        // The seller block, its reviews, and "more from this seller".
+        // The seller block and its reviews.
         expect(product.seller).toMatchObject({
           id: seller.id,
           name: "Riverbend Farm",
@@ -266,16 +316,18 @@ medusaIntegrationTestRunner({
           photo: "https://cdn.example.com/farm.png",
           store_status: "ACTIVE",
         })
-        expect(product.seller.reviews).toEqual([
-          expect.objectContaining({
-            rating: 5,
-            customer_note: "Great tomatoes",
-            created_at: expect.any(String),
-            customer: expect.objectContaining({ first_name: "Ada", last_name: "Buyer" }),
-            seller: expect.objectContaining({ name: "Riverbend Farm" }),
-          }),
-        ])
-        expect(product.seller.products.map((p: { handle: string }) => p.handle).sort()).toEqual(["basil", "heirloom-tomatoes"])
+        const reviewOf = (note: string) => product.seller.reviews.find((r: { customer_note: string }) => r.customer_note === note)
+        expect(product.seller.reviews).toHaveLength(2)
+        expect(reviewOf("Great tomatoes")).toMatchObject({
+          rating: 5,
+          created_at: expect.any(String),
+          customer: expect.objectContaining({ first_name: "Ada", last_name: "Buyer" }),
+          seller: expect.objectContaining({ name: "Riverbend Farm" }),
+        })
+        // A review whose customer is gone comes back with no `customer` at
+        // all, not a null one: the seller block must render it without one.
+        expect(reviewOf("Fresh and sweet")).toMatchObject({ rating: 4, seller: expect.objectContaining({ name: "Riverbend Farm" }) })
+        expect(reviewOf("Fresh and sweet")).not.toHaveProperty("customer")
         expect(product.attribute_values).toEqual([
           expect.objectContaining({ value: "Organic", attribute: expect.objectContaining({ name: "Growing method" }) }),
         ])
@@ -285,10 +337,75 @@ medusaIntegrationTestRunner({
         // phone, address or tax id, and not the reviewer's contact details.
         for (const column of SELLER_PRIVATE) {
           expect(product.seller).not.toHaveProperty(column)
-          expect(product.seller.reviews[0].seller).not.toHaveProperty(column)
+          expect(reviewOf("Great tomatoes").seller).not.toHaveProperty(column)
         }
-        expect(product.seller.reviews[0].customer).not.toHaveProperty("email")
-        expect(product.seller.reviews[0].customer).not.toHaveProperty("phone")
+        expect(reviewOf("Great tomatoes").customer).not.toHaveProperty("email")
+        expect(reviewOf("Great tomatoes").customer).not.toHaveProperty("phone")
+      })
+
+      run("the seller's product link returns drafts and other channels' products; only what the listing serves is shown", async () => {
+        const { get, region, tomatoes } = await makeStorefront()
+
+        const page = await get(storefront!.productPageQuery({ handle: "heirloom-tomatoes", regionId: region.id, countryCode: "us" }))
+        expect(page.status).toBe(200)
+        const product = page.data.products[0]
+        // The storefront's vitest renders its product page from this
+        // response and the listing's answer below, in
+        // `ProductDetailsPage/__tests__/fixtures/`. Run with
+        // PRODUCT_PAGE_FIXTURE_OUT=<path of product-page-response.json> to
+        // rewrite both; `more-from-seller-response.json` is written beside it.
+        const fixtureOut = process.env.PRODUCT_PAGE_FIXTURE_OUT
+        if (fixtureOut) {
+          fs.writeFileSync(fixtureOut, `${JSON.stringify(page.data, null, 2)}\n`)
+        }
+
+        // What the link returns: every product of the seller, the draft and
+        // the wholesale-only one among them, each with exactly the three
+        // fields the storefront asks for. This is why the storefront takes
+        // the list off the product before a component sees it.
+        const linked = [...product.seller.products].sort((a: { handle: string }, b: { handle: string }) => a.handle.localeCompare(b.handle))
+        expect(linked.map((p: { handle: string; status: string }) => [p.handle, p.status])).toEqual([
+          ["basil", "published"],
+          ["heirloom-tomatoes", "published"],
+          ["sweet-corn", "published"],
+          ["unreleased-hot-sauce", "draft"],
+          ["wholesale-pallet", "published"],
+        ])
+        for (const stub of linked) {
+          expect(Object.keys(stub).sort()).toEqual(["handle", "id", "status"])
+        }
+
+        // The storefront's candidates: published and not this product. The
+        // status tells a draft apart; nothing on the link tells the
+        // wholesale-only product apart, so it is still a candidate.
+        const handles = storefront!.moreFromSellerHandles(product)
+        expect([...handles].sort()).toEqual(["basil", "sweet-corn", "wholesale-pallet"])
+
+        // The gate: the listing serves only published products in the
+        // publishable key's sales channel, whatever handles it is asked for.
+        const more = await get(listByHandle(region.id, handles))
+        expect(more.status).toBe(200)
+        if (fixtureOut) {
+          fs.writeFileSync(
+            path.join(path.dirname(fixtureOut), "more-from-seller-response.json"),
+            `${JSON.stringify(more.data, null, 2)}\n`
+          )
+        }
+        expect(more.data.products.map((p: { handle: string }) => p.handle).sort()).toEqual(["basil", "sweet-corn"])
+        expect(more.data.products.map((p: { id: string }) => p.id)).not.toContain(tomatoes.id)
+        const corn = more.data.products.find((p: { handle: string }) => p.handle === "sweet-corn")
+        expect(corn).toMatchObject({
+          title: "Sweet Corn",
+          thumbnail: "https://cdn.example.com/corn-thumb.jpg",
+          seller: { name: "Riverbend Farm", handle: "riverbend-farm" },
+        })
+        expect(corn.variants[0].calculated_price).toMatchObject({ calculated_amount: 3, currency_code: "usd" })
+
+        // Asked for by name, the draft and the wholesale-only product are not served.
+        const hidden = await get(listByHandle(region.id, ["unreleased-hot-sauce", "wholesale-pallet"]))
+        expect(hidden.status).toBe(200)
+        expect(hidden.data.products).toEqual([])
+        expect(hidden.data.count).toBe(0)
       })
 
       run("a listing's query returns each card's price and seller", async () => {
@@ -300,7 +417,9 @@ medusaIntegrationTestRunner({
         })
 
         expect(res.status).toBe(200)
-        expect(res.data.count).toBe(2)
+        // The seller's draft and wholesale-only products are not listed.
+        expect(res.data.count).toBe(3)
+        expect(res.data.products.map((p: { handle: string }) => p.handle).sort()).toEqual(["basil", "heirloom-tomatoes", "sweet-corn"])
         const card = (id: string) => res.data.products.find((p: { id: string }) => p.id === id)
         expect(card(tomatoes.id)).toMatchObject({
           title: "Heirloom Tomatoes",
@@ -324,6 +443,65 @@ medusaIntegrationTestRunner({
         for (const column of SELLER_PRIVATE) {
           expect(card(tomatoes.id).seller).not.toHaveProperty(column)
         }
+        // A card is not sent what only the feed shows.
+        expect(card(tomatoes.id)).not.toHaveProperty("description")
+        expect(card(tomatoes.id).seller).not.toHaveProperty("photo")
+
+        // The feed's list: the same, with the description and the seller's avatar.
+        const feed = await get({
+          ...storefront!.productListQuery({
+            fields: storefront!.PRODUCT_FEED_FIELDS,
+            regionId: region.id,
+            countryCode: "us",
+            limit: 12,
+            offset: 0,
+          }),
+          order: "-created_at",
+        })
+        expect(feed.status).toBe(200)
+        const item = feed.data.products.find((p: { id: string }) => p.id === tomatoes.id)
+        expect(item).toMatchObject({
+          title: "Heirloom Tomatoes",
+          description: "<p>Vine ripened.</p>",
+          seller: { id: seller.id, name: "Riverbend Farm", handle: "riverbend-farm", photo: "https://cdn.example.com/farm.png" },
+        })
+        expect(item.variants.map((v: { calculated_price: { calculated_amount: number } }) => v.calculated_price.calculated_amount).sort((a: number, b: number) => a - b)).toEqual([5, 40])
+        for (const column of SELLER_PRIVATE) {
+          expect(item.seller).not.toHaveProperty(column)
+        }
+      })
+
+      run("the stock count is refused unless the key has exactly one sales channel; the page's query without it still answers", async () => {
+        const { get, region, pint, crate, addSecondChannelToKey } = await makeStorefront()
+        const input = { handle: "heirloom-tomatoes", regionId: region.id, countryCode: "us" }
+        expect((await get(storefront!.productPageQuery(input))).status).toBe(200)
+
+        await addSecondChannelToKey()
+
+        // Medusa counts stock per sales channel and will not choose one.
+        const refused = await get(storefront!.productPageQuery(input))
+        expect(refused.status).toBe(400)
+        expect(refused.data.message).toMatch(/single sales channel/i)
+
+        // What the storefront sends next: the same query without the count.
+        const withoutStock = await get(storefront!.productPageQuery({ ...input, stock: false }))
+        expect(withoutStock.status).toBe(200)
+        const product = withoutStock.data.products[0]
+        expect(product.images).toHaveLength(2)
+        expect(product.options).toHaveLength(1)
+        expect(product.seller.name).toBe("Riverbend Farm")
+        const variant = (id: string) => product.variants.find((v: { id: string }) => v.id === id)
+        expect(variant(pint.id).calculated_price).toMatchObject({ calculated_amount: 5, currency_code: "usd" })
+        expect(variant(crate.id).calculated_price).toMatchObject({ calculated_amount: 40, currency_code: "usd" })
+        // The counted pint says it is counted and carries no count: the page
+        // must not read that as none left.
+        expect(variant(pint.id).manage_inventory).toBe(true)
+        expect(variant(pint.id)).not.toHaveProperty("inventory_quantity")
+        expect(variant(crate.id)).not.toHaveProperty("inventory_quantity")
+
+        // A listing asks for no count and is not refused.
+        const list = await get(storefront!.productListQuery({ regionId: region.id, countryCode: "us", limit: 12, offset: 0 }))
+        expect(list.status).toBe(200)
       })
 
       run("prices are refused without the region, and a field list that asks for none is sent none", async () => {
@@ -367,6 +545,7 @@ medusaIntegrationTestRunner({
         const list = await get(storefront!.productListQuery({ regionId: region.id, countryCode: "us", limit: 12, offset: 0 }))
         expect(list.status).toBe(200)
         expect(list.data.products.map((p: { seller: { store_status: string } }) => p.seller.store_status)).toEqual([
+          "SUSPENDED",
           "SUSPENDED",
           "SUSPENDED",
         ])
