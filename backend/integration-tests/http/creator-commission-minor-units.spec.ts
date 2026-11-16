@@ -1344,7 +1344,49 @@ medusaIntegrationTestRunner({
             unattributed_refund: null,
             dispute_open: 0,
           })
-          return { order, vendor, row, splitId, collectionId, paymentId: payment.id as string }
+          return { order, vendor, creator, row, splitId, collectionId, paymentId: payment.id as string }
+        }
+
+        const asAdmin = async () => {
+          const secret = process.env.JWT_SECRET as string
+          expect(secret).toBeTruthy()
+          const [user] = await container().resolve(Modules.USER).createUsers([{ email: `admin+${uid()}@example.com` }])
+          const token = jwt.sign(
+            { actor_id: user.id, actor_type: "user", auth_identity_id: "", app_metadata: { user_id: user.id } },
+            secret,
+            { expiresIn: "1h" }
+          )
+          return { headers: { authorization: `Bearer ${token}` } }
+        }
+        /** Every leg that debits the vendor's earnings, whatever its type or status. */
+        const debitsOf = async (vendorId: string) =>
+          (await hawala().listLedgerEntries(
+            { debit_account_id: (await card.sellerEarnings(vendorId)).id },
+            { order: { created_at: "ASC" } }
+          )) as Array<{
+            id: string
+            entry_type: string
+            status: string
+            amount: unknown
+            reference_type: string | null
+            reference_id: string | null
+            order_id: string | null
+            idempotency_key: string | null
+          }>
+        const balanceOf = async (vendorId: string) => card.cents((await card.sellerEarnings(vendorId)).balance)
+        const drawnOn = (vendorId: string, what: string) =>
+          `vendor ${vendorId}'s earnings were drawn on since the order was placed (${what}), ` +
+          `and the commission was never carved out of what was taken`
+        /** `POST /admin/hawala/transfers` off the vendor's earnings into the platform's RESERVE, as an admin. */
+        const adminTransfer = async (vendorId: string, body: Record<string, unknown>) => {
+          const reserve = await hawala().getOrCreateSystemAccount("RESERVE")
+          return api
+            .post(
+              `/admin/hawala/transfers`,
+              { debit_account_id: (await card.sellerEarnings(vendorId)).id, credit_account_id: reserve.id, amount: 20, ...body },
+              await asAdmin()
+            )
+            .catch((e: any) => e.response)
         }
 
         it("corrects one that was not refunded; lists one refunded through Medusa's own refund, one refunded on its split row before the reconciler ran, one refunded after its legs were SETTLED, and one with an open dispute, none of which has a refund leg in the ledger", async () => {
@@ -1474,32 +1516,6 @@ medusaIntegrationTestRunner({
         })
 
         it("lists one whose vendor's earnings were debited since the order by a leg of an entry type no list would name: a creator reward pool funded from the vendor's earnings, a transfer an admin makes through the manual-transfer route, a refund of another order of the vendor's; corrects one whose vendor's only debit since is another order's creator commission", async () => {
-          const secret = process.env.JWT_SECRET as string
-          expect(secret).toBeTruthy()
-          const asAdmin = async () => {
-            const [user] = await container().resolve(Modules.USER).createUsers([{ email: `admin+${uid()}@example.com` }])
-            const token = jwt.sign(
-              { actor_id: user.id, actor_type: "user", auth_identity_id: "", app_metadata: { user_id: user.id } },
-              secret,
-              { expiresIn: "1h" }
-            )
-            return { headers: { authorization: `Bearer ${token}` } }
-          }
-          /** Every leg that debits the vendor's earnings, whatever its type or status. */
-          const debitsOf = async (vendorId: string) =>
-            (await hawala().listLedgerEntries(
-              { debit_account_id: (await card.sellerEarnings(vendorId)).id },
-              { order: { created_at: "ASC" } }
-            )) as Array<{
-              id: string
-              entry_type: string
-              status: string
-              amount: unknown
-              reference_type: string | null
-              order_id: string | null
-            }>
-          const balanceOf = async (vendorId: string) => card.cents((await card.sellerEarnings(vendorId)).balance)
-
           // Money came in since the order, and the one thing that left is
           // another order's creator commission: a second sale settles to the
           // same vendor, and its commission goes to a creator out of the
@@ -1546,20 +1562,10 @@ medusaIntegrationTestRunner({
           // through `POST /admin/hawala/transfers`, under an entry type of
           // their own wording: the route passes it to the ledger unchanged.
           const moved = await storefrontOrder()
-          const reserve = await hawala().getOrCreateSystemAccount("RESERVE")
-          const manual = await api
-            .post(
-              `/admin/hawala/transfers`,
-              {
-                debit_account_id: (await card.sellerEarnings(moved.vendor.id)).id,
-                credit_account_id: reserve.id,
-                amount: 20,
-                entry_type: "CORRECTION",
-                description: "spec: an admin's manual transfer off the vendor's earnings",
-              },
-              await asAdmin()
-            )
-            .catch((e: any) => e.response)
+          const manual = await adminTransfer(moved.vendor.id, {
+            entry_type: "CORRECTION",
+            description: "spec: an admin's manual transfer off the vendor's earnings",
+          })
           expect({ status: manual.status, body: manual.status === 201 ? null : manual.data }).toEqual({ status: 201, body: null })
           const movedDebits = await debitsOf(moved.vendor.id)
           expect(movedDebits).toHaveLength(1)
@@ -1588,9 +1594,6 @@ medusaIntegrationTestRunner({
 
           const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
           const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
-          const drawnOn = (vendorId: string, what: string) =>
-            `vendor ${vendorId}'s earnings were drawn on since the order was placed (${what}), ` +
-            `and the commission was never carved out of what was taken`
           expect(summary.corrected.map((c) => c.order_id)).toEqual([clean.order.id])
           expect(await read(clean.row.id)).toMatchObject({ subtotal: 2500, commission: 250, status: CommissionStatus.HELD })
           // Each of the three is listed for that debit and for nothing else.
@@ -1604,6 +1607,225 @@ medusaIntegrationTestRunner({
           )
           expect(summary.never_settled).toEqual([])
           for (const o of [funded, moved, sibling]) {
+            expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
+          }
+        })
+
+        it("lists one whose vendor's earnings were debited under the creator-commission label, whoever posted the leg: an admin's manual transfer so labelled, the same with the attribution reference on it, another order's commission as approve-held posts it; lists one whose own commission was already credited while its row is still held, and approve-held then approves that row at the old figure the ledger moved; corrects one whose vendor's earnings only gained since", async () => {
+          // (B) The review's case: $20 off the vendor's earnings through
+          // `POST /admin/hawala/transfers`, labelled CREATOR_COMMISSION. The
+          // route hands the label to the ledger as it came.
+          const labelled = await storefrontOrder()
+          const b = await adminTransfer(labelled.vendor.id, {
+            entry_type: "CREATOR_COMMISSION",
+            description: "spec: an admin's manual transfer labelled CREATOR_COMMISSION",
+          })
+          expect({ status: b.status, body: b.status === 201 ? null : b.data }).toEqual({ status: 201, body: null })
+          const labelledDebits = await debitsOf(labelled.vendor.id)
+          expect(labelledDebits).toHaveLength(1)
+          expect(labelledDebits[0]).toMatchObject({ entry_type: "CREATOR_COMMISSION", status: "COMPLETED", reference_type: null, order_id: null })
+          // $24.25 came in for the order; $4.25 of it is left.
+          expect(await balanceOf(labelled.vendor.id)).toBe(425)
+
+          // (B2) The same transfer with every label the route lets an admin
+          // choose set as approve-held's leg has them: the reference type, and
+          // for a reference id the attribution row of another order of the
+          // vendor's. The route takes no order id.
+          const referenced = await storefrontOrder()
+          const otherOrder = await order25(referenced.vendor.id)
+          const otherRow = await attributionRow(otherOrder.id, referenced.vendor.id)
+          const b2 = await adminTransfer(referenced.vendor.id, {
+            entry_type: "CREATOR_COMMISSION",
+            reference_type: "CREATOR_ATTRIBUTION",
+            reference_id: otherRow.id,
+            order_id: otherOrder.id,
+            description: `Creator commission for order ${otherOrder.id} (attribution ${otherRow.id})`,
+          })
+          expect({ status: b2.status, body: b2.status === 201 ? null : b2.data }).toEqual({ status: 201, body: null })
+          const referencedDebits = await debitsOf(referenced.vendor.id)
+          expect(referencedDebits).toHaveLength(1)
+          expect(referencedDebits[0]).toMatchObject({
+            entry_type: "CREATOR_COMMISSION",
+            status: "COMPLETED",
+            reference_type: "CREATOR_ATTRIBUTION",
+            reference_id: otherRow.id,
+            order_id: null,
+          })
+          expect(await balanceOf(referenced.vendor.id)).toBe(425)
+
+          // (C) Another order's creator commission, as approve-held posts it
+          // (`creditCreatorCommission`, the ledger call that job makes, here
+          // in the ledger's own currency code): a later sale settles to the
+          // same vendor and its commission goes to a creator out of the
+          // vendor's earnings. Listed like any other debit, naming that
+          // order. Whether a leg is another order's commission is a matter
+          // of its labels, which `createTransfer` takes from any caller, and
+          // it takes nothing of this order's only if that order's own
+          // proceeds were in the same earnings, which the script does not
+          // read.
+          const commissioned = await storefrontOrder()
+          const laterSale = await order25(commissioned.vendor.id)
+          await settle(laterSale.id, commissioned.vendor.id)
+          await hawala().creditCreatorCommission({
+            vendorSellerId: commissioned.vendor.id,
+            creatorSellerId: (await makeSeller("OtherCreator")).id,
+            amountCents: 250,
+            orderId: laterSale.id,
+            attributionId: `oatt_${uid()}`,
+          })
+          const commissionedDebits = await debitsOf(commissioned.vendor.id)
+          expect(commissionedDebits).toHaveLength(1)
+          expect(commissionedDebits[0]).toMatchObject({
+            entry_type: "CREATOR_COMMISSION",
+            status: "COMPLETED",
+            reference_type: "CREATOR_ATTRIBUTION",
+            order_id: laterSale.id,
+          })
+          expect(await balanceOf(commissioned.vendor.id)).toBe(4850 - 250)
+
+          // (D) The review's other case: this order's own commission already
+          // credited at the old figure, by the ledger call approve-held makes
+          // for this row, and the row still held with no ledger entry on it.
+          // approve-held credits first and updates the row second, so a row
+          // update that fails leaves exactly this.
+          const taken = await storefrontOrder()
+          await attribution().updateOrderAttributions({ id: taken.row.id, hold_until: new Date(Date.now() - 60_000) })
+          const credit = await hawala().creditCreatorCommission({
+            vendorSellerId: taken.vendor.id,
+            creatorSellerId: taken.creator.id,
+            amountCents: 2,
+            orderId: taken.order.id,
+            attributionId: taken.row.id,
+          })
+          const takenDebits = await debitsOf(taken.vendor.id)
+          expect(takenDebits).toHaveLength(1)
+          expect(takenDebits[0]).toMatchObject({
+            id: credit.id,
+            entry_type: "CREATOR_COMMISSION",
+            status: "COMPLETED",
+            reference_type: "CREATOR_ATTRIBUTION",
+            reference_id: taken.row.id,
+            order_id: taken.order.id,
+            idempotency_key: `creator-commission-${taken.row.id}`,
+          })
+          expect(card.cents(takenDebits[0].amount)).toBe(2)
+          expect((await attribution().listOrderAttributions({ id: taken.row.id }))[0]).toMatchObject({
+            commission_status: CommissionStatus.HELD,
+            ledger_entry_id: null,
+          })
+
+          // Money came in since the order and none left: a later sale
+          // settles to the same vendor. Nothing here lists an order.
+          const gained = await storefrontOrder()
+          await settle((await order25(gained.vendor.id)).id, gained.vendor.id)
+          expect(await debitsOf(gained.vendor.id)).toEqual([])
+          expect(await balanceOf(gained.vendor.id)).toBe(4850)
+
+          const all = [labelled, referenced, commissioned, taken, gained]
+          for (const o of all) expect((await read(o.row.id)).status).toBe(CommissionStatus.HELD)
+
+          // A dry run first, as the review ran it, then the same with `apply`.
+          const dry = await fixCreatorCommissionMinorUnits(container(), { now: afterPayoutWindow() })
+          expect(dry.corrected.map((c) => c.order_id)).toEqual([gained.order.id])
+          for (const o of all) expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+
+          const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+          const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+          expect(summary.corrected.map((c) => c.order_id)).toEqual([gained.order.id])
+          expect(await read(gained.row.id)).toMatchObject({ subtotal: 2500, commission: 250, status: CommissionStatus.HELD })
+          expect(dry.review).toEqual(summary.review)
+
+          // Each is listed for that one leg and for nothing else.
+          expect(why(reasons[labelled.order.id])).toBe(
+            drawnOn(labelled.vendor.id, `CREATOR_COMMISSION leg ${labelledDebits[0].id} COMPLETED`)
+          )
+          expect(why(reasons[referenced.order.id])).toBe(
+            drawnOn(referenced.vendor.id, `CREATOR_COMMISSION leg for CREATOR_ATTRIBUTION ${referencedDebits[0].id} COMPLETED`)
+          )
+          expect(why(reasons[commissioned.order.id])).toBe(
+            drawnOn(commissioned.vendor.id, `CREATOR_COMMISSION leg of order ${laterSale.id} ${commissionedDebits[0].id} COMPLETED`)
+          )
+          // The order's own commission is worded as that, once: the leg is
+          // not named a second time as earnings drawn on.
+          expect(why(reasons[taken.order.id])).toBe(
+            `commission was already taken from vendor ${taken.vendor.id} for this order: ledger entry ${credit.id} (0.02 COMPLETED) ` +
+              `is under the key approve-held credits row ${taken.row.id} with, and the row is still held with no ledger entry recorded on it, ` +
+              `so approve-held would be handed that entry back, move nothing more, and approve the row at whatever its column then says`
+          )
+          expect(reasons[taken.order.id]).toContain("from 2 to 250")
+          expect(summary.never_settled).toEqual([])
+          for (const o of [labelled, referenced, commissioned, taken]) {
+            expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
+          }
+
+          // What that line says approve-held would do, run: the job (the
+          // row's hold has ended) is handed the existing entry back and
+          // approves the row. Left at the old figure, the row says 2 and the
+          // ledger moved $0.02. Corrected first, it would have said 250.
+          await approveHeldCreatorAttributionsJob(container())
+          expect((await attribution().listOrderAttributions({ id: taken.row.id }))[0]).toMatchObject({
+            commission_status: CommissionStatus.APPROVED,
+            ledger_entry_id: credit.id,
+          })
+          expect(await read(taken.row.id)).toMatchObject({ subtotal: 25, commission: 2 })
+          const takenAfter = await debitsOf(taken.vendor.id)
+          expect(takenAfter.map((l) => l.id)).toEqual([credit.id])
+          expect(await balanceOf(taken.vendor.id)).toBe(2425 - 2)
+        })
+
+        it("lists one with a leg off the vendor's earnings that is still PENDING, whether its money moved (a transfer cut off before it was marked COMPLETED) or not (a leg written and never applied); corrects one with neither", async () => {
+          // (1) `createTransfer` writes a leg PENDING, moves the balances in
+          // one database transaction, then marks the leg COMPLETED in a
+          // separate statement. Here that last statement fails, through the
+          // admin's manual-transfer route: the route answers 400, the $20
+          // has left the vendor's earnings, and the leg says PENDING for good.
+          const cutOff = await storefrontOrder()
+          const ledger = hawala()
+          const realUpdate = ledger.updateLedgerEntries.bind(ledger)
+          const flip = jest.spyOn(ledger, "updateLedgerEntries").mockImplementation(async (...args: any[]) => {
+            if (args[0]?.status === "COMPLETED") throw new Error("spec: the connection dropped before the leg was marked COMPLETED")
+            return realUpdate(...args)
+          })
+          const failed = await adminTransfer(cutOff.vendor.id, { entry_type: "WITHDRAWAL", description: "spec: a transfer cut off" })
+          flip.mockRestore()
+          expect(failed.status).toBe(400)
+          const cutOffDebits = await debitsOf(cutOff.vendor.id)
+          expect(cutOffDebits).toHaveLength(1)
+          expect(cutOffDebits[0]).toMatchObject({ entry_type: "WITHDRAWAL", status: "PENDING" })
+          expect(card.cents(cutOffDebits[0].amount)).toBe(2000)
+          // The money moved: $4.25 of the order's $24.25 is left.
+          expect(await balanceOf(cutOff.vendor.id)).toBe(425)
+
+          // (2) A PENDING leg whose money did not move: the row alone, as a
+          // process stopped between writing the leg and moving the balances
+          // leaves it.
+          const unapplied = await storefrontOrder()
+          const reserve = await hawala().getOrCreateSystemAccount("RESERVE")
+          const [pendingLeg] = await hawala().createLedgerEntries([
+            {
+              debit_account_id: (await card.sellerEarnings(unapplied.vendor.id)).id,
+              credit_account_id: reserve.id,
+              amount: 20,
+              entry_type: "TRANSFER",
+              status: "PENDING",
+            },
+          ])
+          expect(await balanceOf(unapplied.vendor.id)).toBe(2425)
+
+          const clean = await storefrontOrder()
+          expect(await debitsOf(clean.vendor.id)).toEqual([])
+
+          const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+          const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+          expect(summary.corrected.map((c) => c.order_id)).toEqual([clean.order.id])
+          const unconfirmed = (vendorId: string, what: string) =>
+            `vendor ${vendorId}'s earnings have a debit written since the order was placed that is neither COMPLETED nor SETTLED (${what}), ` +
+            `so whether that money moved, or stayed moved, cannot be read from the ledger`
+          expect(why(reasons[cutOff.order.id])).toBe(unconfirmed(cutOff.vendor.id, `withdrawal ${cutOffDebits[0].id} PENDING`))
+          expect(reasons[cutOff.order.id]).toContain("from 2 to 250")
+          expect(why(reasons[unapplied.order.id])).toBe(unconfirmed(unapplied.vendor.id, `TRANSFER leg ${pendingLeg.id} PENDING`))
+          expect(summary.never_settled).toEqual([])
+          for (const o of [cutOff, unapplied]) {
             expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
           }
         })
