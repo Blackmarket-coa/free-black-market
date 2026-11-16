@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
 import { GET as listCouriers, POST as registerCourier } from "../route"
 import { GET as getCourier, PUT as updateCourier, POST as claimDelivery } from "../[id]/route"
-import { GET as listShifts } from "../[id]/shifts/route"
+import { GET as listShifts, POST as createShift } from "../[id]/shifts/route"
 import { GET as getDeliveryBatch } from "../../delivery-batches/[id]/route"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 
@@ -106,6 +106,7 @@ const makeReq = (opts: {
     ]),
     updateCouriers: jest.fn(async (data: Record<string, unknown>) => ({ ...ROW, ...data })),
     createCouriers: jest.fn(async (data: Record<string, unknown>) => ({ id: "cour_new", ...data })),
+    createCourierShifts: jest.fn(async (data: Record<string, unknown>) => ({ id: "shift_new", ...data })),
     retrieveFoodDelivery: jest.fn(async (_id: string): Promise<Record<string, unknown>> => DELIVERY),
     assignCourierToDelivery: jest.fn(async () => ({ ...DELIVERY, status: "ASSIGNED" })),
   }
@@ -456,6 +457,61 @@ describe("GET /store/couriers/:id/shifts", () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.body.shifts).toEqual([expect.objectContaining({ id: "shift_1", assigned_zone: "EAST" })])
+  })
+})
+
+describe("POST /store/couriers/:id/shifts", () => {
+  const REFUSAL = { message: "You do not have access to this record.", type: "not_allowed" }
+  // The fake courier has one shift, 2026-12-01 09:00 to 17:00 (`shift_1`).
+  // The first body falls inside it; for the second the lookup finds nothing.
+  const OVERLAPPING = { scheduled_start: "2026-12-01T10:00:00.000Z", scheduled_end: "2026-12-01T11:00:00.000Z" }
+  const FREE = { scheduled_start: "2026-12-03T10:00:00.000Z", scheduled_end: "2026-12-03T11:00:00.000Z" }
+  const post = async (opts: { actorId: string; ownerId: string | null; body: Record<string, unknown>; free?: boolean }) => {
+    const { req, service } = makeReq({ actorId: opts.actorId, body: opts.body })
+    service.retrieveCourier.mockResolvedValue({ ...ROW, owner_id: opts.ownerId })
+    if (opts.free) service.listCourierShifts.mockResolvedValue([])
+    const res = createRes()
+    await createShift(req as never, res as never)
+    return { res, service }
+  }
+
+  it("refuses a shift on a courier with no recorded owner, the same whether or not it overlaps", async () => {
+    // `actorMayManage` lets any signed-in account act on such a courier.
+    // Seen on Postgres: 400 "Shift overlaps with existing shift" for one
+    // window and 201 for another, from a caller the shifts GET refuses.
+    const overlapping = await post({ actorId: "cus_anyone", ownerId: null, body: OVERLAPPING })
+    const free = await post({ actorId: "cus_anyone", ownerId: null, body: FREE, free: true })
+
+    for (const { res, service } of [overlapping, free]) {
+      expect([res.statusCode, res.body]).toEqual([403, REFUSAL])
+      // Refused on the courier alone: the schedule is not read, so the
+      // answer cannot depend on it.
+      expect(service.listCourierShifts).not.toHaveBeenCalled()
+      expect(service.createCourierShifts).not.toHaveBeenCalled()
+    }
+  })
+
+  it("still books a free shift for the courier's owner, and tells them when one overlaps", async () => {
+    const free = await post({ actorId: "cus_owner", ownerId: "cus_owner", body: FREE, free: true })
+    expect(free.res.statusCode).toBe(201)
+    expect(free.service.createCourierShifts).toHaveBeenCalledWith(
+      expect.objectContaining({ courier: "cour_1", scheduled_start: new Date(FREE.scheduled_start) })
+    )
+
+    const overlapping = await post({ actorId: "cus_owner", ownerId: "cus_owner", body: OVERLAPPING })
+    expect([overlapping.res.statusCode, overlapping.res.body]).toEqual([
+      400,
+      { message: "Shift overlaps with existing shift" },
+    ])
+    expect(overlapping.service.createCourierShifts).not.toHaveBeenCalled()
+  })
+
+  it("still tells an account that a courier with another owner is not theirs", async () => {
+    const { res, service } = await post({ actorId: "cus_someone_else", ownerId: "cus_owner", body: FREE, free: true })
+
+    expect([res.statusCode, res.body]).toEqual([403, { message: "This courier is not yours to manage" }])
+    expect(service.listCourierShifts).not.toHaveBeenCalled()
+    expect(service.createCourierShifts).not.toHaveBeenCalled()
   })
 })
 

@@ -376,6 +376,45 @@ describe("POST /store/delivery-batches/:id — adding deliveries", () => {
     expect([res.statusCode, res.body]).toEqual([400, { message: "Delivery del_taken is already in a batch" }])
     expect(service.updateFoodDeliveries).not.toHaveBeenCalled()
   })
+
+  it("refuses to add to a batch with no recorded owner, even a delivery the caller may read", async () => {
+    // `actorMayManage` let any signed-in account add to such a batch. Seen on
+    // Postgres, flag on: a recipient added their own delivery to a batch of
+    // three they are refused on GET and was answered `total_deliveries: 4`,
+    // with `batch_sequence` 4 written onto the delivery they read back.
+    // cus_producer may read del_1, so only the batch decides the answer here.
+    for (const status of ["PLANNING", "IN_PROGRESS"]) {
+      const { req, res, service } = setup({
+        actorId: "cus_producer",
+        batch: { ...BATCH, owner_id: null, status },
+        inBatch: ["del_2"],
+        body: { delivery_ids: ["del_1"] },
+      })
+
+      await addDeliveries(req, res as never)
+
+      // One refusal: not the size of the run, and not its status either.
+      expect([status, res.statusCode, res.body]).toEqual([status, 403, REFUSAL])
+      expect(service.updateFoodDeliveries).not.toHaveBeenCalled()
+      expect(service.updateDeliveryBatches).not.toHaveBeenCalled()
+      // Refused on the batch alone, before a delivery or the run is read.
+      expect(service.retrieveFoodDelivery).not.toHaveBeenCalled()
+      expect(service.listFoodDeliveries).not.toHaveBeenCalled()
+    }
+  })
+
+  it("does not let the courier's owner of such a batch add to it either", async () => {
+    const { req, res, service } = setup({
+      actorId: "cus_driver",
+      batch: { ...BATCH, owner_id: null, courier_id: "cour_1" },
+      body: { delivery_ids: ["del_1"] },
+    })
+
+    await addDeliveries(req, res as never)
+
+    expect([res.statusCode, res.body]).toEqual([403, REFUSAL])
+    expect(service.updateFoodDeliveries).not.toHaveBeenCalled()
+  })
 })
 
 describe("PUT /store/delivery-batches/:id — what a batch write reaches", () => {
