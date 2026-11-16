@@ -402,19 +402,20 @@ medusaIntegrationTestRunner({
         expect(await read()).toMatchObject({ status: "pending", stripe_payment_intent_id: null })
       })
 
-      it("POST /webhooks/hawala/stripe refuses the same forgery", async () => {
+      it("POST /webhooks/hawala/stripe refuses a forgery too", async () => {
         // Two things stand in the way today: no matcher preserves this route's
         // raw body, so it answers 400 to everything (Stripe included), and
         // handleWebhook refuses an unset secret. Either alone keeps this 400;
-        // with both gone a verified event that matches no pending transaction
-        // answers 200 { received: true }.
+        // with both gone the handler acknowledges the event with 200
+        // { received: true }. The event is of a type the handler only logs,
+        // so the answer does not depend on the ACH tables.
         process.env.STRIPE_SECRET_KEY = "sk_test_dummy"
         delete process.env.STRIPE_WEBHOOK_SECRET
         const raw = JSON.stringify({
-          id: "evt_spec_ach",
+          id: "evt_spec_other",
           object: "event",
-          type: "payment_intent.succeeded",
-          data: { object: { id: "pi_spec_ach", object: "payment_intent", metadata: { type: "ach_deposit", ledger_account_id: "acct_spec" } } },
+          type: "customer.created",
+          data: { object: { id: "cus_spec", object: "customer" } },
         })
         const t = Math.floor(Date.now() / 1000)
         const v1 = createHmac("sha256", "").update(`${t}.${raw}`).digest("hex")
