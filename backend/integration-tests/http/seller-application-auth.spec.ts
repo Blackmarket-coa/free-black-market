@@ -17,15 +17,18 @@ jest.setTimeout(240 * 1000)
  * It now files for the login of the caller's own seller token and refuses a
  * body email that is not that login's address.
  *
- * Both routes that call it are covered. `POST /auth/seller/register-request`
- * is what the vendor panel's sign-up calls (vendor-panel/src/hooks/api/
- * auth.tsx), with the token it just got from register or login.
+ * The three routes that file one are covered. `POST /auth/seller/register-
+ * request` is what the vendor panel's sign-up calls (vendor-panel/src/hooks/
+ * api/auth.tsx), with the token it just got from register or login.
  * `POST /vendor/register` sits behind Mercur's `/vendor/*` guard, which only
- * lets a seller's token through.
+ * lets a seller's token through. `POST /vendor/sellers` (the project's
+ * override of Mercur's route) is reached by any seller token, a throwaway
+ * registration's included, and had its own copy of the body-email lookup.
  *
  * Budget: every POST under /auth spends the auth limiter's 20 a minute per
- * address (rate-limiter.ts). This file spends 15; the logins it does not need
- * a route for are built through the auth module.
+ * address (rate-limiter.ts). This file spends 16; the logins it does not need
+ * a route for are built through the auth module. `POST /vendor/sellers` has
+ * the registration limiter's 5 per 15 minutes, and this file spends 2.
  */
 
 medusaIntegrationTestRunner({
@@ -270,6 +273,42 @@ medusaIntegrationTestRunner({
         expect(refused.status).toBe(403)
         expect(await allRequests()).toHaveLength(0)
         expect(mail).not.toHaveBeenCalled()
+      })
+    })
+
+    describe("POST /vendor/sellers", () => {
+      it("a throwaway login's token cannot file in a shopper's name, and files for its own login", async () => {
+        const victim = await shopperViaModule()
+        // Mercur's strict body for this path: no vendor_type or playbook.
+        const forVictim = { name: "Mallory Farm", member: { name: "Mallory", email: victim.email } }
+
+        const anonymous = await call(api.post("/vendor/sellers", forVictim))
+        expect(anonymous.status).toBe(401)
+
+        // Anyone can get this token: register any address.
+        const throwaway = `throwaway-${uid()}@example.com`
+        const registered = await api.post("/auth/seller/emailpass/register", { email: throwaway, password: `Pw-${uid()}!` })
+        const token = registered.data.token as string
+        const mail = stubMail()
+
+        const refused = await call(api.post("/vendor/sellers", forVictim, bearer(token)))
+        expect(refused.status).toBe(403)
+        expect(await allRequests()).toHaveLength(0)
+        expect(mail).not.toHaveBeenCalled()
+
+        const own = await api.post(
+          "/vendor/sellers",
+          { name: "Tess Farm", member: { name: "Tess", email: throwaway } },
+          bearer(token)
+        )
+        expect(own.status).toBe(201)
+        const [request] = await allRequests()
+        expect(request).toMatchObject({ type: "seller", status: "pending", submitter_id: claims(token).auth_identity_id })
+        expect(request.data.member).toEqual({ name: "Tess", email: throwaway })
+        expect(mail).toHaveBeenCalledWith(
+          expect.objectContaining({ to: throwaway, template: "seller-email-verification" }),
+          expect.anything()
+        )
       })
     })
   },
