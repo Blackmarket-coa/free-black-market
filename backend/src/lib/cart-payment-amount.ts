@@ -89,11 +89,26 @@ export const CART_PAYMENT_REFRESH_FAILED_STATUS = 500
 /**
  * What the buyer is told when the cart changed and its payment could not be
  * brought up to date. The change is not undone (the route that made it has
- * finished), and repeating the request is the cure: each of these routes ends
- * in the same refresh.
+ * finished).
+ *
+ * It does not say to try again, because for most of the routes that answer
+ * this, repeating the request never reaches the refresh: Mercur refuses the
+ * same delivery option a second time as "doubled" before it writes
+ * (`POST .../shipping-methods`, pinned in
+ * `integration-tests/http/cart-payment-refresh.spec.ts`), and a repeated
+ * removal names shipping methods or a line that are already gone (`DELETE
+ * .../shipping-methods`, `DELETE .../line-items/:line_id`). Only the tier,
+ * wholesale and taxes routes end in the refresh again on a repeat. What puts
+ * every one of them right is the completion check: a session left for
+ * another amount is refused on every path that completes a cart, a refusal
+ * on a store route then brings the cart's payment to its total, and the
+ * buyer chooses the payment method again (the storefront's "Update payment"
+ * does both halves in one step). So the message says that, which holds
+ * whichever route sent it.
  */
 export const CART_PAYMENT_REFRESH_FAILED_MESSAGE =
-  "Your cart was updated, but we could not update its payment for the new total. Please try again."
+  "Your cart was updated, but we could not update its payment for the new total. " +
+  "Your payment is checked against the new total before your order is placed, and you may be asked to choose your payment method again."
 
 /** The `code` of a tier or wholesale reprice asked of a cart that has already completed. */
 export const CART_ALREADY_COMPLETED = "cart_already_completed"

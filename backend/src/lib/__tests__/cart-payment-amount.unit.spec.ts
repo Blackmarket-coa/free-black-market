@@ -373,13 +373,18 @@ describe("the answers", () => {
     expect(unknown).toEqual(cartPaymentAmountMismatchResponse("amount_unknown"))
   })
 
-  it("a cart write whose payment could not be refreshed: 500, a stable code, and a message that says to try again", () => {
+  it("a cart write whose payment could not be refreshed: 500, a stable code, and a message that says what puts it right", () => {
     expect(cartPaymentRefreshFailedResponse()).toEqual({
       status: 500,
       body: { code: "cart_payment_refresh_failed", type: "cart_payment_refresh_failed", message: CART_PAYMENT_REFRESH_FAILED_MESSAGE },
     })
     expect(CART_PAYMENT_REFRESH_FAILED).toBe("cart_payment_refresh_failed")
-    expect(CART_PAYMENT_REFRESH_FAILED_MESSAGE).toMatch(/try again/)
+    // Not "try again": a repeated delivery choice is refused before it
+    // writes, and a repeated removal finds nothing to remove, so neither
+    // reaches the refresh. The completion check is what holds for every route.
+    expect(CART_PAYMENT_REFRESH_FAILED_MESSAGE).not.toMatch(/try again/i)
+    expect(CART_PAYMENT_REFRESH_FAILED_MESSAGE).toMatch(/checked against the new total before your order is placed/)
+    expect(CART_PAYMENT_REFRESH_FAILED_MESSAGE).toMatch(/choose your payment method again/)
   })
 
   it("a reprice asked of a completed cart: 400 invalid_data, as Medusa's own cart writes answer one, with a code", () => {

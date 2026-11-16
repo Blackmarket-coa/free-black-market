@@ -123,14 +123,18 @@ async function withCartReadAgain(req: MedusaRequest, cartId: string, body: unkno
  *
  * - The handler answered a success: its write is done. Each cart is
  *   refreshed (`refreshCartPaymentCollection`: the collection takes the
- *   total and a session for another amount is deleted; a no-op when both
- *   already agree, or there is no collection yet), then the answer is sent. When a
+ *   total, a session for another amount is deleted, and a payment left
+ *   without its session is cancelled and taken off the collection; a no-op
+ *   when all of that already holds), then the answer is sent. When a
  *   refresh fails the cart has changed and its payment has not, so the caller
  *   is not told it worked: the answer becomes 500
- *   `cart_payment_refresh_failed`, with a message that says to try again
- *   (repeating the request ends in the same refresh). The completion check
- *   below is what stands behind that: a session left for the old amount
- *   cannot be completed on.
+ *   `cart_payment_refresh_failed`. Its message does not say to try again:
+ *   on three of the four routes here a repeat never reaches the refresh
+ *   (Mercur refuses the same delivery option twice before it writes, and a
+ *   repeated removal names what is already gone; see
+ *   `CART_PAYMENT_REFRESH_FAILED_MESSAGE`). The completion check below is
+ *   what puts the cart right: a session left for the old amount cannot be
+ *   completed on, and the refusal brings the cart's payment to its total.
  * - The handler answered an error. A workflow that failed has undone its
  *   write, and then nothing is refreshed. But the write can also have gone
  *   through and the handler failed after it, reading the cart for its
