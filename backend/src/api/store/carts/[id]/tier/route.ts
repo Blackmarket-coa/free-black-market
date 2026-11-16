@@ -18,6 +18,11 @@ import {
   PLAYBOOK_RECIPES,
   type PlaybookId,
 } from "../../../../../modules/playbook"
+import { cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
+import { refreshCartAfterReprice } from "../../../../../lib/cart-payment-refresh"
+import { createLogger } from "../../../../../shared/logger"
+
+const log = createLogger("api/store/carts/tier")
 
 type Body = { tier?: unknown }
 
@@ -41,7 +46,16 @@ type Body = { tier?: unknown }
  *    poison the base and have the reprice write an arbitrary unit_price.
  *    Items whose variant has no calculated price fall back to deriving
  *    the base from their current unit_price.
- * 5. Writes `cart.metadata.tier` and returns the cart.
+ * 5. Writes `cart.metadata.tier`.
+ * 6. Refreshes the cart (SD-115). The reprice is a cart-module write, which
+ *    tells neither the cart's promotions nor its payment collection, so a
+ *    promotion's adjustment stayed at the amount computed from the old price
+ *    and a card session opened before the reprice stayed pending for the old
+ *    total. `refreshCartAfterReprice` runs what Medusa's own line-item
+ *    workflows end in. It runs on every call that gets this far, repriced
+ *    lines or not, so that repeating a call whose refresh failed is the cure.
+ *    When it fails the answer is 500 `cart_payment_refresh_failed`, not a
+ *    success: the lines are repriced and the payment side is not.
  *
  * Line items from products on a Stall-playbook seller (or any seller
  * without a playbook assignment yet) are left untouched.
@@ -290,6 +304,17 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
     await cartModule.updateCarts(id, {
       metadata: { ...existingMd, tier },
     })
+  }
+
+  try {
+    await refreshCartAfterReprice(req.scope, id)
+  } catch (error) {
+    log.error(
+      `[cart-tier] cart ${id}: ${updates.length} line item(s) repriced to tier ${tier}, but the cart could not be refreshed afterwards; its promotions and payment collection may still be for the old prices: ${(error as Error)?.message ?? error}`,
+      { cart_id: id }
+    )
+    const refusal = cartPaymentRefreshFailedResponse()
+    return res.status(refusal.status).json(refusal.body)
   }
 
   return res.json({

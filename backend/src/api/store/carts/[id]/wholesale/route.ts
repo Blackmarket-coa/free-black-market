@@ -18,6 +18,11 @@ import {
 import { VENDOR_RULES_MODULE } from "../../../../../modules/vendor-rules"
 import type VendorRulesService from "../../../../../modules/vendor-rules/service"
 import { CustomerTierType } from "../../../../../modules/vendor-rules/models/vendor-customer-tier"
+import { cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
+import { refreshCartAfterReprice } from "../../../../../lib/cart-payment-refresh"
+import { createLogger } from "../../../../../shared/logger"
+
+const log = createLogger("api/store/carts/wholesale")
 
 /**
  * Apply the buyer's wholesale tier pricing to the cart (MOQ + tier discount).
@@ -50,6 +55,14 @@ import { CustomerTierType } from "../../../../../modules/vendor-rules/models/ven
  *    otherwise poison the base and have the reprice write an arbitrary
  *    unit_price. Items whose variant has no calculated price fall back to
  *    deriving the base from their current unit_price.
+ *
+ * 6. Refreshes the cart (SD-115), as `../tier/route.ts` does and for the
+ *    same reason: the reprice is a cart-module write, which tells neither the
+ *    cart's promotions nor its payment collection. It runs whenever the
+ *    discount applies, repriced lines or not, so that repeating a call whose
+ *    refresh failed is the cure; when it fails the answer is 500
+ *    `cart_payment_refresh_failed`, not a success. The no-op exits below
+ *    write nothing and refresh nothing.
  *
  * No tier / no discount => 200 no-op with `{applied: false}`.
  *
@@ -371,6 +384,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await cartModule.updateCarts(id, {
       metadata: { ...existingMd, wholesale_applied: true },
     })
+  }
+
+  try {
+    await refreshCartAfterReprice(req.scope, id)
+  } catch (error) {
+    log.error(
+      `[cart-wholesale] cart ${id}: ${updates.length} line item(s) repriced, but the cart could not be refreshed afterwards; its promotions and payment collection may still be for the old prices: ${(error as Error)?.message ?? error}`,
+      { cart_id: id }
+    )
+    const refusal = cartPaymentRefreshFailedResponse()
+    return res.status(refusal.status).json(refusal.body)
   }
 
   return res.json({

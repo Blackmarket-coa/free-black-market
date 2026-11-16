@@ -37,6 +37,7 @@ import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
+import { cartPaymentMiddlewareRoutes } from "./middlewares/cart-payment-refresh";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
 import {
   refuseSharedPaymentOrderCancel,
@@ -1255,6 +1256,7 @@ export default defineMiddlewares({
     ...storeCollectiveMiddlewareRoutes,
     ...mutualAidMiddlewareRoutes,
     ...deliveryMiddlewareRoutes,
+    ...cartPaymentMiddlewareRoutes,
     {
       matcher: "/vendor/hawala/payments*",
       middlewares: [

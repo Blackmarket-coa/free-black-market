@@ -1,3 +1,21 @@
+// SD-115: the route ends in a cart refresh, which is Medusa's workflow and
+// runs for real in integration-tests/http/cart-payment-refresh.spec.ts. Here
+// it is a recorder: when it is called, for which cart, and what the caller is
+// told when it fails.
+const refreshCartAfterReprice = jest.fn()
+jest.mock("../../../../lib/cart-payment-refresh", () => ({
+  refreshCartAfterReprice: (...args: unknown[]) => refreshCartAfterReprice(...args),
+}))
+const logError = jest.fn()
+jest.mock("../../../../shared/logger", () => ({
+  createLogger: () => ({
+    error: (...args: unknown[]) => logError(...args),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+  }),
+}))
+
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { POST } from "../[id]/tier/route"
 import { PLAYBOOK_MODULE } from "../../../../modules/playbook"
@@ -5,6 +23,7 @@ import {
   BASE_CURRENCY_METADATA_KEY,
   BASE_UNIT_PRICE_METADATA_KEY,
 } from "../../../../lib/sliding-scale"
+import { CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../../lib/cart-payment-amount"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -103,6 +122,12 @@ const post = async (
   return res
 }
 
+beforeEach(() => {
+  logError.mockClear()
+  refreshCartAfterReprice.mockReset()
+  refreshCartAfterReprice.mockResolvedValue(undefined)
+})
+
 describe("store cart tier route", () => {
   it("400s on an invalid tier", async () => {
     const { scope, cartModule } = makeScope({ cart: baseCart() })
@@ -111,6 +136,7 @@ describe("store cart tier route", () => {
     expect(res.statusCode).toBe(400)
     expect(res.body.message).toContain("tier must be one of")
     expect(cartModule.updateLineItems).not.toHaveBeenCalled()
+    expect(refreshCartAfterReprice).not.toHaveBeenCalled()
   })
 
   it("404s when the cart does not exist", async () => {
@@ -118,6 +144,7 @@ describe("store cart tier route", () => {
     const res = await post(scope, "solidarity", "cart_missing")
 
     expect(res.statusCode).toBe(404)
+    expect(refreshCartAfterReprice).not.toHaveBeenCalled()
   })
 
   it("applies the solidarity tier off the variant price and stashes the base", async () => {
@@ -344,5 +371,73 @@ describe("store cart tier route", () => {
     expect(res.body.line_items_repriced).toBe(0)
     expect(cartModule.updateLineItems).not.toHaveBeenCalled()
     expect(cartModule.updateCarts).not.toHaveBeenCalled()
+  })
+
+  describe("the cart refresh after the reprice (SD-115)", () => {
+    const repricing = () =>
+      makeScope({
+        cart: baseCart(),
+        products: sellerProducts,
+        variants: listedVariants,
+        assignments: slidingAssignments,
+      })
+
+    it("runs after the line items are written, for this cart, before the route answers", async () => {
+      const { scope, cartModule } = repricing()
+      const order: string[] = []
+      cartModule.updateLineItems.mockImplementation(async () => {
+        order.push("reprice")
+      })
+      cartModule.updateCarts.mockImplementation(async () => {
+        order.push("metadata")
+      })
+      refreshCartAfterReprice.mockImplementation(async () => {
+        order.push("refresh")
+      })
+      const res = await post(scope, "solidarity")
+
+      expect(order).toEqual(["reprice", "metadata", "refresh"])
+      expect(refreshCartAfterReprice).toHaveBeenCalledTimes(1)
+      expect(refreshCartAfterReprice).toHaveBeenCalledWith(scope, "cart_1")
+      expect(res.statusCode).toBe(200)
+      expect(res.body.line_items_repriced).toBe(1)
+    })
+
+    it("runs on a call that reprices nothing too, so that repeating a call whose refresh failed is the cure", async () => {
+      const { scope, cartModule } = makeScope({
+        cart: baseCart(),
+        products: sellerProducts,
+        variants: listedVariants,
+        assignments: [{ seller_id: "seller_1", recipe_id: "stall" }],
+      })
+      const res = await post(scope, "solidarity")
+
+      expect(cartModule.updateLineItems).not.toHaveBeenCalled()
+      expect(refreshCartAfterReprice).toHaveBeenCalledWith(scope, "cart_1")
+      expect(res.statusCode).toBe(200)
+    })
+
+    it("when it fails the route does not answer success: 500 cart_payment_refresh_failed, and the failure is logged with the cart", async () => {
+      const { scope, cartModule } = repricing()
+      refreshCartAfterReprice.mockRejectedValue(new Error("Failed to acquire lock for key cart_1"))
+      const res = await post(scope, "solidarity")
+
+      expect(cartModule.updateLineItems).toHaveBeenCalledTimes(1)
+      expect(res.statusCode).toBe(500)
+      expect(res.body).toEqual({
+        code: "cart_payment_refresh_failed",
+        type: "cart_payment_refresh_failed",
+        message: CART_PAYMENT_REFRESH_FAILED_MESSAGE,
+      })
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("Failed to acquire lock"), { cart_id: "cart_1" })
+    })
+
+    it("does not run when the reprice itself failed", async () => {
+      const { scope, cartModule } = repricing()
+      cartModule.updateLineItems.mockRejectedValue(new Error("write failed"))
+
+      await expect(post(scope, "solidarity")).rejects.toThrow("write failed")
+      expect(refreshCartAfterReprice).not.toHaveBeenCalled()
+    })
   })
 })

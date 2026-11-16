@@ -1,3 +1,21 @@
+// SD-115: the route ends in a cart refresh, which is Medusa's workflow and
+// runs for real in integration-tests/http/cart-payment-refresh.spec.ts. Here
+// it is a recorder: when it is called, for which cart, and what the caller is
+// told when it fails.
+const refreshCartAfterReprice = jest.fn()
+jest.mock("../../../../lib/cart-payment-refresh", () => ({
+  refreshCartAfterReprice: (...args: unknown[]) => refreshCartAfterReprice(...args),
+}))
+const logError = jest.fn()
+jest.mock("../../../../shared/logger", () => ({
+  createLogger: () => ({
+    error: (...args: unknown[]) => logError(...args),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+  }),
+}))
+
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { POST } from "../[id]/wholesale/route"
 import { VENDOR_RULES_MODULE } from "../../../../modules/vendor-rules"
@@ -7,6 +25,7 @@ import {
   BASE_UNIT_PRICE_METADATA_KEY,
 } from "../../../../lib/sliding-scale"
 import { WHOLESALE_DISCOUNT_METADATA_KEY } from "../../../../lib/wholesale-pricing"
+import { CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../../lib/cart-payment-amount"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -118,6 +137,12 @@ const wholesaleTier = (overrides: Partial<Tier> = {}): Tier => ({
   discount_percent: 45,
   waive_order_minimum: false,
   ...overrides,
+})
+
+beforeEach(() => {
+  logError.mockClear()
+  refreshCartAfterReprice.mockReset()
+  refreshCartAfterReprice.mockResolvedValue(undefined)
 })
 
 describe("store cart wholesale route", () => {
@@ -549,5 +574,108 @@ describe("store cart wholesale route", () => {
         }),
       }),
     ])
+  })
+
+  describe("the cart refresh after the reprice (SD-115)", () => {
+    const repricing = () =>
+      makeScope({
+        cart: baseCart(),
+        products: sellerProducts,
+        tiersBySeller: new Map([["seller_1", wholesaleTier()]]),
+      })
+    const run = async (scope: unknown, id = "cart_1") => {
+      const res = createRes()
+      await POST({ params: { id }, scope } as any, res)
+      return res
+    }
+
+    it("runs after the line items are written, for this cart, before the route answers", async () => {
+      const { scope, cartModule } = repricing()
+      const order: string[] = []
+      cartModule.updateLineItems.mockImplementation(async () => {
+        order.push("reprice")
+      })
+      cartModule.updateCarts.mockImplementation(async () => {
+        order.push("metadata")
+      })
+      refreshCartAfterReprice.mockImplementation(async () => {
+        order.push("refresh")
+      })
+      const res = await run(scope)
+
+      expect(order).toEqual(["reprice", "metadata", "refresh"])
+      expect(refreshCartAfterReprice).toHaveBeenCalledTimes(1)
+      expect(refreshCartAfterReprice).toHaveBeenCalledWith(scope, "cart_1")
+      expect(res.statusCode).toBe(200)
+      expect(res.body.applied).toBe(true)
+    })
+
+    it("runs when the discount applies and every line is already priced, so that repeating a call whose refresh failed is the cure", async () => {
+      const { scope, cartModule } = makeScope({
+        cart: baseCart({
+          metadata: { wholesale_applied: true },
+          items: [
+            {
+              id: "li_1",
+              product_id: "prod_1",
+              quantity: 5,
+              unit_price: 5.5,
+              is_custom_price: true,
+              metadata: {
+                [BASE_UNIT_PRICE_METADATA_KEY]: 550,
+                [BASE_CURRENCY_METADATA_KEY]: "usd",
+                [WHOLESALE_DISCOUNT_METADATA_KEY]: 0,
+              },
+            },
+          ],
+        }),
+        products: sellerProducts,
+        tiersBySeller: new Map([["seller_1", wholesaleTier({ discount_percent: 0 })]]),
+      })
+      const res = await run(scope)
+
+      expect(res.body).toMatchObject({ applied: true, line_items_repriced: 0 })
+      expect(cartModule.updateLineItems).not.toHaveBeenCalled()
+      expect(refreshCartAfterReprice).toHaveBeenCalledWith(scope, "cart_1")
+    })
+
+    it("does not run on the exits that write nothing: no cart, no customer, no tier, minimums unmet", async () => {
+      await run(makeScope({ cart: null }).scope, "cart_missing")
+      await run(makeScope({ cart: baseCart({ customer_id: null }), products: sellerProducts }).scope)
+      await run(makeScope({ cart: baseCart(), products: sellerProducts }).scope)
+      const unmet = await run(
+        makeScope({
+          cart: baseCart(),
+          products: sellerProducts,
+          tiersBySeller: new Map([["seller_1", wholesaleTier()]]),
+          minimumsBySeller: new Map([["seller_1", { min_order_value: 5000, min_order_items: 1 }]]),
+        }).scope
+      )
+      expect(unmet.statusCode).toBe(400)
+      expect(refreshCartAfterReprice).not.toHaveBeenCalled()
+    })
+
+    it("when it fails the route does not answer success: 500 cart_payment_refresh_failed, and the failure is logged with the cart", async () => {
+      const { scope, cartModule } = repricing()
+      refreshCartAfterReprice.mockRejectedValue(new Error("Failed to acquire lock for key cart_1"))
+      const res = await run(scope)
+
+      expect(cartModule.updateLineItems).toHaveBeenCalledTimes(1)
+      expect(res.statusCode).toBe(500)
+      expect(res.body).toEqual({
+        code: "cart_payment_refresh_failed",
+        type: "cart_payment_refresh_failed",
+        message: CART_PAYMENT_REFRESH_FAILED_MESSAGE,
+      })
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("Failed to acquire lock"), { cart_id: "cart_1" })
+    })
+
+    it("does not run when the reprice itself failed", async () => {
+      const { scope, cartModule } = repricing()
+      cartModule.updateLineItems.mockRejectedValue(new Error("write failed"))
+
+      await expect(run(scope)).rejects.toThrow("write failed")
+      expect(refreshCartAfterReprice).not.toHaveBeenCalled()
+    })
   })
 })
