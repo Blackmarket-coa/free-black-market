@@ -3,6 +3,9 @@ import { createLogger } from "../../../shared/logger"
 
 const MARKER = "Migration20261116090000RecomputeActiveProposalTallies"
 
+/** The migration before this one, which rewrote tallies without keeping them (step 4 below). */
+const INDEX_MIGRATION = "Migration20261115210000AddUniqueBallotIndex"
+
 const log = createLogger("Governance")
 
 /**
@@ -36,6 +39,22 @@ const TALLY_DIFFERS = `(
     OR p."total_voting_power" <> t.total_voting_power
     OR p."unique_voters" <> t.unique_voters)`
 
+/**
+ * The ballots `Migration20261115210000AddUniqueBallotIndex` soft-deleted as
+ * duplicates, per proposal: how many, and when. It recomputed the tally of
+ * exactly the proposals that have one, in the transaction that removed them,
+ * so `removed_at` (that transaction's `now()`) is also when the tally was
+ * rewritten.
+ */
+const REMOVED_DUPLICATES = `
+  SELECT "proposal_id", COUNT(*)::int AS removed, MAX("deleted_at") AS removed_at
+    FROM "garden_vote"
+   WHERE "metadata"->>'soft_deleted_by' = '${INDEX_MIGRATION}'
+   GROUP BY "proposal_id"`
+
+/** A timestamp as text, in UTC to the millisecond, whatever the session's time zone. */
+const utc = (expr: string) => `to_char(${expr} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+
 /** A bigNumber column's `raw_*` companion, written the way `castBallot` writes it. */
 const raw = (col: string) =>
   `jsonb_build_object('value', trim_scale(t.${col})::text, ` +
@@ -43,7 +62,9 @@ const raw = (col: string) =>
 
 /**
  * Repairs the tallies of proposals still open for voting that the old votes
- * race left wrong (SD-86 (b)).
+ * race left wrong (SD-86 (b)), and reports the decided ones a person has to
+ * rule on: those whose tally is still wrong, and those whose tally the
+ * migration before this one rewrote after they were decided.
  *
  * `POST /store/proposals/:id/votes` used to write the tally as absolute
  * values computed from a proposal read at the start of the request, so
@@ -65,12 +86,13 @@ const raw = (col: string) =>
  *    are kept in `metadata.tally_before`, with `metadata.tally_recomputed_by`
  *    naming this migration. Status, result and quorum fields are not touched.
  * 3. A proposal that is not `active` (draft, submitted, passed, rejected,
- *    tie, expired, implemented, withdrawn, ...) is left as it is, even when
- *    its tally differs: a decided one's result was decided and acted on from
- *    the stored tally, and rewriting the tally under it would make the
- *    record disagree with the decision. Those are logged at warn, count and
- *    ids, for a person to rule on, each with its stored `unique_voters`, its
- *    live ballot count and the largest difference in the four sums:
+ *    tie, expired, implemented, withdrawn, ...) keeps its tally here, even
+ *    when it differs from its ballots: a decided one's result was decided
+ *    and acted on from the stored tally, and rewriting the tally under it
+ *    makes the record disagree with the decision. Those are logged at warn,
+ *    count and ids, for a person to rule on, each with its stored
+ *    `unique_voters`, its live ballot count and the largest difference in
+ *    the four sums:
  *    - `unique_voters` differing from the ballot count (below it, under the
  *      race): a ballot's increment was lost. The race wrote every column
  *      from one stale read, so a lost ballot always shows in the voter count;
@@ -81,16 +103,52 @@ const raw = (col: string) =>
  *      leaves e.g. 0.8999999999999999 where the NUMERIC sum is 0.9.
  *    Active proposals with only that rounding are rewritten to the NUMERIC
  *    sum, which is what `castBallot`'s SQL increment writes.
+ * 4. Step 3 does not hold for what ran before this.
+ *    `Migration20261115210000AddUniqueBallotIndex` recomputed the tally of
+ *    every proposal that had a duplicate ballot, whatever its status, and
+ *    kept no copy of what it replaced. It runs before this migration, so by
+ *    now such a proposal's tally equals its live ballots and step 3 cannot
+ *    list it, while its `status`, `approval_percentage` and `quorum_met`
+ *    still say what was decided on the tally that is gone (Postgres:
+ *    rejected at approval 20 on for 1 / against 4 / 3 voters; afterwards for
+ *    1 / against 2 / 2 voters, still rejected at 20, in no warn). That
+ *    tally cannot be put back from here. The proposals are found by the
+ *    ballots that migration soft-deleted (`garden_vote.metadata.soft_deleted_by`)
+ *    and, when not `active`:
+ *    - logged at warn, each with its status, `approval_percentage`,
+ *      `quorum_met`, when its result was calculated, how many duplicate
+ *      ballots were removed and when, the tally as it stands now and the
+ *      approval that tally gives. A result calculated before the removal was
+ *      decided on the lost tally, and `approval_percentage` and `quorum_met`
+ *      are the only trace of it. One calculated after it was decided on the
+ *      recomputed tally, unless its finalize was already running when the
+ *      ballots were removed (a result calculated within moments of it; the
+ *      result's time is the app server's clock, the removal's the
+ *      database's);
+ *    - marked: `metadata.tally_rewritten_by` (that migration's name),
+ *      `tally_rewritten_at` and `tally_rewrite_recorded_by` (this one's).
+ *      The warn is one log line, and the ballots' own marker sits on
+ *      soft-deleted rows the module's reads leave out. The mark also keeps
+ *      the set as it was when this ran: a proposal still `active` now that
+ *      is finalized later was decided on the recomputed tally, and will
+ *      match the ballot query without carrying the mark. This is the only
+ *      write to a proposal that is not `active`, and it changes `metadata`
+ *      alone: tally, status, result fields and `updated_at` are as they
+ *      were, so the mark cannot change what was decided.
  *
- * Proposals whose tally already matches are not written. A no-op on a table
- * where every tally matches.
+ * Proposals whose tally already matches are not written, nor is one already
+ * marked. A no-op on a table where every tally matches and no decided
+ * proposal had a duplicate ballot removed.
  *
  * A finalize that read an active proposal's tally before this commits
  * decides on the old tally: its status UPDATE waits on the lock and lands
  * after. That proposal then has a status other than `active` and a repaired
  * tally that matches its ballots, so the warn above cannot list it; a status
  * other than `active` beside `metadata.tally_recomputed_by` finds it (the
- * operator query in docs/AUDIT_DEBT.md SD-86).
+ * operator query in docs/AUDIT_DEBT.md SD-86). The same finalize on a
+ * proposal whose duplicates the index migration removed leaves it decided on
+ * the old tally with neither mark; the ballot query (operator check 3 there)
+ * lists it, with a result calculated moments after the removal.
  */
 export class Migration20261116090000RecomputeActiveProposalTallies extends Migration {
   override async up(): Promise<void> {
@@ -149,6 +207,58 @@ export class Migration20261116090000RecomputeActiveProposalTallies extends Migra
       max_sum_difference: string
     }>
 
+    const rewrittenWhenDecided = (await this.execute(`
+      SELECT p."id", p."status",
+             COALESCE(trim_scale(p."approval_percentage")::text, 'none') AS approval_percentage,
+             COALESCE(p."quorum_met"::text, 'none') AS quorum_met,
+             ${utc('p."result_calculated_at"')} AS result_calculated_at,
+             (p."result_calculated_at" < r.removed_at) AS decided_before_rewrite,
+             r.removed,
+             ${utc("r.removed_at")} AS removed_at,
+             trim_scale(p."votes_for")::text AS votes_for,
+             trim_scale(p."votes_against")::text AS votes_against,
+             trim_scale(p."votes_abstain")::text AS votes_abstain,
+             trim_scale(p."total_voting_power")::text AS total_voting_power,
+             p."unique_voters",
+             CASE WHEN p."votes_for" + p."votes_against" > 0
+                  THEN trim_scale(round(p."votes_for" / (p."votes_for" + p."votes_against") * 100, 2))::text
+                  ELSE '0' END AS approval_now
+        FROM "garden_proposal" p
+        JOIN (${REMOVED_DUPLICATES}) AS r ON r."proposal_id" = p."id"
+       WHERE p."status" <> 'active'
+         AND p."deleted_at" IS NULL
+       ORDER BY p."id"`)) as Array<{
+      id: string
+      status: string
+      approval_percentage: string
+      quorum_met: string
+      result_calculated_at: string | null
+      decided_before_rewrite: boolean | null
+      removed: number
+      removed_at: string | null
+      votes_for: string
+      votes_against: string
+      votes_abstain: string
+      total_voting_power: string
+      unique_voters: number
+      approval_now: string
+    }>
+
+    if (rewrittenWhenDecided.length) {
+      await this.execute(`
+        UPDATE "garden_proposal" AS p
+           SET "metadata" = COALESCE(p."metadata", '{}'::jsonb) || jsonb_build_object(
+                 'tally_rewritten_by', '${INDEX_MIGRATION}',
+                 'tally_rewritten_at', r.removed_at,
+                 'tally_rewrite_recorded_by', '${MARKER}'
+               )
+          FROM (${REMOVED_DUPLICATES}) AS r
+         WHERE p."id" = r."proposal_id"
+           AND p."status" <> 'active'
+           AND p."deleted_at" IS NULL
+           AND p."metadata"->>'tally_rewritten_by' IS DISTINCT FROM '${INDEX_MIGRATION}'`)
+    }
+
     if (repaired.length) {
       log.info(`${MARKER}: recomputed the tally of ${repaired.length} active proposal(s) from their live ballots`, {
         proposal_ids: repaired.map((row) => row.id),
@@ -170,10 +280,42 @@ export class Migration20261116090000RecomputeActiveProposalTallies extends Migra
         }
       )
     }
+    if (rewrittenWhenDecided.length) {
+      log.warn(
+        `${MARKER}: ${rewrittenWhenDecided.length} proposal(s) not active had their tally rewritten by ` +
+          `${INDEX_MIGRATION}, which recomputed every proposal that had a duplicate ballot, whatever its ` +
+          "status, and kept no copy of the tally it replaced. Where the result was calculated before the " +
+          "rewrite, the tally the proposal was decided on is gone: approval_percentage and quorum_met are " +
+          "the only trace of it. Where it was calculated after, the proposal was decided on the recomputed " +
+          "tally, unless its finalize was already running during that migration. Left as they are and marked " +
+          "metadata.tally_rewritten_by, for review (see docs/AUDIT_DEBT.md SD-86)",
+        {
+          proposals: rewrittenWhenDecided.map((row) => {
+            const decided =
+              row.result_calculated_at === null
+                ? "no result calculated"
+                : `result calculated ${row.result_calculated_at}` +
+                  (row.decided_before_rewrite === null
+                    ? ""
+                    : row.decided_before_rewrite
+                      ? ", before the rewrite"
+                      : ", after the rewrite")
+            return (
+              `${row.id} (${row.status}; approval_percentage ${row.approval_percentage}, ` +
+              `quorum_met ${row.quorum_met}, ${decided}; ${row.removed} duplicate ballot(s) removed ` +
+              `${row.removed_at ?? "at a time not recorded"}; tally now for ${row.votes_for}, against ` +
+              `${row.votes_against}, abstain ${row.votes_abstain}, total ${row.total_voting_power}, ` +
+              `unique_voters ${row.unique_voters}, which gives approval ${row.approval_now})`
+            )
+          }),
+        }
+      )
+    }
   }
 
   override async down(): Promise<void> {
     // Not undone: the tallies it replaced were wrong. Each repaired
-    // proposal's previous values are in metadata.tally_before.
+    // proposal's previous values are in metadata.tally_before. The marks on
+    // decided proposals stay: they record what the index migration did.
   }
 }
