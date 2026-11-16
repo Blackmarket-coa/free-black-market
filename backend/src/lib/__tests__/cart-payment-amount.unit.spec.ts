@@ -237,6 +237,43 @@ describe("sessionsNotForCartTotal: what is deleted so that the next session is t
   })
 })
 
+describe("a session whose payment captured, though Medusa stores it as authorized (SD-115 review)", () => {
+  // `authorizePaymentSession_` (@medusajs/payment 2.14.2): a provider that
+  // answers the authorization with a captured payment (Stripe's `succeeded`)
+  // gets its session stored as `authorized` and the capture on the Payment.
+  const withPayments = (sessionStatus: string, payments: Array<{ id: string; payment_session_id: string | null; captured_at?: unknown }>) =>
+    ({
+      ...cart({ total: 36 }, [{ id: "payses_1", amount: 32, status: sessionStatus }]),
+      payment_collection: { payment_sessions: [{ id: "payses_1", amount: 32, status: sessionStatus }], payments },
+    }) as CartPaymentAmounts
+
+  it("is judged captured when its payment has captured_at: money was taken, so the buyer is not told it was not", () => {
+    const verdict = judgeCartPaymentAmount(withPayments("authorized", [{ id: "pay_1", payment_session_id: "payses_1", captured_at: new Date() }]))
+    expect(verdict).toEqual({ ok: false, reason: "captured_amount_mismatch", detail: expect.stringContaining("authorized session payses_1 is for 3200") })
+  })
+
+  it("is never named for deletion: its intent cannot be cancelled and its money needs a refund", () => {
+    expect(sessionsNotForCartTotal(withPayments("authorized", [{ id: "pay_1", payment_session_id: "payses_1", captured_at: new Date() }]))).toEqual([])
+  })
+
+  it("an authorized session whose payment captured nothing stays a session for another amount, and is named for deletion", () => {
+    const uncaptured = withPayments("authorized", [{ id: "pay_1", payment_session_id: "payses_1", captured_at: null }])
+    expect(judgeCartPaymentAmount(uncaptured)).toMatchObject({ ok: false, reason: "session_amount_mismatch" })
+    expect(sessionsNotForCartTotal(uncaptured)).toEqual(["payses_1"])
+  })
+
+  it("a captured payment of another session (one since deleted) does not make this one captured", () => {
+    const other = withPayments("pending", [{ id: "pay_old", payment_session_id: "payses_gone", captured_at: new Date() }])
+    expect(judgeCartPaymentAmount(other)).toMatchObject({ ok: false, reason: "session_amount_mismatch" })
+    expect(sessionsNotForCartTotal(other)).toEqual(["payses_1"])
+  })
+
+  it("without the payments read, the status alone decides, as before", () => {
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 32, status: "authorized" }]))).toMatchObject({ reason: "session_amount_mismatch" })
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 32, status: "captured" }]))).toMatchObject({ reason: "captured_amount_mismatch" })
+  })
+})
+
 describe("paymentsLeftWithoutSession: the payments no completion can use and a capture would still take", () => {
   type Payment = { id?: string | null; payment_session_id?: string | null; captured_at?: unknown; canceled_at?: unknown }
   const withPayments = (sessionIds: Array<string | null> | null | undefined, payments: Array<Payment | null> | null | undefined, overrides: Partial<CartPaymentAmounts> = {}) =>

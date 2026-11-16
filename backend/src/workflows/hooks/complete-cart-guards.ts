@@ -41,5 +41,5 @@ export async function runCompleteCartGuards(
   await validateRentalOnCompleteCart(args as any, context as any)
   await validateCcrReservation(args, context)
   await validateOrderCycleOnCompleteCart(args, context)
-  await validateCartPaymentAmount(args)
+  await validateCartPaymentAmount(args, context)
 }

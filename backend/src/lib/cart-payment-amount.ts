@@ -281,8 +281,26 @@ const PAID_WITH: ReadonlySet<string> = new Set<string>([
 
 type Session = { id?: string | null; amount?: unknown; status?: string | null }
 
-/** A payment on the cart's collection, as far as `paymentsLeftWithoutSession` reads it. */
+/** A payment on the cart's collection, as far as the decision and `paymentsLeftWithoutSession` read it. */
 type Payment = { id?: string | null; payment_session_id?: string | null; captured_at?: unknown; canceled_at?: unknown }
+
+const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0
+
+/**
+ * The sessions whose payment captured. A session's own status does not say
+ * so: when the provider answers an authorization with a captured payment
+ * (Stripe's `succeeded`, for a method Stripe captures at once, or Medusa's
+ * webhook capturing it), the payment module stores the session as
+ * `authorized` and records the capture on the Payment row
+ * (`authorizePaymentSession_` in `@medusajs/payment` 2.14.2). So a session
+ * counts as captured when its status says so or a payment for it has
+ * `captured_at`. Empty when the payments were not read.
+ */
+function sessionsWithCapturedPayment(cart: CartPaymentAmounts): Set<string> {
+  const payments = cart.payment_collection?.payments
+  if (!Array.isArray(payments)) return new Set()
+  return new Set(payments.filter((payment) => !!payment?.captured_at).map((payment) => payment?.payment_session_id).filter(isId))
+}
 
 /** A cart as far as the decision reads it. */
 export type CartPaymentAmounts = {
@@ -308,7 +326,7 @@ type Comparison =
   | {
       kind: "compared"
       total: number
-      rows: Array<{ session: Session; amount: number | null; matches: boolean }>
+      rows: Array<{ session: Session; amount: number | null; matches: boolean; captured: boolean }>
     }
 
 function compare(cart: CartPaymentAmounts): Comparison {
@@ -327,12 +345,14 @@ function compare(cart: CartPaymentAmounts): Comparison {
   if (total === null) return { kind: "unknown", detail: `cart ${cart.id}: its total could not be read as a number` }
   if (total <= 0) return { kind: "nothing" }
 
+  const capturedPayment = sessionsWithCapturedPayment(cart)
   return {
     kind: "compared",
     total,
     rows: sessions.map((session) => {
       const amount = toMinorUnits(session.amount, digits)
-      return { session, amount, matches: amount !== null && amount === total }
+      const captured = session.status === PaymentSessionStatus.CAPTURED || (isId(session.id) && capturedPayment.has(session.id))
+      return { session, amount, matches: amount !== null && amount === total, captured }
     }),
   }
 }
@@ -348,7 +368,12 @@ function compare(cart: CartPaymentAmounts): Comparison {
  * of unknown size is not one to authorize. The reason says which, and which
  * message is true: a captured session for another amount comes first (money
  * was taken), then any other session for another amount, then an amount that
- * could not be read.
+ * could not be read. A session is captured when its status says so or, when
+ * the collection's payments were read, its payment has `captured_at`
+ * (`sessionsWithCapturedPayment`: Medusa stores a session captured at
+ * authorization as `authorized`); a caller that did not read the payments
+ * gets the status alone, and `workflows/hooks/validate-cart-payment-amount.ts`
+ * reads them before it answers a session for another amount.
  *
  * Passed on, for the completion to answer as it always has:
  *  - a cart that has completed (a replay; nothing is authorized again, and
@@ -376,7 +401,7 @@ export function judgeCartPaymentAmount(cart: CartPaymentAmounts): CartPaymentAmo
   const describe = (row: (typeof wrong)[number]) =>
     `cart ${cart.id}: ${row.session.status} session ${row.session.id ?? "?"} is for ${row.amount} and the cart's total is ${total} (minor units, ${String(cart.currency_code)})`
 
-  const captured = wrong.find((row) => row.amount !== null && row.session.status === PaymentSessionStatus.CAPTURED)
+  const captured = wrong.find((row) => row.amount !== null && row.captured)
   if (captured) return { ok: false, reason: "captured_amount_mismatch", detail: describe(captured) }
   const other = wrong.find((row) => row.amount !== null)
   if (other) return { ok: false, reason: "session_amount_mismatch", detail: describe(other) }
@@ -392,10 +417,11 @@ export function judgeCartPaymentAmount(cart: CartPaymentAmounts): CartPaymentAmo
  * for the cart's total: every session a completion would pay with that is not
  * for the total (or whose amount cannot be read) and has captured nothing.
  *
- * A captured session is never in the list. Deleting a session cancels its
- * intent, a captured intent cannot be cancelled, and the money it took needs
- * a refund, which is not a cart write's to give; the completion refuses it
- * (`captured_amount_mismatch`) and it is left for a person.
+ * A captured session is never in the list, by its status or by its
+ * payment's `captured_at` when the payments were read. Deleting a session
+ * cancels its intent, a captured intent cannot be cancelled, and the money it
+ * took needs a refund, which is not a cart write's to give; the completion
+ * refuses it (`captured_amount_mismatch`) and it is left for a person.
  *
  * Empty when nothing is owed a comparison, and when the cart's own side
  * cannot be read: with no total to hold a session to, none is deleted.
@@ -404,12 +430,10 @@ export function sessionsNotForCartTotal(cart: CartPaymentAmounts): string[] {
   const comparison = compare(cart)
   if (comparison.kind !== "compared") return []
   return comparison.rows
-    .filter((row) => !row.matches && row.session.status !== PaymentSessionStatus.CAPTURED)
+    .filter((row) => !row.matches && !row.captured)
     .map((row) => row.session.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0)
 }
-
-const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0
 
 /**
  * The payments on a cart's collection that no completion can use any more

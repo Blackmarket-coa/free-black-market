@@ -52,7 +52,11 @@ function calls(): Array<{ guard: string; args: unknown; context: unknown }> {
 type MedusaValidateArgs = { input: CompleteCartWorkflowInput; cart: unknown }
 
 const CONTEXT = { container: { resolve: () => ({}) } }
-/** SD-115: the payment-amount guard is last, and is handed the argument only (it reads nothing but the hook's cart). */
+/**
+ * SD-115: the payment-amount guard is last. It is handed the context as the
+ * others are: it reads the collection's payments when a session is for
+ * another amount, to tell whether that payment captured.
+ */
 const ALL_FIVE = ["sliding-scale", "rental", "ccr", "order-cycle", "payment-amount"]
 
 beforeEach(() => {
@@ -63,13 +67,13 @@ beforeEach(() => {
 })
 
 describe("runCompleteCartGuards", () => {
-  it("runs all five guards, in order, on a cart that has not completed, each with the hook's own argument and the first four with its context", async () => {
+  it("runs all five guards, in order, on a cart that has not completed, each with the hook's own argument and its context", async () => {
     const args: MedusaValidateArgs = { input: { id: "cart_1" }, cart: { id: "cart_1", completed_at: null } }
     await runCompleteCartGuards(args, CONTEXT)
     expect(calls().map((c) => c.guard)).toEqual(ALL_FIVE)
     for (const call of calls()) {
       expect(call.args).toBe(args)
-      expect(call.context).toBe(call.guard === "payment-amount" ? undefined : CONTEXT)
+      expect(call.context).toBe(CONTEXT)
     }
   })
 

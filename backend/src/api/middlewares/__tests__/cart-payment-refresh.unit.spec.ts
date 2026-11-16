@@ -527,6 +527,27 @@ describe("POST /store/carts/:id/complete: a session for another amount is refuse
     })
   })
 
+  it("an authorized session whose payment captured is refused as captured: the check reads the collection's payments, and Medusa stores such a session as authorized", async () => {
+    const autoCaptured = {
+      ...cartWith(36, 32),
+      payment_collection: {
+        id: "pay_col_1",
+        payment_sessions: [{ id: "payses_1", amount: 32, status: "authorized" }],
+        payments: [{ id: "pay_1", payment_session_id: "payses_1", captured_at: "2026-11-16T00:00:00.000Z" }],
+      },
+    }
+    const t = request({ methods: [], carts: { cart_1: autoCaptured } })
+    await handler(t.req, t.res, t.next)
+
+    expect(t.next).not.toHaveBeenCalled()
+    expect(t.raw.statusCode).toBe(409)
+    expect(t.raw.body).toEqual({ ...refusal, message: CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE })
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("authorized session payses_1 is for 3200"), {
+      cart_id: "cart_1",
+      reason: "captured_amount_mismatch",
+    })
+  })
+
   it("closed on doubt: a cart that cannot be read, or amounts that cannot be compared, do not complete, and the buyer is not told the total changed", async () => {
     const unconfirmed = { ...refusal, message: CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE }
     const unreadable = request({ methods: [], carts: {}, graph: "throws" })

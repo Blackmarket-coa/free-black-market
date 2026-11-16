@@ -5,7 +5,7 @@ jest.mock("../../../shared/logger", () => ({
   createLogger: () => ({ error: (...args: unknown[]) => logError(...args), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }),
 }))
 
-import { MedusaError } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
 import {
   CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE,
   CART_PAYMENT_AMOUNT_MISMATCH,
@@ -28,14 +28,39 @@ import { validateCartPaymentAmount } from "../validate-cart-payment-amount"
  */
 
 type Session = { id: string; amount: unknown; status: string }
+type Payment = { id: string; payment_session_id: string | null; captured_at?: unknown; canceled_at?: unknown }
+// The cart as `completeCartFields` serve it: the collection and its sessions, not its payments.
 const hookArgs = (total: unknown, sessions: Session[], cart: Record<string, unknown> = {}) => ({
   input: { id: "cart_1" },
-  cart: { id: "cart_1", completed_at: null, currency_code: "usd", total, payment_collection: { payment_sessions: sessions }, ...cart },
+  cart: {
+    id: "cart_1",
+    completed_at: null,
+    currency_code: "usd",
+    total,
+    payment_collection: { id: "pay_col_1", payment_sessions: sessions },
+    ...cart,
+  },
 })
 
-async function refusalOf(args: Parameters<typeof validateCartPaymentAmount>[0]): Promise<CartPaymentAmountError> {
+/** The hook's context, its query serving these payments; anything but the query resolved throws. */
+function contextWith(payments: Payment[] | "throws" = []) {
+  const graph = jest.fn(async (_args: { entity: string; fields: string[]; filters: Record<string, unknown> }) => {
+    if (payments === "throws") throw new Error("query unavailable")
+    return { data: payments }
+  })
+  const resolve = jest.fn((key: string) => {
+    if (key === ContainerRegistrationKeys.QUERY) return { graph }
+    throw new Error(`unexpected resolve ${key}`)
+  })
+  return { context: { container: { resolve } }, graph, resolve }
+}
+
+async function refusalOf(
+  args: Parameters<typeof validateCartPaymentAmount>[0],
+  context: Parameters<typeof validateCartPaymentAmount>[1] = contextWith().context
+): Promise<CartPaymentAmountError> {
   try {
-    await validateCartPaymentAmount(args)
+    await validateCartPaymentAmount(args, context)
   } catch (error) {
     return error as CartPaymentAmountError
   }
@@ -45,10 +70,12 @@ async function refusalOf(args: Parameters<typeof validateCartPaymentAmount>[0]):
 beforeEach(() => logError.mockClear())
 
 describe("validateCartPaymentAmount", () => {
-  it("lets a cart through whose session is for its total, whatever status the completion accepts it in", async () => {
+  it("lets a cart through whose session is for its total, whatever status the completion accepts it in, and reads nothing more", async () => {
+    const t = contextWith()
     for (const status of ["pending", "requires_more", "authorized", "captured"]) {
-      await expect(validateCartPaymentAmount(hookArgs(19, [{ id: "payses_1", amount: 19, status }]))).resolves.toBeUndefined()
+      await expect(validateCartPaymentAmount(hookArgs(19, [{ id: "payses_1", amount: 19, status }]), t.context)).resolves.toBeUndefined()
     }
+    expect(t.graph).not.toHaveBeenCalled()
     expect(logError).not.toHaveBeenCalled()
   })
 
@@ -61,7 +88,14 @@ describe("validateCartPaymentAmount", () => {
   })
 
   it("refuses a session for another amount with not_allowed, the stable code and the buyer's message, and logs both amounts with the cart", async () => {
-    const error = await refusalOf(hookArgs(19, [{ id: "payses_1", amount: 15, status: "pending" }]))
+    const t = contextWith()
+    const error = await refusalOf(hookArgs(19, [{ id: "payses_1", amount: 15, status: "pending" }]), t.context)
+    // Whether its payment captured is read before the answer is chosen.
+    expect(t.graph).toHaveBeenCalledWith({
+      entity: "payment",
+      fields: ["id", "payment_session_id", "captured_at", "canceled_at"],
+      filters: { payment_collection_id: "pay_col_1" },
+    })
     expect(error).toBeInstanceOf(CartPaymentAmountError)
     expect(error).toBeInstanceOf(MedusaError)
     expect(error.type).toBe(MedusaError.Types.NOT_ALLOWED)
@@ -75,8 +109,48 @@ describe("validateCartPaymentAmount", () => {
   })
 
   it("refuses an authorized session for another amount the same way: the order would be recorded on its payment at the cart's total", async () => {
-    const error = await refusalOf(hookArgs(36, [{ id: "payses_1", amount: 32, status: "authorized" }]))
+    const payments = [{ id: "pay_1", payment_session_id: "payses_1", captured_at: null }]
+    const error = await refusalOf(hookArgs(36, [{ id: "payses_1", amount: 32, status: "authorized" }]), contextWith(payments).context)
     expect(error.reason).toBe("session_amount_mismatch")
+    expect(error.message).toBe(CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE)
+  })
+
+  it("an authorized session whose payment captured (Medusa stores a session captured at authorization as authorized) is refused as captured: its message does not say the card was not charged", async () => {
+    const payments = [
+      { id: "pay_1", payment_session_id: "payses_1", captured_at: new Date() },
+      { id: "pay_other", payment_session_id: "payses_gone", captured_at: null },
+    ]
+    const error = await refusalOf(hookArgs(36, [{ id: "payses_1", amount: 32, status: "authorized" }]), contextWith(payments).context)
+    expect(error.reason).toBe("captured_amount_mismatch")
+    expect(error.message).toBe(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE)
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("authorized session payses_1 is for 3200"), {
+      cart_id: "cart_1",
+      reason: "captured_amount_mismatch",
+    })
+  })
+
+  it("when whether it captured cannot be read, the refusal claims least: no context, no collection id, or a failed read", async () => {
+    const stale = [{ id: "payses_1", amount: 32, status: "authorized" }]
+    for (const [args, context] of [
+      [hookArgs(36, stale), undefined],
+      [hookArgs(36, stale), {}],
+      [hookArgs(36, stale, { payment_collection: { payment_sessions: stale } }), contextWith().context],
+      [hookArgs(36, stale), contextWith("throws").context],
+    ] as const) {
+      // Called directly: refusalOf's default would stand in for an absent context.
+      const error = await validateCartPaymentAmount(args, context).then(
+        () => {
+          throw new Error("expected the guard to refuse")
+        },
+        (thrown: CartPaymentAmountError) => thrown
+      )
+      expect(error.reason).toBe("amount_unknown")
+      expect(error.message).toBe(CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE)
+    }
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("whether its payment captured could not be read: query unavailable"), {
+      cart_id: "cart_1",
+      reason: "amount_unknown",
+    })
   })
 
   it("refuses a captured session for another amount with the message that does not say the card was not charged", async () => {
