@@ -32,6 +32,10 @@ const createRes = (): Res => {
 const HOME = {
   id: "prd_1",
   name: "Home Kitchen",
+  // Published by GET like the rest of the catalogue row: the echo to someone
+  // who is not the owner carries exactly as much, no more and no less.
+  email: "home@example.com",
+  phone: "+15550100",
   hide_address: true,
   address_line_1: "5 Hidden Home St",
   address_line_2: "Rear flat",
