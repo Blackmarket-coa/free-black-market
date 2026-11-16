@@ -41,11 +41,13 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  * already did. `planCommissionMinorUnitCorrection` decides each order's
  * figures and says why.
  *
- * WHAT CORRECTING A HELD ROW SETS UP. A `pending` or `held` row has moved no
- * money to the creator, but its commission was never taken from the vendor
- * either: settlement credits the vendor's SELLER_EARNINGS the sale less the
- * platform fee and processing, and approve-held is what later debits the
- * vendor for the commission, at whatever the column says when it runs. So
+ * WHAT CORRECTING A HELD ROW SETS UP. A `pending` or `held` row has, by its
+ * own record, moved no money to the creator (whether the ledger agrees is
+ * one of the checks below), and its commission was never taken from the
+ * vendor either: settlement credits the vendor's SELLER_EARNINGS the sale
+ * less the platform fee and processing, and approve-held is what later
+ * debits the vendor for the commission, at whatever the column says when it
+ * runs. So
  * correcting a held row raises that future debit from 1/100 to the full
  * commission, out of the vendor's balance at the time. Today approve-held's
  * credit is refused for every row (a separate defect, SD-99 in
@@ -245,9 +247,10 @@ const OUTFLOW_ENTRY_TYPES = ["WITHDRAWAL", "VENDOR_PAYMENT"] as const
  * on that order. What the gate is for is to list an order when money has
  * left the earnings its commission would be debited from; such a leg is
  * money that left them, so the order is listed and the line names the other
- * order. It costs nothing where this script is meant to run: no commission
- * is credited today (SD-99), so no such leg exists; where one does,
- * crediting already works for that vendor, and the operator should hear it.
+ * order. It should cost nothing where this script is meant to run: no
+ * commission is credited today (SD-99), so there should be no such leg (not
+ * checked against a production copy); where there is one, crediting already
+ * works for that vendor, and the operator should hear it.
  *
  * No status, for the same reason and one more. `createTransfer` writes a leg
  * PENDING, moves both balances in one database transaction, then marks the
