@@ -6,7 +6,7 @@ import type FoodDistributionService from "../../../../modules/food-distribution/
 import { OperatingStatus } from "../../../../modules/food-distribution/models/food-producer"
 import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
 import {
-  applyProducerAddressPrivacy,
+  producerEchoFor,
   producerProfileIsPublic,
   publicProducerView,
 } from "../../../../modules/food-distribution/public-view"
@@ -133,6 +133,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // address off the GET: the echo was its way to it. A write let through on an
 // unknown owner is acknowledged with what the GET serves, as the courier PUT
 // acknowledges one with the public projection.
+//
+// What the GET serves a non-owner is the public view (SD-118): no contact
+// email or phones, licences, verification notes, owner or ledger account, and
+// for a profile switched off, nothing (it answers as a missing id). The echo
+// follows it through `producerEchoFor`, so the two cannot drift apart.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -161,9 +166,10 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     
     const updated = producer as unknown as Record<string, unknown>
     res.json({
-      producer: actorOwnsResource(req, (existing as { owner_id?: string | null }).owner_id)
-        ? updated
-        : applyProducerAddressPrivacy(updated),
+      producer: producerEchoFor(
+        updated,
+        actorOwnsResource(req, (existing as { owner_id?: string | null }).owner_id)
+      ),
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

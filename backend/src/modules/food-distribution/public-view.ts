@@ -362,3 +362,26 @@ export function publicProducerViewAll(
 export function producerProfileIsPublic(producer: Record<string, unknown>): boolean {
   return producer?.public_profile !== false
 }
+
+/**
+ * What a caller is told of a producer row it has just written or created
+ * (`PUT /store/food-producers/:id`, `POST /store/food-producers`): never more
+ * than `GET /store/food-producers/:id` serves the same caller.
+ *
+ * The owner reads the row whole, as on GET. Anyone else gets the public view
+ * (no contact email or phones, no licences, notes, owner or ledger account,
+ * `hide_address` honoured). A write by someone who is not the owner happens
+ * on a producer with no owner on record, which `actorMayManage` lets any
+ * signed-in account manage; the write is theirs to make, the row is not
+ * theirs to read. And of a profile switched off, which GET answers exactly as
+ * an id that does not exist, the acknowledgement is the id the caller named
+ * and nothing else.
+ */
+export function producerEchoFor(
+  producer: Record<string, unknown>,
+  callerIsOwner: boolean
+): Record<string, unknown> {
+  if (callerIsOwner) return producer
+  if (!producerProfileIsPublic(producer)) return { id: producer.id }
+  return publicProducerView(producer)
+}

@@ -4,7 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../modules/food-distribution/models/food-producer"
 import { hawalaAccountOwnershipError } from "../../../shared/actor-scope"
-import { publicProducerView } from "../../../modules/food-distribution/public-view"
+import { producerEchoFor, publicProducerView } from "../../../modules/food-distribution/public-view"
 import { actorIsAnyOf } from "../../../shared/community-read-access"
 
 // ===========================================
@@ -200,7 +200,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       verified: false,
     } as any)
     
-    res.status(201).json({ producer })
+    // The account that created it is its owner, and reads it whole. The
+    // community-write matcher authenticates every POST here, so there is
+    // always one; were there not, the row would have no owner and the echo
+    // would be what GET serves a stranger (SD-118).
+    const created = producer as unknown as Record<string, unknown>
+    res.status(201).json({
+      producer: producerEchoFor(created, actorIsAnyOf(req, created.owner_id as string | null)),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
