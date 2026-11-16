@@ -2,6 +2,8 @@ import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../../src/modules/request"
+import { REQUEST_TYPES } from "../../src/modules/request/validators"
+import { createPublishableKeyToken } from "./_publishable-key"
 import { createAuthenticatedSeller } from "./helpers/seller-auth"
 
 jest.setTimeout(240 * 1000)
@@ -24,9 +26,11 @@ jest.setTimeout(240 * 1000)
  * lets a seller's token through. `POST /vendor/sellers` (the project's
  * override of Mercur's route) is reached by any seller token, a throwaway
  * registration's included, and had its own copy of the body-email lookup.
+ * The generic `POST /store/requests` and `POST /vendor/requests` refuse the
+ * seller types outright.
  *
  * Budget: every POST under /auth spends the auth limiter's 20 a minute per
- * address (rate-limiter.ts). This file spends 16; the logins it does not need
+ * address (rate-limiter.ts). This file spends 18; the logins it does not need
  * a route for are built through the auth module. `POST /vendor/sellers` has
  * the registration limiter's 5 per 15 minutes, and this file spends 2.
  */
@@ -309,6 +313,79 @@ medusaIntegrationTestRunner({
           expect.objectContaining({ to: throwaway, template: "seller-email-verification" }),
           expect.anything()
         )
+      })
+    })
+
+    describe("the generic request routes", () => {
+      // Both used to file any type with any data. Approving a seller type
+      // creates a seller for whatever login and address the data names
+      // (approveSeller reads data.auth_identity_id): measured, a customer's
+      // made a seller with another person's email, on the customer's login,
+      // and mailed that person.
+      const sellerTypes = [REQUEST_TYPES.SELLER, REQUEST_TYPES.SELLER_CREATION]
+
+      it("POST /store/requests refuses a seller application, and still takes other requests", async () => {
+        const shopper = await shopperViaModule()
+        const pak = await createPublishableKeyToken(getContainer)
+        const asShopper = {
+          headers: {
+            "x-publishable-api-key": pak,
+            authorization: `Bearer ${sign({
+              actor_id: shopper.customerId,
+              actor_type: "customer",
+              auth_identity_id: shopper.authIdentityId,
+              auth_provider: "emailpass",
+              app_metadata: { customer_id: shopper.customerId },
+              user_metadata: {},
+            })}`,
+          },
+        }
+        const data = {
+          auth_identity_id: shopper.authIdentityId,
+          member: { name: "Victim", email: `victim-${uid()}@example.com` },
+          seller: { name: "Victim Farm" },
+        }
+
+        for (const type of sellerTypes) {
+          const refused = await call(api.post("/store/requests", { type, data }, asShopper))
+          expect({ type, status: refused.status }).toEqual({ type, status: 400 })
+          expect(refused.data).toMatchObject({
+            message: "Validation failed",
+            errors: [expect.objectContaining({ path: ["type"] })],
+          })
+        }
+        expect(await allRequests()).toHaveLength(0)
+
+        const quote = await api.post("/store/requests", { type: REQUEST_TYPES.QUOTE_REQUEST, data: { note: "ten crates" } }, asShopper)
+        expect(quote.status).toBe(201)
+      })
+
+      it("POST /vendor/requests refuses a seller application, and still takes other requests", async () => {
+        const seller = await createAuthenticatedSeller({ api, getContainer })
+        const victim = await shopperViaModule()
+        const data = {
+          auth_identity_id: victim.authIdentityId,
+          member: { name: "Victim", email: victim.email },
+          seller: { name: "Victim Farm" },
+        }
+
+        for (const type of sellerTypes) {
+          const refused = await call(api.post("/vendor/requests", { request: { type, data } }, bearer(seller.token)))
+          expect({ type, status: refused.status }).toEqual({ type, status: 400 })
+          expect(refused.data).toMatchObject({
+            message: "Validation failed",
+            errors: [expect.objectContaining({ path: ["request", "type"] })],
+          })
+        }
+        expect(await allRequests()).toHaveLength(0)
+
+        // What the panel files here (vendor-panel/src/hooks/api/product-types.tsx).
+        const productType = await api.post(
+          "/vendor/requests",
+          { request: { type: "product_type", data: { value: "Preserves" } } },
+          bearer(seller.token)
+        )
+        expect(productType.status).toBe(201)
       })
     })
   },

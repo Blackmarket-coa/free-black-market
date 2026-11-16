@@ -2,6 +2,10 @@ import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { REQUEST_MODULE } from "../../../modules/request"
 import RequestModuleService from "../../../modules/request/service"
+import {
+  isSellerRequestType,
+  SELLER_REQUEST_TYPE_REFUSAL,
+} from "../../../modules/request/validators"
 import { requireCustomerId } from "../../../shared"
 
 // ===========================================
@@ -9,7 +13,12 @@ import { requireCustomerId } from "../../../shared"
 // ===========================================
 
 const createRequestSchema = z.object({
-  type: z.string().min(1, "Request type is required"),
+  // Not a seller application: approving one creates a seller for whatever
+  // login and address its data names (SD-127).
+  type: z
+    .string()
+    .min(1, "Request type is required")
+    .refine((type) => !isSellerRequestType(type), { message: SELLER_REQUEST_TYPE_REFUSAL }),
   data: z.record(z.string(), z.unknown()).default({}),
   reviewer_note: z.string().optional(),
 })

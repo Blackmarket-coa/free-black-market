@@ -226,6 +226,16 @@ export function isSellerRequestType(type: string): boolean {
 }
 
 /**
+ * Why `POST /store/requests` and `POST /vendor/requests` refuse a seller
+ * registration type. Approving one creates a seller for whatever login and
+ * address its data names (approveSeller reads `data.auth_identity_id`), so
+ * applications are filed only through the registration routes, for the
+ * caller's own login (SD-127).
+ */
+export const SELLER_REQUEST_TYPE_REFUSAL =
+  "Seller applications are filed through POST /auth/seller/register-request, not as a request"
+
+/**
  * Get human-readable name for a request type
  */
 export function getRequestTypeName(type: string): string {
