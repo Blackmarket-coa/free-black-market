@@ -94,27 +94,56 @@ medusaIntegrationTestRunner({
         return rows[0].metadata as Record<string, unknown> | null
       }
 
-      // A. Active, four voters; the race lost one member's increment (cus_d's
-      // 2.5 "for"), and a ballot the index migration soft-deleted sits beside
-      // the live ones and must not be counted.
+      // A. The third review's case on its own: active, ballots 3.5 from two
+      // voters, the tally 1 from one voter (the race lost cus_b's increment),
+      // no duplicate and no soft-deleted ballot. The index migration never
+      // looked at it; a repair that keyed on its duplicate marker would not
+      // either.
       const lost = await proposal(`lost ${uid()}`)
-      await cast(lost.id, "cus_a", "for", 1.5)
-      await cast(lost.id, "cus_b", "against", 2)
-      await cast(lost.id, "cus_c", "abstain", 1)
-      await cast(lost.id, "cus_d", "for", 2.5)
+      await cast(lost.id, "cus_a", "for", 1)
+      await cast(lost.id, "cus_b", "for", 2.5)
       const asCast = await tally(lost.id)
       expect(
         [asCast.votes_for, asCast.votes_against, asCast.votes_abstain, asCast.total_voting_power].map(Number)
+      ).toEqual([3.5, 0, 0, 3.5])
+      expect(asCast.unique_voters).toBe(2)
+      await governance.updateGardenProposals({ id: lost.id, votes_for: 1, total_voting_power: 1, unique_voters: 1 })
+      expect(await tally(lost.id)).toEqual(
+        expect.objectContaining({ votes_for: "1", total_voting_power: "1", unique_voters: 1 })
+      )
+      const { rows: lostBallots } = await pg.raw(
+        `SELECT count(*)::int AS live, count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS removed
+           FROM garden_vote WHERE proposal_id = ?`,
+        [lost.id]
+      )
+      expect(lostBallots[0]).toEqual({ live: 2, removed: 0 })
+
+      // E. Active, four voters, one increment lost (cus_d's 2.5 "for"), and a
+      // ballot the index migration soft-deleted beside the live ones, which
+      // must not be counted.
+      const withRemoved = await proposal(`removed ${uid()}`)
+      await cast(withRemoved.id, "cus_a", "for", 1.5)
+      await cast(withRemoved.id, "cus_b", "against", 2)
+      await cast(withRemoved.id, "cus_c", "abstain", 1)
+      await cast(withRemoved.id, "cus_d", "for", 2.5)
+      const withRemovedAsCast = await tally(withRemoved.id)
+      expect(
+        [
+          withRemovedAsCast.votes_for,
+          withRemovedAsCast.votes_against,
+          withRemovedAsCast.votes_abstain,
+          withRemovedAsCast.total_voting_power,
+        ].map(Number)
       ).toEqual([4, 2, 1, 7])
-      expect(asCast.unique_voters).toBe(4)
+      expect(withRemovedAsCast.unique_voters).toBe(4)
       await governance.updateGardenProposals({
-        id: lost.id,
+        id: withRemoved.id,
         votes_for: 1.5,
         total_voting_power: 4.5,
         unique_voters: 3,
       })
       const removed = (await governance.createGardenVotes({
-        proposal_id: lost.id,
+        proposal_id: withRemoved.id,
         garden_id: gardenId,
         customer_id: "cus_e",
         membership_id: "mem_cus_e",
@@ -127,7 +156,7 @@ medusaIntegrationTestRunner({
         metadata: { soft_deleted_by: "Migration20261115210000AddUniqueBallotIndex" },
       })) as unknown as { id: string }
       await governance.softDeleteGardenVotes([removed.id])
-      expect(await tally(lost.id)).toEqual(
+      expect(await tally(withRemoved.id)).toEqual(
         expect.objectContaining({ votes_for: "1.5", total_voting_power: "4.5", unique_voters: 3 })
       )
 
@@ -143,6 +172,26 @@ medusaIntegrationTestRunner({
         [decided.id]
       )
       const decidedBefore = await wholeRow(decided.id)
+
+      // F. Decided, no ballot lost, the tally off only in float rounding: the
+      // old route added in JS, so 0.1 + 0.2 was written as
+      // 0.30000000000000004 where the NUMERIC sum is 0.3. Left as it is and
+      // reported with a matching voter count, so it can be told from B.
+      const rounded = await proposal(`rounded ${uid()}`)
+      await cast(rounded.id, "cus_a", "for", 0.1)
+      await cast(rounded.id, "cus_b", "for", 0.2)
+      await governance.updateGardenProposals({
+        id: rounded.id,
+        votes_for: 0.1 + 0.2,
+        total_voting_power: 0.1 + 0.2,
+      })
+      await pg.raw(`UPDATE garden_proposal SET status = 'passed', result_calculated_at = now() WHERE id = ?`, [
+        rounded.id,
+      ])
+      expect(await tally(rounded.id)).toEqual(
+        expect.objectContaining({ votes_for: "0.30000000000000004", unique_voters: 2 })
+      )
+      const roundedBefore = await wholeRow(rounded.id)
 
       // C. Active, tally right: not written at all.
       const right = await proposal(`right ${uid()}`)
@@ -186,14 +235,22 @@ medusaIntegrationTestRunner({
         info.mockRestore()
       }
 
-      // A is back to exactly what castBallot wrote: NUMERIC columns, raw_*
-      // companions (value and precision), and the voter count.
+      // A, the lost increment with no duplicate behind it, is back to exactly
+      // what castBallot wrote: NUMERIC columns, raw_* companions (value and
+      // precision), and the voter count.
       expect(await tally(lost.id)).toEqual(asCast)
       const repaired = await governance.retrieveGardenProposal(lost.id)
       expect([Number(repaired.votes_for), Number(repaired.total_voting_power), repaired.unique_voters]).toEqual([
-        4, 7, 4,
+        3.5, 3.5, 2,
       ])
       expect(await metadata(lost.id)).toEqual({
+        tally_recomputed_by: MIGRATION,
+        tally_before: { votes_for: 1, votes_against: 0, votes_abstain: 0, total_voting_power: 1, unique_voters: 1 },
+      })
+
+      // E likewise, with its soft-deleted ballot left out of the count.
+      expect(await tally(withRemoved.id)).toEqual(withRemovedAsCast)
+      expect(await metadata(withRemoved.id)).toEqual({
         tally_recomputed_by: MIGRATION,
         tally_before: { votes_for: 1.5, votes_against: 2, votes_abstain: 1, total_voting_power: 4.5, unique_voters: 3 },
       })
@@ -211,22 +268,32 @@ medusaIntegrationTestRunner({
         })
       )
 
-      // B and C are byte-for-byte what they were, updated_at included.
+      // B, F and C are byte-for-byte what they were, updated_at included.
       expect(await wholeRow(decided.id)).toBe(decidedBefore)
+      expect(await wholeRow(rounded.id)).toBe(roundedBefore)
       expect(await wholeRow(right.id)).toBe(rightBefore)
 
-      // The decided proposal is reported for a person to rule on, and the
-      // repaired ones are named.
-      expect(warned).toContain(`${decided.id} (passed)`)
+      // The proposals left as they are are reported for a person to rule on,
+      // each with what tells a lost ballot (B: 1 of 2 voters counted) from
+      // float rounding (F: every voter counted, a difference far down the
+      // fraction); the repaired ones are named.
+      expect(warned).toContain("not active")
+      expect(warned).not.toContain("no longer active")
+      expect(warned).toContain(`${decided.id} (passed; unique_voters 1 of 2 live ballots; largest sum difference 2.5)`)
+      expect(warned).toContain(
+        `${rounded.id} (passed; unique_voters 2 of 2 live ballots; largest sum difference 0.00000000000000004)`
+      )
       expect(warned).not.toContain(right.id)
       expect(logged).toContain(lost.id)
+      expect(logged).toContain(withRemoved.id)
       expect(logged).toContain(empty.id)
       expect(logged).not.toContain(right.id)
 
       // The operator check recorded with SD-86 lists what the migration left
-      // for review, and only that.
+      // for review, and only that, with the voter counts that tell the two
+      // kinds apart.
       const { rows: forReview } = await pg.raw(
-        `SELECT p.id, p.status FROM garden_proposal p
+        `SELECT p.id, p.status, p.unique_voters, COALESCE(t.n, 0)::int AS live_ballots FROM garden_proposal p
            LEFT JOIN (SELECT proposal_id,
                              COALESCE(SUM(voting_power) FILTER (WHERE vote = 'for'), 0) AS f,
                              COALESCE(SUM(voting_power) FILTER (WHERE vote = 'against'), 0) AS a,
@@ -236,15 +303,32 @@ medusaIntegrationTestRunner({
           WHERE p.deleted_at IS NULL AND p.status <> 'active'
             AND (p.votes_for <> COALESCE(t.f, 0) OR p.votes_against <> COALESCE(t.a, 0)
                  OR p.votes_abstain <> COALESCE(t.b, 0) OR p.total_voting_power <> COALESCE(t.tot, 0)
-                 OR p.unique_voters <> COALESCE(t.n, 0))`
+                 OR p.unique_voters <> COALESCE(t.n, 0))
+          ORDER BY p.id`
       )
-      expect(forReview).toEqual([{ id: decided.id, status: "passed" }])
+      expect(forReview).toEqual(
+        [
+          { id: decided.id, status: "passed", unique_voters: 1, live_ballots: 2 },
+          { id: rounded.id, status: "passed", unique_voters: 2, live_ballots: 2 },
+        ].sort((x, y) => (x.id < y.id ? -1 : 1))
+      )
 
       // Once every active tally matches, a second run writes nothing.
       const repairedRow = await wholeRow(lost.id)
       await runAgain()
       expect(await wholeRow(lost.id)).toBe(repairedRow)
       expect(await wholeRow(decided.id)).toBe(decidedBefore)
+      expect(await wholeRow(rounded.id)).toBe(roundedBefore)
+
+      // A finalize that read A's tally before the repair committed lands its
+      // status after it. A then matches its ballots, so the check above
+      // cannot list it; the second operator check does, for its outcome to
+      // be re-checked against the repaired tally.
+      const repairedThenDecided = `SELECT id, status FROM garden_proposal
+          WHERE metadata->>'tally_recomputed_by' = '${MIGRATION}' AND status <> 'active' ORDER BY id`
+      expect((await pg.raw(repairedThenDecided)).rows).toEqual([])
+      await pg.raw(`UPDATE garden_proposal SET status = 'passed', result_calculated_at = now() WHERE id = ?`, [lost.id])
+      expect((await pg.raw(repairedThenDecided)).rows).toEqual([{ id: lost.id, status: "passed" }])
     })
   },
 })
