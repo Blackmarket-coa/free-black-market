@@ -35,6 +35,9 @@ export type BallotInput = {
   voted_at: Date
 }
 
+/** The partial unique index that allows one live ballot per member per proposal. */
+export const UNIQUE_BALLOT_INDEX = "IDX_garden_vote_proposal_customer_unique"
+
 /**
  * Whether `error` is the unique ballot index refusing a second live ballot.
  *
@@ -42,18 +45,37 @@ export type BallotInput = {
  * the caller: Medusa's `dbErrorMapper` rethrows it as INVALID_DATA with the
  * message "Garden vote with proposal_id: …, customer_id: …, already exists."
  * (observed on Postgres, store-proposal-votes-race.spec.ts). So that exact
- * shape is matched, naming this index's two columns, and a bare 23505 too in
- * case the mapper is bypassed. A generic "duplicate key" match would also
- * swallow a primary-key collision as "already voted".
+ * shape is matched, naming this index's two columns. A bare 23505 (the
+ * mapper bypassed) counts only when it names this index: the driver's error
+ * carries `constraint`, and MikroORM's exception copies it. A primary-key
+ * collision is also 23505, and must not be answered as "already voted".
  */
 export function isDuplicateBallotError(error: unknown): boolean {
-  const err = error as { code?: string; type?: string; message?: string } | null
-  if (err?.code === "23505") return true
+  const err = error as { code?: string; constraint?: string; type?: string; message?: string } | null
+  if (err?.code === "23505") return err.constraint === UNIQUE_BALLOT_INDEX
   return (
     err?.type === MedusaError.Types.INVALID_DATA &&
     /^Garden vote with proposal_id: .*, customer_id: .*, already exists\.$/s.test(err.message ?? "")
   )
 }
+
+/**
+ * Thrown inside the ballot's transaction when the proposal is no longer open
+ * (not `active`, past `voting_end`, or deleted) by the time the tally is
+ * written, so the ballot rolls back with it. `castBallot` turns it into
+ * `{ outcome: "voting_closed" }`; it does not leave the service.
+ */
+class VotingClosedError extends Error {
+  constructor(proposalId: string) {
+    super(`Voting is not open for proposal ${proposalId}`)
+    this.name = "VotingClosedError"
+  }
+}
+
+export type CastBallotResult =
+  | { outcome: "cast"; vote: { id: string } & Record<string, unknown> }
+  | { outcome: "already_voted" }
+  | { outcome: "voting_closed" }
 
 type SqlManager = {
   execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
@@ -73,8 +95,10 @@ export class GovernanceModuleService extends MedusaService({
   VoteDelegation,
 }) {
   /**
-   * Record one member's ballot and add it to the proposal's tally, or return
-   * null when that member already has a ballot on the proposal.
+   * Record one member's ballot and add it to the proposal's tally. The
+   * outcome is `already_voted` when that member already has a live ballot on
+   * the proposal, and `voting_closed` when the proposal stopped accepting
+   * ballots after the route read it.
    *
    * `POST /store/proposals/:id/votes` used to read "has this customer voted?",
    * insert, then write the tally as absolute values computed from a proposal
@@ -89,7 +113,15 @@ export class GovernanceModuleService extends MedusaService({
    * - the tally is one `UPDATE … SET col = col + ?`, which Postgres applies to
    *   the latest row version, so no increment is lost;
    * - both run in one transaction, so a refused ballot leaves no increment
-   *   and no ballot is written without its increment.
+   *   and no ballot is written without its increment;
+   * - the tally UPDATE re-checks `status = 'active'` and `voting_end`, so a
+   *   ballot whose request read an open proposal cannot commit after
+   *   `finalizeProposalWorkflow` (jobs/close-garden-proposals.ts) set the
+   *   result, or after voting closed. The UPDATE waits on the proposal row
+   *   while a finalize holds it and re-reads the committed status. What is
+   *   left: a ballot whose UPDATE ran before `voting_end` and commits a few
+   *   milliseconds after a finalize read the tally, which needs that finalize
+   *   to run within those milliseconds of `voting_end`.
    *
    * Raw SQL for the tally because the generated `updateGardenProposals` can
    * only write values computed from an earlier read. The bigNumber columns'
@@ -97,11 +129,12 @@ export class GovernanceModuleService extends MedusaService({
    * reads back what the NUMERIC column holds. Column names come from
    * `TALLY_COLUMN`, never from input.
    */
-  async castBallot(ballot: BallotInput): Promise<{ id: string } | null> {
+  async castBallot(ballot: BallotInput): Promise<CastBallotResult> {
     try {
-      return await this.castBallotInTransaction_(ballot)
+      return { outcome: "cast", vote: await this.castBallotInTransaction_(ballot) }
     } catch (error) {
-      if (isDuplicateBallotError(error)) return null
+      if (isDuplicateBallotError(error)) return { outcome: "already_voted" }
+      if (error instanceof VotingClosedError) return { outcome: "voting_closed" }
       throw error
     }
   }
@@ -110,9 +143,10 @@ export class GovernanceModuleService extends MedusaService({
   protected async castBallotInTransaction_(
     ballot: BallotInput,
     @MedusaContext() sharedContext: Context = {}
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string } & Record<string, unknown>> {
     const column = TALLY_COLUMN[ballot.vote]
-    const created = (await this.createGardenVotes(ballot, sharedContext)) as unknown as { id: string }
+    const created = (await this.createGardenVotes(ballot, sharedContext)) as unknown as { id: string } &
+      Record<string, unknown>
 
     const raw = (col: string) =>
       `jsonb_build_object('value', trim_scale("${col}" + ?::numeric)::text, ` +
@@ -126,7 +160,10 @@ export class GovernanceModuleService extends MedusaService({
               "total_voting_power" = "total_voting_power" + ?::numeric,
               "unique_voters" = "unique_voters" + 1,
               "updated_at" = now()
-        WHERE "id" = ? AND "deleted_at" IS NULL
+        WHERE "id" = ?
+          AND "deleted_at" IS NULL
+          AND "status" = 'active'
+          AND "voting_end" > statement_timestamp()
     RETURNING "id"`,
       [
         ballot.voting_power,
@@ -138,8 +175,9 @@ export class GovernanceModuleService extends MedusaService({
       "all"
     )
     if (!Array.isArray(rows) || rows.length !== 1) {
-      // The proposal was deleted after the route read it; roll the ballot back.
-      throw new Error(`Proposal ${ballot.proposal_id} not found`)
+      // Closed, finalized or deleted after the route read it: roll the
+      // ballot back with the transaction.
+      throw new VotingClosedError(ballot.proposal_id)
     }
     return created
   }

@@ -94,7 +94,7 @@ describe("proofOfDeliveryError", () => {
 
   it("refuses a requirement it does not know how to check", () => {
     expect(proofOfDeliveryError({ proof_type: "BIOMETRIC" }, { proof_type: "BIOMETRIC" }, bases)).toBe(
-      "This delivery requires BIOMETRIC proof, which cannot be accepted here"
+      "This delivery requires BIOMETRIC, which cannot be accepted here"
     )
   })
 

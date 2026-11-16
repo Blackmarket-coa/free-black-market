@@ -10,7 +10,7 @@ import { isBallotChoice, isDuplicateBallotError } from "../service"
  * must still surface as the error it is.
  */
 describe("isDuplicateBallotError", () => {
-  it("matches the unique ballot index as Medusa reports it, and a bare 23505", () => {
+  it("matches the unique ballot index as Medusa reports it, and a bare 23505 naming that index", () => {
     expect(
       isDuplicateBallotError(
         new MedusaError(
@@ -19,7 +19,11 @@ describe("isDuplicateBallotError", () => {
         )
       )
     ).toBe(true)
-    expect(isDuplicateBallotError(Object.assign(new Error("duplicate key"), { code: "23505" }))).toBe(true)
+    expect(
+      isDuplicateBallotError(
+        Object.assign(new Error("duplicate key"), { code: "23505", constraint: "IDX_garden_vote_proposal_customer_unique" })
+      )
+    ).toBe(true)
   })
 
   it.each([
@@ -28,6 +32,9 @@ describe("isDuplicateBallotError", () => {
     ["other invalid data", new MedusaError(MedusaError.Types.INVALID_DATA, "Value for GardenVote.vote is required")],
     ["the same text as another type", new MedusaError(MedusaError.Types.NOT_FOUND, "Garden vote with proposal_id: p, customer_id: c, already exists.")],
     ["a lost connection", new Error("Connection terminated unexpectedly")],
+    // A bare 23505 names its constraint; only the ballot index is "already voted".
+    ["a bare 23505 on the primary key", Object.assign(new Error("duplicate key"), { code: "23505", constraint: "garden_vote_pkey" })],
+    ["a bare 23505 naming no constraint", Object.assign(new Error("duplicate key"), { code: "23505" })],
     ["nothing", undefined],
   ])("does not match %s", (_label, error) => {
     expect(isDuplicateBallotError(error)).toBe(false)

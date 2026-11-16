@@ -852,6 +852,13 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     expect(res.statusCode).toBe(400)
     expect(res.body.message).toBe("This delivery requires PIN_CODE proof")
     expect(service.recordProofOfDelivery).not.toHaveBeenCalled()
+
+    // Not with the right PIN beside it either: the delivery is not recorded
+    // as closed by a PHOTO the PIN requirement never asked for.
+    const withPin = proof(COURIER, { proof_type: "PHOTO", photo_url: `${UPLOADS}/proof/porch.jpg`, pin_code: "4821" })
+    const refused = await call(submitProof, withPin.req)
+    expect([refused.statusCode, refused.body.message]).toEqual([400, "This delivery requires PIN_CODE proof"])
+    expect(withPin.service.recordProofOfDelivery).not.toHaveBeenCalled()
   })
 
   it("refuses a wrong PIN, and a PIN requirement with no PIN on record", async () => {
@@ -873,9 +880,13 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
   })
 
   it.each([
-    ["PHOTO", { photo_url: `${UPLOADS}/proof/porch.jpg` }, "PHOTO proof requires photo_url"],
-    ["SIGNATURE", { signature_url: `${UPLOADS}/proof/sig.png` }, "SIGNATURE proof requires signature_url"],
-    ["RECIPIENT_CONFIRMATION", { recipient_name: "Ada" }, "RECIPIENT_CONFIRMATION proof requires recipient_name"],
+    ["PHOTO", { photo_url: `${UPLOADS}/proof/porch.jpg` }, "PHOTO requires photo_url (a file the courier uploaded; not verified)"],
+    ["SIGNATURE", { signature_url: `${UPLOADS}/proof/sig.png` }, "SIGNATURE requires signature_url (a file the courier uploaded; not verified)"],
+    [
+      "RECIPIENT_CONFIRMATION",
+      { recipient_name: "Ada" },
+      "RECIPIENT_CONFIRMATION requires recipient_name (the courier's attestation of who received it)",
+    ],
   ])(
     "a %s requirement is met only with its evidence, not by naming the type",
     async (type, evidence, reason) => {
@@ -896,6 +907,27 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
       const met = proof(COURIER, { proof_type: type, ...evidence }, required)
       expect((await call(submitProof, met.req)).statusCode).toBe(200)
       expect(met.service.recordProofOfDelivery).toHaveBeenCalledWith("fd_1", type, expect.anything())
+    }
+  )
+
+  // Only the PIN is proof. Every refusal on an attested requirement names it
+  // as the courier's attestation, so no response calls a typed name or a
+  // chosen file proof.
+  it.each(["PHOTO", "SIGNATURE", "RECIPIENT_CONFIRMATION"])(
+    "names a %s requirement as courier-attested in every refusal, never as proof",
+    async (type) => {
+      const required = { ...pinDelivery, proof_type: type, proof_pin_code: null }
+      const otherType = proof(COURIER, { proof_type: "PIN_CODE", pin_code: "4821" }, required)
+      const wrongType = await call(submitProof, otherType.req)
+      expect(wrongType.statusCode).toBe(400)
+      expect(wrongType.body.message).toBe(`This delivery requires ${type} (courier-attested)`)
+
+      const bare = proof(COURIER, { proof_type: type }, required)
+      const missing = await call(submitProof, bare.req)
+      expect(missing.statusCode).toBe(400)
+      for (const message of [wrongType.body.message, missing.body.message]) {
+        expect(String(message)).not.toMatch(/proof/i)
+      }
     }
   )
 
@@ -986,8 +1018,23 @@ describe("PUT /store/food-deliveries/:id — each principal for their own part",
     const { service, req } = put(COURIER, { status: "DELIVERED" })
     const res = await call(updateDelivery, req)
     expect(res.statusCode).toBe(409)
+    expect(res.body.message).toBe("This delivery requires PIN_CODE proof; submit it to /proof")
     expect(service.updateDeliveryStatus).not.toHaveBeenCalled()
   })
+
+  // Only the PIN is proof. A requirement the courier meets alone is named as
+  // the courier's attestation (the same at /proof, in the proof cases above).
+  it.each(["PHOTO", "SIGNATURE", "RECIPIENT_CONFIRMATION"])(
+    "refuses DELIVERED on a %s delivery, naming the requirement as courier-attested, not proof",
+    async (type) => {
+      const { service, req } = put(COURIER, { status: "DELIVERED" }, { ...pinDelivery, proof_type: type, proof_pin_code: null })
+      const res = await call(updateDelivery, req)
+      expect(res.statusCode).toBe(409)
+      expect(res.body.message).toBe(`This delivery requires ${type} (courier-attested); submit it to /proof`)
+      expect(String(res.body.message).replace("/proof", "")).not.toMatch(/proof/i)
+      expect(service.updateDeliveryStatus).not.toHaveBeenCalled()
+    }
+  )
 
   it("lets the courier move the delivery along, without returning the PIN", async () => {
     const { service, req } = put(COURIER, { status: "EN_ROUTE_DELIVERY" })
@@ -1330,10 +1377,13 @@ describe("POST /store/proposals/:id/votes — the voter's own active membership 
     roles: [],
     ...over,
   })
-  // castBallot writes the ballot and its tally increment in one transaction,
-  // and returns null when the unique ballot index refused it (Postgres:
-  // integration-tests/http/store-community-write-authz.spec.ts).
-  const governance = (castBallot: (b: Row) => Promise<Row | null> = async (b) => ({ id: "vote_1", ...b })) => ({
+  // castBallot writes the ballot and its tally increment in one transaction.
+  // Its outcome is already_voted when the unique ballot index refused the
+  // ballot, and voting_closed when the proposal closed before the tally was
+  // written (Postgres: integration-tests/http/store-proposal-votes-race.spec.ts).
+  const governance = (
+    castBallot: (b: Row) => Promise<Row> = async (b) => ({ outcome: "cast", vote: { id: "vote_1", ...b } })
+  ) => ({
     castBallot: jest.fn(castBallot),
   })
   const vote = (
@@ -1386,10 +1436,20 @@ describe("POST /store/proposals/:id/votes — the voter's own active membership 
   it("answers a ballot the unique index refused as already voted, not as a server error", async () => {
     // Both requests of a concurrent pair pass the "already voted" read; the
     // second insert hits IDX_garden_vote_proposal_customer_unique.
-    const { service, req } = vote([membership()], undefined, governance(async () => null))
+    const { service, req } = vote([membership()], undefined, governance(async () => ({ outcome: "already_voted" })))
     const res = await call(castVote, req)
     expect(res.statusCode).toBe(400)
     expect(res.body.message).toBe("You have already voted on this proposal")
+    expect(service.castBallot).toHaveBeenCalledTimes(1)
+  })
+
+  it("answers a ballot that arrived as the proposal closed as voting not open, not as a server error", async () => {
+    // The route read an active proposal; by the tally write it was finalized
+    // or past voting_end, and castBallot rolled the ballot back.
+    const { service, req } = vote([membership()], undefined, governance(async () => ({ outcome: "voting_closed" })))
+    const res = await call(castVote, req)
+    expect(res.statusCode).toBe(400)
+    expect(res.body.message).toBe("Voting is not open for this proposal")
     expect(service.castBallot).toHaveBeenCalledTimes(1)
   })
 
@@ -1397,6 +1457,7 @@ describe("POST /store/proposals/:id/votes — the voter's own active membership 
     const { service, req } = vote([membership()])
     const res = await call(castVote, req)
     expect(res.statusCode).toBe(201)
+    expect(res.body.vote).toMatchObject({ id: "vote_1", proposal_id: "prop_1", vote: "for" })
     expect(service.castBallot).toHaveBeenCalledWith(
       expect.objectContaining({
         proposal_id: "prop_1",

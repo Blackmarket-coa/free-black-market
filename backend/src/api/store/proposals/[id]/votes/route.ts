@@ -7,14 +7,18 @@ import { GOVERNANCE_MODULE } from "../../../../../modules/governance"
 import {
   isBallotChoice,
   type BallotInput,
+  type CastBallotResult,
 } from "../../../../../modules/governance/service"
 
 interface GovernanceServiceType {
-  castBallot: (ballot: BallotInput) => Promise<{ id: string } | null>
+  castBallot: (ballot: BallotInput) => Promise<CastBallotResult>
 }
 
 const alreadyVoted = (res: MedusaResponse) =>
   res.status(400).json({ message: "You have already voted on this proposal" })
+
+const votingNotOpen = (res: MedusaResponse) =>
+  res.status(400).json({ message: "Voting is not open for this proposal" })
 
 // Inline voting power calculation
 function calculateVotingPower(params: {
@@ -151,8 +155,7 @@ export async function POST(
   }
 
   if (proposal.status !== "active") {
-    res.status(400).json({ message: "Voting is not open for this proposal" })
-    return
+    return votingNotOpen(res)
   }
 
   if (new Date() > new Date(proposal.voting_end as string)) {
@@ -242,9 +245,14 @@ export async function POST(
     voted_at: new Date(),
   })
 
-  if (!voteRecord) {
+  if (voteRecord.outcome === "already_voted") {
     return alreadyVoted(res)
   }
+  // The proposal closed (or was finalized) between the read above and the
+  // tally write; `castBallot` rolled the ballot back.
+  if (voteRecord.outcome === "voting_closed") {
+    return votingNotOpen(res)
+  }
 
-  res.status(201).json({ vote: voteRecord })
+  res.status(201).json({ vote: voteRecord.vote })
 }

@@ -17,8 +17,10 @@ jest.setTimeout(180 * 1000)
  * votes from one member wrote 4 to 6 ballots, and four members voting at once
  * left the tally at 1. The fix is a partial unique index on
  * garden_vote(proposal_id, customer_id) and a tally of `col = col + ?` in the
- * ballot's own transaction (`GovernanceModuleService.castBallot`). Neither
- * can be shown with a fake Query, so this runs against the migrated schema.
+ * ballot's own transaction (`GovernanceModuleService.castBallot`), which
+ * also re-checks that the proposal is still open, so a ballot cannot land
+ * after the proposal was finalized. None of it can be shown with a fake
+ * Query, so this runs against the migrated schema.
  *
  * Its own file because each spec boots its own app, and the four customers
  * here would push store-community-write-authz.spec.ts past the
@@ -209,6 +211,73 @@ medusaIntegrationTestRunner({
       )
       expect(again.status).toBe(400)
       expect(Number((await tally(mixed.id)).total_voting_power)).toBe(sum())
+
+      // 3. A ballot whose request read an open proposal, but whose tally
+      // write lands after the proposal was finalized, is refused and rolled
+      // back. The finalize is played by a transaction that holds the
+      // proposal row, waits until the ballot's tally UPDATE is queued behind
+      // it, then sets the result and commits, as finalizeProposalWorkflow's
+      // update would. The UPDATE re-reads the committed row, finds it no
+      // longer active, and the ballot goes with it.
+      const closing = await proposal(`closing ${uid()}`)
+      const finalize = await pg.transaction()
+      let late: { status: number; data: { message?: string } }
+      try {
+        await finalize.raw(`SELECT id FROM garden_proposal WHERE id = ? FOR UPDATE`, [closing.id])
+        const pending = safe(
+          api.post(
+            `/store/proposals/${closing.id}/votes`,
+            { membership_id: memberships[0].id, vote: "for" },
+            members[0].headers
+          )
+        )
+        const deadline = Date.now() + 20_000
+        for (;;) {
+          const { rows } = await pg.raw(
+            `SELECT count(*)::int AS n FROM pg_stat_activity
+              WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+                AND query LIKE '%UPDATE "garden_proposal"%' AND query LIKE '%"unique_voters" + 1%'`
+          )
+          if (rows[0].n > 0) break
+          if (Date.now() > deadline) throw new Error("the ballot's tally UPDATE never queued behind the finalize")
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        await finalize.raw(`UPDATE garden_proposal SET status = 'passed', result_calculated_at = now() WHERE id = ?`, [
+          closing.id,
+        ])
+        await finalize.commit()
+        late = await pending
+      } catch (error) {
+        await finalize.rollback().catch(() => undefined)
+        throw error
+      }
+      expect([late.status, late.data?.message]).toEqual([400, "Voting is not open for this proposal"])
+      expect(await governance.listGardenVotes({ proposal_id: closing.id })).toHaveLength(0)
+      expect(await tally(closing.id)).toEqual(
+        expect.objectContaining({ votes_for: "0", total_voting_power: "0", unique_voters: 0 })
+      )
+
+      // 4. Past voting_end, the tally write refuses the ballot even when the
+      // caller skipped the route's own date check (the service, directly).
+      const lapsed = await proposal(`lapsed ${uid()}`)
+      await pg.raw(`UPDATE garden_proposal SET voting_end = now() - interval '1 second' WHERE id = ?`, [lapsed.id])
+      const lapsedBallot = await governance.castBallot({
+        proposal_id: lapsed.id,
+        garden_id: gardenId,
+        customer_id: members[1].id,
+        membership_id: memberships[1].id,
+        vote: "for",
+        voting_power: 1,
+        power_basis: {},
+        comment: null,
+        comment_visibility: "public",
+        is_delegated: false,
+        is_final: true,
+        voted_at: new Date(),
+      })
+      expect(lapsedBallot).toEqual({ outcome: "voting_closed" })
+      expect(await governance.listGardenVotes({ proposal_id: lapsed.id })).toHaveLength(0)
+      expect((await tally(lapsed.id)).unique_voters).toBe(0)
     })
   },
 })

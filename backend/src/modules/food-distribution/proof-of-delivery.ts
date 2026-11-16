@@ -61,6 +61,20 @@ export function requiresProof(delivery: DeliveryProofRequirement): boolean {
   return !!delivery.proof_type && delivery.proof_type !== "NONE"
 }
 
+/**
+ * How a requirement is named in a message to the caller. Only PIN_CODE is
+ * called proof; the other three are named as what they are, the courier's
+ * attestation, so no response tells anyone a typed name or a chosen file
+ * proved a hand-over.
+ */
+export function proofRequirementLabel(proofType: string | null | undefined): string {
+  if (proofType === "PIN_CODE") return "PIN_CODE proof"
+  if (proofType === "PHOTO" || proofType === "SIGNATURE" || proofType === "RECIPIENT_CONFIRMATION") {
+    return `${proofType} (courier-attested)`
+  }
+  return String(proofType)
+}
+
 function samePin(expected: string, submitted: string): boolean {
   const a = Buffer.from(expected, "utf8")
   const b = Buffer.from(submitted, "utf8")
@@ -98,7 +112,7 @@ export function proofOfDeliveryError(
   if (!requiresProof(delivery)) return null
 
   if (submitted.proof_type !== delivery.proof_type) {
-    return `This delivery requires ${delivery.proof_type} proof`
+    return `This delivery requires ${proofRequirementLabel(delivery.proof_type)}`
   }
 
   switch (delivery.proof_type) {
@@ -113,17 +127,19 @@ export function proofOfDeliveryError(
     // Courier-attested: the URL was checked above for where it points, and
     // nothing checks what the file shows.
     case "PHOTO":
-      return submitted.photo_url ? null : "PHOTO proof requires photo_url"
+      return submitted.photo_url ? null : "PHOTO requires photo_url (a file the courier uploaded; not verified)"
     case "SIGNATURE":
-      return submitted.signature_url ? null : "SIGNATURE proof requires signature_url"
+      return submitted.signature_url
+        ? null
+        : "SIGNATURE requires signature_url (a file the courier uploaded; not verified)"
     // Courier-attested: the courier types the name. Not proof (see above).
     case "RECIPIENT_CONFIRMATION":
       return submitted.recipient_name?.trim()
         ? null
-        : "RECIPIENT_CONFIRMATION proof requires recipient_name"
+        : "RECIPIENT_CONFIRMATION requires recipient_name (the courier's attestation of who received it)"
     default:
       // A requirement this code does not know how to check is not met.
-      return `This delivery requires ${delivery.proof_type} proof, which cannot be accepted here`
+      return `This delivery requires ${delivery.proof_type}, which cannot be accepted here`
   }
 }
 
