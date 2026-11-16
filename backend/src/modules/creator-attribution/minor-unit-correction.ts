@@ -32,7 +32,10 @@ import { isMarkedMinorUnits, toMinorUnits } from "../../shared/minor-units"
  *   credited to the creator's ledger at the old figure, and a reversal reads
  *   the column to undo it, so changing the column alone would make a later
  *   refund take back more than was ever credited. Those are listed for the
- *   operator, never changed here.
+ *   operator, never changed here. This reads the row and nothing else: a
+ *   credit that is in the ledger and not on the row (approve-held credits
+ *   first and updates the row second) is {@link reviewVendorDebit}'s to
+ *   find, from the ledger.
  *
  * Anything else — the order edited since (its subtotal no longer matches),
  * figures that fit neither unit, a broken level chain — is reported for
