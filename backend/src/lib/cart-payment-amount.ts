@@ -266,6 +266,9 @@ const PAID_WITH: ReadonlySet<string> = new Set<string>([
 
 type Session = { id?: string | null; amount?: unknown; status?: string | null }
 
+/** A payment on the cart's collection, as far as `paymentsLeftWithoutSession` reads it. */
+type Payment = { id?: string | null; payment_session_id?: string | null; captured_at?: unknown; canceled_at?: unknown }
+
 /** A cart as far as the decision reads it. */
 export type CartPaymentAmounts = {
   id: string
@@ -274,6 +277,7 @@ export type CartPaymentAmounts = {
   currency_code?: unknown
   payment_collection?: {
     payment_sessions?: Array<Session | null> | null
+    payments?: Array<Payment | null> | null
   } | null
 }
 
@@ -388,4 +392,54 @@ export function sessionsNotForCartTotal(cart: CartPaymentAmounts): string[] {
     .filter((row) => !row.matches && row.session.status !== PaymentSessionStatus.CAPTURED)
     .map((row) => row.session.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0)
+}
+
+const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0
+
+/**
+ * The payments on a cart's collection that no completion can use any more
+ * and that a capture would still pick: each captured nothing and its payment
+ * session is gone. `canceled` says whether Medusa already marked it
+ * cancelled.
+ *
+ * How one is made: authorizing a session creates a Payment row beside it,
+ * and deleting the session (Medusa's `deletePaymentSession`, which every
+ * refresh, `deletePaymentSessionsWorkflow` and a new session opened on the
+ * collection use) cancels the intent with the provider and deletes the
+ * session row only. Nothing ties the payment to its session in the database
+ * (`payment.payment_session_id` has no foreign key), so the payment stays on
+ * the collection, live, for an intent that is cancelled. Medusa's own
+ * compensation for a completion that failed after it authorized leaves one
+ * too, cancelled, once the buyer's next session replaces the old one.
+ *
+ * A capture then takes it. Mercur's `order-set-placed-payment-capture`
+ * captures the collection's first payment whatever its state (measured in
+ * review: after a session authorized at 32 was deleted and the cart paid at
+ * 36, it captured the cancelled 32 intent and left the 36 payment
+ * uncaptured), and FBM's capture selection for its single-order checkouts
+ * counts an uncancelled one as a second candidate and refuses every retry
+ * ("2 uncaptured payments"). So such a payment is cancelled and taken off
+ * the collection (`retireOrphanedPayments`, `lib/cart-payment-refresh.ts`).
+ *
+ * Never on a completed cart (its payments are its order's) and never a
+ * payment that captured anything. Empty when the cart's sessions were not
+ * read: with no list of the sessions that remain, every payment would look
+ * orphaned, and none may be taken for that.
+ */
+export function paymentsLeftWithoutSession(cart: CartPaymentAmounts): Array<{ id: string; canceled: boolean }> {
+  if (cart.completed_at) return []
+  const sessions = cart.payment_collection?.payment_sessions
+  const payments = cart.payment_collection?.payments
+  if (!Array.isArray(sessions) || !Array.isArray(payments)) return []
+  const remaining = new Set(sessions.map((session) => session?.id).filter(isId))
+  return payments
+    .filter(
+      (payment): payment is Payment & { id: string; payment_session_id: string } =>
+        !!payment &&
+        isId(payment.id) &&
+        !payment.captured_at &&
+        isId(payment.payment_session_id) &&
+        !remaining.has(payment.payment_session_id)
+    )
+    .map((payment) => ({ id: payment.id, canceled: !!payment.canceled_at }))
 }

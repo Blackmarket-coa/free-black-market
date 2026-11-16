@@ -1,11 +1,11 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import {
   deletePaymentSessionsWorkflow,
   refreshCartItemsWorkflow,
   refreshPaymentCollectionForCartWorkflow,
 } from "@medusajs/medusa/core-flows"
-import { type CartPaymentAmounts, sessionsNotForCartTotal } from "./cart-payment-amount"
+import { type CartPaymentAmounts, paymentsLeftWithoutSession, sessionsNotForCartTotal } from "./cart-payment-amount"
 
 /**
  * What a writer of a cart's total runs afterwards when it is not one of
@@ -14,7 +14,7 @@ import { type CartPaymentAmounts, sessionsNotForCartTotal } from "./cart-payment
  * `lib/cart-payment-amount.ts`). Both throw when a step fails: a caller must
  * not report success on a cart whose payment was left behind.
  *
- * Each has two halves, because Medusa's refresh alone is not enough:
+ * Each has three parts, because Medusa's refresh alone is not enough:
  *
  *  1. Medusa's refresh brings the payment collection to the cart's total, and
  *     deletes the collection's sessions when it had to change the amount.
@@ -27,10 +27,29 @@ import { type CartPaymentAmounts, sessionsNotForCartTotal } from "./cart-payment
  *     at completion that left it there for good. So after the refresh the
  *     sessions that are not for the total are deleted
  *     (`sessionsNotForCartTotal`), whichever half was the stale one.
+ *  3. Deleting a session that was authorized leaves its Payment row on the
+ *     collection, live, for an intent that is cancelled, and the next capture
+ *     takes it instead of the payment the buyer then made
+ *     (`paymentsLeftWithoutSession` says how, and what was measured). So every
+ *     payment left without its session is cancelled and taken off the
+ *     collection (`retireOrphanedPayments`). This part runs after the other
+ *     two whether or not they worked: it is what a session deleted part way
+ *     through a failed refresh leaves behind, and it touches nothing else.
  */
 
 type QueryLike = {
   graph: (args: { entity: string; fields: string[]; filters: Record<string, unknown> }) => Promise<{ data: unknown[] }>
+}
+
+/**
+ * The payment module as far as part 3 uses it. `softDeletePayments` is the
+ * method Medusa's service factory generates for the Payment model (the
+ * module's published interface leaves it out); the integration spec runs it
+ * on Postgres.
+ */
+type PaymentModuleLike = {
+  cancelPayment: (id: string) => Promise<unknown>
+  softDeletePayments: (ids: string[]) => Promise<unknown>
 }
 
 const CART_FIELDS = [
@@ -42,12 +61,24 @@ const CART_FIELDS = [
   "payment_collection.payment_sessions.id",
   "payment_collection.payment_sessions.amount",
   "payment_collection.payment_sessions.status",
+  // The column, not `payments.payment_session.id`: a nested read of the
+  // session leaves out a payment whose session is gone, which is exactly the
+  // payment part 3 looks for (`liveSessionIds` in
+  // `workflows/subscription/steps/subscription-order-settlement.ts`).
+  "payment_collection.payments.id",
+  "payment_collection.payments.payment_session_id",
+  "payment_collection.payments.captured_at",
+  "payment_collection.payments.canceled_at",
 ]
 
-async function staleSessions(scope: MedusaContainer, cartId: string): Promise<string[]> {
+async function readCart(scope: MedusaContainer, cartId: string): Promise<CartPaymentAmounts | undefined> {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY) as unknown as QueryLike
   const { data } = await query.graph({ entity: "cart", fields: CART_FIELDS, filters: { id: cartId } })
-  const cart = data[0] as CartPaymentAmounts | undefined
+  return data[0] as CartPaymentAmounts | undefined
+}
+
+async function staleSessions(scope: MedusaContainer, cartId: string): Promise<string[]> {
+  const cart = await readCart(scope, cartId)
   return cart ? sessionsNotForCartTotal(cart) : []
 }
 
@@ -73,12 +104,73 @@ async function deleteSessionsNotForCartTotal(scope: MedusaContainer, cartId: str
 }
 
 /**
+ * Part 3: cancel each payment on the cart's collection that captured nothing
+ * and whose session is gone (`paymentsLeftWithoutSession`), then soft-delete
+ * it, so that no capture can take it.
+ *
+ * Cancelling marks the payment's `canceled_at` and cancels its intent with
+ * the provider. The intent was already cancelled when its session was
+ * deleted, and Medusa's Stripe provider answers a second cancel of a
+ * cancelled intent with that intent rather than an error. One Medusa already
+ * marked cancelled is only soft-deleted. Cancelling alone is what FBM's own
+ * capture selection needs (it passes over a cancelled payment whose session
+ * is gone); Mercur's capture takes the collection's first payment whatever
+ * its state, and the payment module refuses to capture a cancelled one, so
+ * the payment is also taken off the collection. Soft-deleted, not deleted:
+ * the row stays in the database with its `canceled_at` and its intent, and
+ * the payment and capture reads (Mercur's, FBM's, the admin's) no longer
+ * list it. Medusa soft-deletes a collection's payments with the collection,
+ * so a soft-deleted payment is a state its own reads already handle.
+ *
+ * A payment whose intent the provider will not cancel (an intent that was
+ * captured at Stripe without Medusa recording it: money was taken) is left
+ * where it is, and this throws, so the caller does not report the cart as
+ * settled.
+ */
+async function retireOrphanedPayments(scope: MedusaContainer, cartId: string): Promise<void> {
+  const cart = await readCart(scope, cartId)
+  const orphans = cart ? paymentsLeftWithoutSession(cart) : []
+  if (!orphans.length) return
+  const payments = scope.resolve(Modules.PAYMENT) as unknown as PaymentModuleLike
+  const failed: string[] = []
+  for (const orphan of orphans) {
+    try {
+      if (!orphan.canceled) await payments.cancelPayment(orphan.id)
+      await payments.softDeletePayments([orphan.id])
+    } catch (error) {
+      failed.push(`${orphan.id}: ${(error as Error)?.message ?? error}`)
+    }
+  }
+  if (failed.length) {
+    throw new Error(
+      `cart ${cartId}: ${failed.length} payment(s) left without their session could not be cancelled and taken off the collection: ${failed.join("; ")}`
+    )
+  }
+}
+
+/** Parts 1 and 2 (`settle`), then part 3 whatever they did; the first failure is what the caller gets. */
+async function settleThenRetire(scope: MedusaContainer, cartId: string, settle: () => Promise<void>): Promise<void> {
+  let failure: { error: unknown } | null = null
+  try {
+    await settle()
+  } catch (error) {
+    failure = { error }
+  }
+  try {
+    await retireOrphanedPayments(scope, cartId)
+  } catch (error) {
+    failure ??= { error }
+  }
+  if (failure) throw failure.error
+}
+
+/**
  * Bring the cart's payment side to the cart's total: Medusa's
  * `refreshPaymentCollectionForCartWorkflow`, the last step of each of its own
  * cart workflows (when the collection's amount is not the total it takes the
  * total and every session on it is deleted; when they agree, or the cart has
- * no collection yet, it changes nothing), and then the sessions it left that
- * are not for the total.
+ * no collection yet, it changes nothing), then the sessions it left that are
+ * not for the total, then the payments left without their session.
  *
  * For a write that changed which shipping methods the cart has and nothing
  * about its line items (Mercur's shipping-method routes,
@@ -86,15 +178,17 @@ async function deleteSessionsNotForCartTotal(scope: MedusaContainer, cartId: str
  * for its session's amount.
  */
 export async function refreshCartPaymentCollection(scope: MedusaContainer, cartId: string): Promise<void> {
-  await refreshPaymentCollectionForCartWorkflow(scope).run({ input: { cart_id: cartId } })
-  await deleteSessionsNotForCartTotal(scope, cartId)
+  await settleThenRetire(scope, cartId, async () => {
+    await refreshPaymentCollectionForCartWorkflow(scope).run({ input: { cart_id: cartId } })
+    await deleteSessionsNotForCartTotal(scope, cartId)
+  })
 }
 
 /**
  * After a line item's price was written through the cart module (the tier
  * and wholesale routes): Medusa's `refreshCartItemsWorkflow`, which is what
- * its own line-item workflows end in, and then the sessions it left that are
- * not for the total.
+ * its own line-item workflows end in, then the sessions it left that are not
+ * for the total, then the payments left without their session.
  *
  * The payment collection alone is not enough there. A promotion's adjustment
  * is stored as an amount, computed from the price the line had when the
@@ -116,6 +210,8 @@ export async function refreshCartPaymentCollection(scope: MedusaContainer, cartI
  * refresh, as every line-item write through Medusa's routes does.
  */
 export async function refreshCartAfterReprice(scope: MedusaContainer, cartId: string): Promise<void> {
-  await refreshCartItemsWorkflow(scope).run({ input: { cart_id: cartId } })
-  await deleteSessionsNotForCartTotal(scope, cartId)
+  await settleThenRetire(scope, cartId, async () => {
+    await refreshCartItemsWorkflow(scope).run({ input: { cart_id: cartId } })
+    await deleteSessionsNotForCartTotal(scope, cartId)
+  })
 }
