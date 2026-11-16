@@ -1,9 +1,11 @@
 import fs from "fs"
+import http from "http"
 import path from "path"
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, GraphQLUtils, Modules } from "@medusajs/framework/utils"
 import { MedusaModule } from "@medusajs/framework/modules-sdk"
+import { MARKETPLACE_MODULE } from "@mercurjs/b2c-core/modules/marketplace"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { WISHLIST_MODULE } from "@mercurjs/b2c-core/modules/wishlist"
 import { REVIEW_MODULE } from "@mercurjs/reviews/modules/reviews"
@@ -12,9 +14,11 @@ import { DEMAND_POOL_MODULE } from "../../src/modules/demand-pool"
 import { FOOD_DISTRIBUTION_MODULE } from "../../src/modules/food-distribution"
 import {
   BUYER_SELLER_FIELDS,
+  ORDER_SET_HEADING_FIELDS,
   PUBLIC_REVIEWER_FIELDS,
   PUBLIC_REVIEW_FIELDS,
   PUBLIC_SELLER_FIELDS,
+  RECORD_CUSTOMER_FIELDS,
   REVIEW_SELLER_FIELDS,
   sanitizeStoreFields,
   storeFieldProfile,
@@ -52,6 +56,7 @@ const PRIVATE = {
   buyer_email: "otherbuyer@example.com",
   buyer_phone: "+15550777",
   buyer_address: "742 Buyer Street",
+  buyer_second_address: "99 Second Home Street",
   draft_title: "Unreleased Hot Sauce",
   wholesale_title: "Wholesale Pallet",
   location_address: "9 Warehouse Way",
@@ -309,7 +314,12 @@ medusaIntegrationTestRunner({
       return {
         get,
         pak,
+        as,
         asReviewer: as(reviewer),
+        asBuyer: as(buyer),
+        key: key as { token: string },
+        channel: channel as { id: string },
+        region: region as { id: string },
         seller,
         tomatoes,
         corn,
@@ -317,9 +327,51 @@ medusaIntegrationTestRunner({
         pallet,
         cart: cart as { id: string },
         reviewer,
+        buyer,
         buyersOrder,
         reviewersOrder,
+        order,
       }
+    }
+
+    /** A request line exactly as written: absolute-form included, which axios would rewrite. */
+    const rawGet = (target: (origin: string) => string, headers: Record<string, string>) =>
+      new Promise<{ status: number; data: any }>((resolve, reject) => {
+        const origin = new URL((api as unknown as { defaults: { baseURL: string } }).defaults.baseURL)
+        const req = http.request(
+          { host: "127.0.0.1", port: origin.port, method: "GET", path: target(`http://127.0.0.1:${origin.port}`), headers },
+          (res) => {
+            let text = ""
+            res.on("data", (chunk) => (text += chunk))
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, data: text ? JSON.parse(text) : null }))
+          }
+        )
+        req.on("error", reject)
+        req.end()
+      })
+
+    /**
+     * An order set as Mercur's checkout leaves one: a payment collection, the
+     * set (it cannot be inserted without a display id), and the set's orders
+     * linked to it.
+     */
+    async function makeOrderSet(input: { customerId: string; cartId: string; channelId: string; orderIds: string[]; displayId: number }) {
+      const [collection] = await container()
+        .resolve(Modules.PAYMENT)
+        .createPaymentCollections([{ amount: 5, currency_code: "usd" }])
+      const set = one(
+        await container().resolve(MARKETPLACE_MODULE).createOrderSets({
+          display_id: input.displayId,
+          sales_channel_id: input.channelId,
+          cart_id: input.cartId,
+          customer_id: input.customerId,
+          payment_collection_id: collection.id,
+        })
+      ) as { id: string }
+      for (const orderId of input.orderIds) {
+        await link().create({ [MARKETPLACE_MODULE]: { order_set_id: set.id }, [Modules.ORDER]: { order_id: orderId } })
+      }
+      return set
     }
 
     describe("what a /store read may expand through a link", () => {
@@ -522,6 +574,159 @@ medusaIntegrationTestRunner({
         // It asks for the email too; the page never printed it, and it is not sent.
         expect(page.data.seller).not.toHaveProperty("email")
         expect(found(page.data)).toEqual([])
+      })
+
+      it("is profiled by the path Express routes: a re-cased path or an absolute-form request line answers as the plain one", async () => {
+        const { get, key } = await makeMarket()
+
+        // Express routes these to Mercur's seller handler. Compared as raw
+        // strings they fell to the public profile and the tax id, email and
+        // address answered.
+        const plain = await get("/store/seller/riverbend-farm")
+        for (const url of [
+          "/store/Seller/riverbend-farm",
+          "/Store/seller/riverbend-farm",
+          "/STORE/SELLER/riverbend-farm",
+          "/store/SELLER?fields=id,email,phone,tax_id,address_line",
+          "/STORE/SELLER?fields=id,email,tax_id",
+          `/store/Seller/riverbend-farm?${q("+email,+phone,+tax_id,+state,+address_line")}`,
+          "/store/Seller?fields=id,handle&order=tax_id",
+        ]) {
+          const res = await get(url)
+          expect([url, res.status]).toEqual([url, 200])
+          expect([url, found(res.data, SELLER_COLUMNS)]).toEqual([url, []])
+        }
+        expect((await get("/store/Seller/riverbend-farm")).data).toEqual(plain.data)
+        expect((await get("/STORE/SELLER/riverbend-farm")).data).toEqual(plain.data)
+
+        const headers = { "x-publishable-api-key": key.token }
+        for (const target of [
+          (origin: string) => `${origin}/store/seller?fields=id,email,tax_id`,
+          (origin: string) => `${origin.toUpperCase()}/Store/Seller/riverbend-farm?fields=id,email,phone,tax_id`,
+          (origin: string) => `${origin}/store/products?fields=id,*seller`,
+        ]) {
+          const res = await rawGet(target, headers)
+          expect([target("ORIGIN"), res.status]).toEqual([target("ORIGIN"), 200])
+          expect([target("ORIGIN"), found(res.data, SELLER_COLUMNS)]).toEqual([target("ORIGIN"), []])
+        }
+        const absolute = await rawGet((origin) => `${origin}/store/seller/riverbend-farm`, headers)
+        expect(absolute.data).toEqual(plain.data)
+      })
+
+      it("Mercur's seller list is sorted by nothing it does not serve", async () => {
+        const { get } = await makeMarket()
+        // Two more sellers, so that every private column sorts the three
+        // differently from the list's own order, each way.
+        const sellers = container().resolve(SELLER_MODULE)
+        const low = one(
+          await sellers.createSellers({ name: "Aaa Low", handle: "aaa-low", tax_id: "00-0000001", email: "zz-last@example.org", phone: "+19999", address_line: "Zed Road", postal_code: "00001" })
+        ) as { id: string }
+        const high = one(
+          await sellers.createSellers({ name: "Zzz High", handle: "zzz-high", tax_id: "99-9999999", email: "aa-first@example.org", phone: "+10000", address_line: "Alpha Road", postal_code: "99999" })
+        ) as { id: string }
+        await sellers.createMembers({ seller_id: low.id, name: "A", email: "aaa-staff@example.org", role: "owner" })
+        await sellers.createMembers({ seller_id: high.id, name: "Z", email: "zzz-staff@example.org", role: "owner" })
+        const handles = async (order?: string) => {
+          const res = await get(`/store/seller?fields=id,handle${order ? `&order=${order}` : ""}`)
+          expect([order, res.status]).toEqual([order, 200])
+          return (res.data.sellers as { handle: string }[]).map((row) => row.handle)
+        }
+
+        const unsorted = await handles()
+        expect([...unsorted].sort()).toEqual(["aaa-low", "riverbend-farm", "zzz-high"])
+        // Ascending and descending by a column are each other's reverse, so
+        // both equal to the unsorted list means the key was not applied.
+        for (const column of ["tax_id", "email", "phone", "address_line", "postal_code", "members.email"]) {
+          expect([column, await handles(column), await handles(`-${column}`)]).toEqual([column, unsorted, unsorted])
+        }
+        // What the list serves still sorts it.
+        expect(await handles("name")).toEqual(["aaa-low", "riverbend-farm", "zzz-high"])
+        expect(await handles("-name")).toEqual(["zzz-high", "riverbend-farm", "aaa-low"])
+        expect(await handles("-handle")).toEqual(["zzz-high", "riverbend-farm", "aaa-low"])
+      })
+
+      it("a path from an order stays on that order, for whoever holds its id", async () => {
+        const { get, as, buyer, buyersOrder, corn, cart, channel, reviewer, order } = await makeMarket()
+        // The buyer's other order, to another address, in the same order set.
+        const secondOrder = await order(buyer as { id: string; email: string }, corn as { id: string; variants: { id: string }[] }, PRIVATE.buyer_second_address)
+        await makeOrderSet({ customerId: buyer.id, cartId: cart.id, channelId: channel.id, orderIds: [buyersOrder.id, secondOrder.id], displayId: 2001 })
+        const other = as(reviewer)
+
+        // GET /store/orders/:id asks for no customer (Medusa's guest order
+        // page); one id opened the buyer's other orders, their addresses and
+        // their sellers' contact details.
+        const leaks: [string, PrivateName[]][] = []
+        for (const fields of [
+          "id,*customer,*customer.orders,*customer.orders.shipping_address",
+          "id,*customer.orders.seller,*customer.reviews.seller",
+          "id,*customer.addresses",
+          "id,customer.orders,customer.addresses,customer.reviews",
+          "id,*order_set,*order_set.orders,*order_set.orders.shipping_address,*order_set.orders.customer",
+          "id,order_set.orders,order_set.customer_id,order_set.cart_id,*order_set.payment_collection",
+          "id,*reviews,*reviews.customer,*reviews.customer.orders,*reviews.customer.orders.shipping_address",
+          "id,*reviews.seller.orders,*reviews.order",
+        ]) {
+          for (const headers of [undefined, other]) {
+            const res = await get(`/store/orders/${buyersOrder.id}?${q(fields)}`, headers)
+            expect([fields, res.status]).toEqual([fields, 200])
+            const text = JSON.stringify(res.data)
+            expect([fields, text.includes(secondOrder.id)]).toEqual([fields, false])
+            leaks.push([fields, found(res.data, ["buyer_second_address", ...SELLER_COLUMNS, "reviewer_email", "reviewer_address"])])
+          }
+        }
+        expect(leaks.filter(([, names]) => names.length > 0)).toEqual([])
+
+        // The buyer themselves, as columns; the order set as the heading the
+        // storefront's order pages print.
+        const own = await get(`/store/orders/${buyersOrder.id}?${q("id,*customer,*order_set")}`)
+        expect(own.data.order.customer).toMatchObject({ id: buyer.id, first_name: "Olu", last_name: "Buyer" })
+        expect(Object.keys(own.data.order.customer).every((key) => (RECORD_CUSTOMER_FIELDS as readonly string[]).includes(key))).toBe(true)
+        expect(Object.keys(own.data.order.order_set).sort()).toEqual([...ORDER_SET_HEADING_FIELDS].sort())
+        expect(own.data.order.order_set).toMatchObject({ display_id: 2001 })
+      })
+
+      it("an order set is its buyer's: they read it with each seller cut to what a buyer is shown, nobody else reads it", async () => {
+        const { get, pak, as, asReviewer, reviewer, reviewersOrder, cart, channel, buyer, seller } = await makeMarket()
+        const set = await makeOrderSet({ customerId: reviewer.id, cartId: cart.id, channelId: channel.id, orderIds: [reviewersOrder.id], displayId: 1001 })
+
+        // The buyer, as the storefront's account page asks (with their token),
+        // on the plain path and on re-cased ones.
+        for (const url of [`/store/order-set/${set.id}`, `/store/Order-Set/${set.id}`, `/STORE/ORDER-SET/${set.id}`]) {
+          const res = await get(url, asReviewer)
+          expect([url, res.status]).toEqual([url, 200])
+          const [placed] = res.data.order_set.orders
+          expect(placed.id).toBe(reviewersOrder.id)
+          expect(placed.seller).toMatchObject({ id: seller.id, name: "Riverbend Farm", email: PRIVATE.seller_email })
+          expect(Object.keys(placed.seller).every((key) => (BUYER_SELLER_FIELDS as readonly string[]).includes(key))).toBe(true)
+          expect([url, found(res.data, ["seller_tax_id", "member_email", "invite_email", "buyer_email"])]).toEqual([url, []])
+        }
+        for (const url of ["/store/order-set", "/store/ORDER-SET"]) {
+          const list = await get(url, asReviewer)
+          expect([url, list.status, list.data.order_sets.map((row: { id: string }) => row.id)]).toEqual([url, 200, [set.id]])
+          expect([url, found(list.data, ["seller_tax_id", "member_email"])]).toEqual([url, []])
+        }
+
+        // Nobody else: no token, another customer's token, an id that does
+        // not exist (the same answer as someone else's), a re-cased path.
+        const refusal = { message: "You do not have access to this record.", type: "not_allowed" }
+        const missingId = `${set.id.slice(0, -4)}ZZZZ`
+        const asBuyer = as(buyer)
+        for (const [who, url, headers, status] of [
+          ["no customer", `/store/order-set/${set.id}`, pak, 401],
+          ["no customer, re-cased", `/store/Order-Set/${set.id}`, pak, 401],
+          ["another customer", `/store/order-set/${set.id}`, asBuyer, 403],
+          ["another customer, re-cased", `/STORE/order-set/${set.id}`, asBuyer, 403],
+          ["the buyer, an id that does not exist", `/store/order-set/${missingId}`, asReviewer, 403],
+          ["no customer, the list", "/store/order-set", pak, 401],
+        ] as const) {
+          const res = await get(url, headers)
+          expect([who, res.status]).toEqual([who, status])
+          if (status === 403) expect([who, res.data]).toEqual([who, refusal])
+          expect([who, found(res.data)]).toEqual([who, []])
+        }
+        // Another customer's list is their own (empty), as before.
+        const theirs = await get("/store/order-set", asBuyer)
+        expect([theirs.status, theirs.data.order_sets]).toEqual([200, []])
       })
 
       it("the storefront's cart query gets the seller its cart shows, and nothing private", async () => {
@@ -948,6 +1153,83 @@ medusaIntegrationTestRunner({
         const asOther = { headers: { ...pak.headers, authorization: `Bearer ${customerToken(other.id)}` } }
         expect(privateOf((await get("/store/food-producers", asOther)).data)).toEqual([])
         expect((await get(`/store/food-producers/${hidden.id}`, asOther)).status).toBe(404)
+      })
+
+      it("a producer write tells a caller who is not the owner no more than GET does", async () => {
+        const { pak, get } = await makeMarket()
+        const food = container().resolve(FOOD_DISTRIBUTION_MODULE)
+        // Producers with no owner on record, which any signed-in account may
+        // write (`actorMayManage`, grandfathered).
+        const legacy = await food.createFoodProducers({
+          name: "Legacy Kitchen",
+          handle: `legacy-kitchen-${uid()}`,
+          email: "legacy-private@example.com",
+          phone: "+15550888",
+          secondary_phone: "+15550889",
+          hawala_account_id: "acct_legacy_ledger",
+          verification_notes: "legacy-reviewer-note",
+          licenses: [{ type: "FOOD_HANDLER", number: "LIC-LEGACY-1" }],
+          metadata: { internal: "legacy-internal" },
+          hide_address: true,
+          address_line_1: "8 Legacy Doorstep",
+          city: "Chicago",
+        })
+        const switchedOff = await food.createFoodProducers({
+          name: "Switched Off Kitchen",
+          handle: `switched-off-${uid()}`,
+          email: "switched-off-private@example.com",
+          public_profile: false,
+        })
+        expect([legacy.owner_id, switchedOff.owner_id]).toEqual([null, null])
+        const [stranger] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `stranger-${uid()}@example.com` }])
+        const asStranger = { headers: { ...pak.headers, authorization: `Bearer ${customerToken(stranger.id)}` } }
+        const ownerOnly = (data: unknown) => {
+          const text = JSON.stringify(data)
+          return [
+            "legacy-private@example.com",
+            "+15550888",
+            "+15550889",
+            "acct_legacy_ledger",
+            "legacy-reviewer-note",
+            "LIC-LEGACY-1",
+            "legacy-internal",
+            "8 Legacy Doorstep",
+            "switched-off-private@example.com",
+            "Switched Off Kitchen",
+          ].filter((value) => text.includes(value))
+        }
+
+        const served = await get(`/store/food-producers/${legacy.id}`, asStranger)
+        expect(served.status).toBe(200)
+        const written = await safe(api.put(`/store/food-producers/${legacy.id}`, { description: "updated by a stranger" }, asStranger))
+        expect(written.status).toBe(200)
+        // The write went through; the answer is what GET serves them.
+        expect(written.data.producer).toMatchObject({ id: legacy.id, description: "updated by a stranger", city: "Chicago", address_line_1: null })
+        expect(Object.keys(written.data.producer).sort()).toEqual(
+          Object.keys(served.data.producer)
+            .filter((key) => key !== "is_currently_open")
+            .sort()
+        )
+        expect(ownerOnly(written.data)).toEqual([])
+        expect((await food.retrieveFoodProducer(legacy.id)).email).toBe("legacy-private@example.com")
+
+        // A profile switched off is missing to them on GET; its write is
+        // acknowledged with the id they named.
+        expect((await get(`/store/food-producers/${switchedOff.id}`, asStranger)).status).toBe(404)
+        const quiet = await safe(api.put(`/store/food-producers/${switchedOff.id}`, { description: "still writable" }, asStranger))
+        expect([quiet.status, quiet.data]).toEqual([200, { producer: { id: switchedOff.id } }])
+        expect((await food.retrieveFoodProducer(switchedOff.id)).description).toBe("still writable")
+
+        // The account that creates a producer owns it and is answered with the row.
+        const created = await safe(
+          api.post(
+            "/store/food-producers",
+            { name: "Fresh Kitchen", handle: `fresh-kitchen-${uid()}`, producer_type: "RESTAURANT", email: "fresh-private@example.com", phone: "+15550444" },
+            asStranger
+          )
+        )
+        expect(created.status).toBe(201)
+        expect(created.data.producer).toMatchObject({ email: "fresh-private@example.com", phone: "+15550444", owner_id: stranger.id })
       })
     })
   },
