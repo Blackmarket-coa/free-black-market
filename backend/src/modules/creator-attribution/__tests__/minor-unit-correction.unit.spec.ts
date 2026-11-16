@@ -1,6 +1,7 @@
 import { CommissionStatus } from "../models/order-attribution"
 import {
   CORRECTED_METADATA_KEY,
+  PAYOUT_WINDOW_MS,
   planCommissionMinorUnitCorrection,
   reviewVendorDebit,
   vendorsDebitedOnApproval,
@@ -165,14 +166,19 @@ describe("planCommissionMinorUnitCorrection", () => {
 /**
  * Correcting a held row raises what approve-held later debits from the
  * vendor (settlement never carved the commission out). These orders are
- * listed instead of corrected, so a debit nobody decided on is never set up.
+ * listed instead of corrected. The check speaks for the moment it is made
+ * (`checked_at`); it cannot see a payout made after it.
  */
 describe("reviewVendorDebit", () => {
   const row = (over: Partial<StoredAttributionAmounts> = {}) => legacyRow({ vendor_id: "sel_vendor", ...over })
+  const PLACED = "2026-10-01T12:00:00.000Z"
+  const after = (ms: number) => new Date(Date.parse(PLACED) + ms).toISOString()
   const clean: VendorDebitContext = {
     order_seller_id: "sel_vendor",
-    order_placed_at: "2026-10-01T12:00:00.000Z",
+    order_placed_at: PLACED,
+    checked_at: after(30 * 24 * 60 * 60 * 1000),
     order_payout_ids: [],
+    order_settled_to_vendor: { sel_vendor: true },
     vendor_withdrawals: { sel_vendor: [] },
   }
   const planFor = (rows: StoredAttributionAmounts[]) => {
@@ -181,7 +187,7 @@ describe("reviewVendorDebit", () => {
     return plan
   }
 
-  it("lets the correction go ahead when the vendor sold the order and has not been paid out since", () => {
+  it("lets the correction go ahead when the vendor sold the order, its proceeds reached them, and they have not been paid out since", () => {
     const rows = [row()]
     expect(vendorsDebitedOnApproval(rows)).toEqual(["sel_vendor"])
     expect(reviewVendorDebit(planFor(rows), rows, clean)).toBeNull()
@@ -206,6 +212,43 @@ describe("reviewVendorDebit", () => {
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_seller_id: null })).toContain("the order has no seller")
   })
 
+  it("lists an order whose proceeds never reached the vendor's earnings: no settlement leg credits them", () => {
+    const rows = [row()]
+    const never = "the order's proceeds never reached vendor sel_vendor's earnings in the ledger"
+    const reason = reviewVendorDebit(planFor(rows), rows, { ...clean, order_settled_to_vendor: { sel_vendor: false } })
+    expect(reason).toContain(never)
+    expect(reason).toContain("from 2 to 250")
+    // A vendor the script did not answer for counts as not settled, and
+    // another vendor's settlement does not stand in for this one's.
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_settled_to_vendor: {} })).toContain(never)
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_settled_to_vendor: { sel_consignor: true } })).toContain(never)
+  })
+
+  it("lists an order placed inside the payout window that Mercur has not paid yet; one exactly at the window's end passes", () => {
+    const rows = [row()]
+    const recent = "inside the 48 hours in which the nightly payout sends an order's proceeds to its vendor"
+    expect(PAYOUT_WINDOW_MS).toBe(2 * 24 * 60 * 60 * 1000)
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(60 * 60 * 1000) })).toContain(
+      `the order was placed 1 hours before this check, ${recent}, and no payout for it exists yet`
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(PAYOUT_WINDOW_MS - 1) })).toContain(recent)
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(PAYOUT_WINDOW_MS) })).toBeNull()
+    // A check time before the placement, or one that cannot be read, lists it too.
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(-1000) })).toContain(recent)
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: "not a date" })).toContain("an unknown time")
+  })
+
+  it("names the Mercur payout, not the window, for a recent order Mercur already paid", () => {
+    const rows = [row()]
+    const reason = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      checked_at: after(60 * 60 * 1000),
+      order_payout_ids: ["pout_1"],
+    })
+    expect(reason).toContain("Mercur payout pout_1")
+    expect(reason).not.toContain("nightly payout")
+  })
+
   it("lists an order whose proceeds Mercur already paid out, or whose placement time is unknown", () => {
     const rows = [row()]
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_payout_ids: ["pout_1"] })).toContain("Mercur payout pout_1")
@@ -216,6 +259,8 @@ describe("reviewVendorDebit", () => {
     const paidOut: VendorDebitContext = {
       ...clean,
       order_seller_id: "sel_other",
+      checked_at: after(60 * 60 * 1000),
+      order_settled_to_vendor: {},
       vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
     }
     for (const rows of [

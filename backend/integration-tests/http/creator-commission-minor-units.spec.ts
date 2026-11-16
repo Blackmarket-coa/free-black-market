@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { PAYOUT_MODULE } from "@mercurjs/b2c-core/modules/payout"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../src/modules/creator-attribution"
 import { CommissionStatus } from "../../src/modules/creator-attribution/models/order-attribution"
@@ -11,6 +12,7 @@ import hawalaOrderPaymentSubscriber from "../../src/subscribers/hawala-order-pay
 import processRefundReversesCommission from "../../src/subscribers/process-refund-reverses-commission"
 import approveHeldCreatorAttributionsJob from "../../src/jobs/creator-attribution-approve-held"
 import { fixCreatorCommissionMinorUnits } from "../../src/scripts/fix-creator-commission-minor-units"
+import { cardOrderFixtures } from "./helpers/card-orders"
 import { trackSubscribers } from "./helpers/drain-subscribers"
 import { clearStalledWorkflows } from "./helpers/stalled-workflows"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
@@ -225,6 +227,11 @@ medusaIntegrationTestRunner({
           .graph({ entity: "order", fields: ["id", "subtotal", "total", "currency_code"], filters: { id: order.id } })
         expect(Number(placed.subtotal)).toBe(25)
         expect(placed.currency_code).toBe("usd")
+        // Placed with FF_CARD_ORDER_LEDGER_V1 off (the default), the app's own
+        // order.placed settlement wrote no ledger leg for it (SD-39: the
+        // legacy read throws). The corrective script reads exactly this: an
+        // order with no settlement leg to the vendor is listed, not corrected.
+        expect(await hawala().listLedgerEntries({ order_id: order.id })).toEqual([])
 
         // What the order.placed subscriber stored.
         const rows = await attribution().listOrderAttributions({ order_id: order.id })
@@ -336,8 +343,71 @@ medusaIntegrationTestRunner({
      * The corrective script against rows as the old subscriber wrote them,
      * for real $25.00 orders whose subtotal the order module computes, each
      * linked to its seller the way Mercur's split links a placed order.
+     *
+     * The script corrects a held row only when the order's proceeds reached
+     * the vendor's earnings and the order is past the payout window, so an
+     * order a case expects corrected is settled for real (`settle`: payment
+     * captured, then the settlement subscriber under FF_CARD_ORDER_LEDGER_V1)
+     * and the script is run as of three days on (`afterPayoutWindow`).
      */
     describe("scripts/fix-creator-commission-minor-units.ts", () => {
+      const card = cardOrderFixtures(getContainer)
+
+      afterEach(async () => {
+        await drainSubscribers()
+        delete process.env[CARD]
+      })
+
+      /** The reasons an order was listed for, without the closing sentence about the raised debit. */
+      const why = (reason: string | undefined) => (reason ?? "(not listed for review)").split(". Correcting would raise")[0]
+
+      /** A moment by which every order placed during the test is past the 2-day payout window. */
+      const afterPayoutWindow = () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+
+      /**
+       * Settle the order as a card order settles: its payment captured, then
+       * the real `order.placed` settlement subscriber. Returns the leg that
+       * credited the seller's earnings, checked to be the one the script
+       * looks for.
+       */
+      async function settle(orderId: string, sellerId: string) {
+        process.env[CARD] = "true"
+        try {
+          await card.pay([orderId], 25, { capture: true })
+          await card.placed(orderId)
+        } finally {
+          delete process.env[CARD]
+        }
+        await drainSubscribers()
+        const [leg] = await hawala().listLedgerEntries({ idempotency_key: `order-payment-${orderId}-seller` })
+        expect(leg).toMatchObject({ status: "COMPLETED", entry_type: "TRANSFER", order_id: orderId })
+        expect(leg.credit_account_id).toBe((await card.sellerEarnings(sellerId)).id)
+        return leg as { id: string }
+      }
+
+      /** A Mercur payout of the order, recorded as Mercur's nightly job records one (`order_payout`). */
+      async function mercurPayout(orderId: string, amount: number) {
+        const payouts = container().resolve(PAYOUT_MODULE)
+        const madeAccount = await payouts.createPayoutAccounts({
+          status: "active",
+          reference_id: `acct_${uid()}`,
+          data: {},
+          context: {},
+        })
+        const account = Array.isArray(madeAccount) ? madeAccount[0] : madeAccount
+        const made = await payouts.createPayouts({
+          amount,
+          currency_code: "usd",
+          data: { id: `tr_${uid()}` },
+          payout_account: account.id,
+        })
+        const payout = Array.isArray(made) ? made[0] : made
+        await container()
+          .resolve(ContainerRegistrationKeys.LINK)
+          .create({ [Modules.ORDER]: { order_id: orderId }, [PAYOUT_MODULE]: { payout_id: payout.id } })
+        return payout as { id: string }
+      }
+
       async function order25(sellerId: string) {
         const [order] = await container().resolve(Modules.ORDER).createOrders([
           {
@@ -409,8 +479,15 @@ medusaIntegrationTestRunner({
         "SELECT oa.id, oa.order_id, oa.creator_seller_id, oa.vendor_id, oa.commission_status, oa.commission_amount_cents, oa.ledger_entry_id, le.amount, le.created_at FROM order_attribution oa LEFT JOIN hawala_ledger_entry le ON le.id = oa.ledger_entry_id WHERE oa.deleted_at IS NULL AND oa.commission_status IN ('approved','paid') AND COALESCE(oa.metadata->>'amount_unit','') <> 'minor' AND (oa.metadata -> 'amount_units_corrected') IS NULL"
       const OPERATOR_SQL_2 =
         "SELECT * FROM hawala_ledger_entry WHERE reference_type = 'CREATOR_ATTRIBUTION' AND entry_type IN ('CREATOR_COMMISSION','REFUND') ORDER BY created_at"
+      // (3) the ledger rail's payouts (FF_LEDGER_CONNECT_PAYOUTS_V1): payout
+      // requests that moved money, created since the vendor's first
+      // attributed order was placed.
       const OPERATOR_SQL_3 =
-        "SELECT pr.id, pr.vendor_id, pr.net_amount, pr.status, pr.completed_at FROM hawala_payout_request pr WHERE pr.status IN ('PROCESSING','IN_TRANSIT','COMPLETED') AND pr.vendor_id IN (SELECT DISTINCT vendor_id FROM order_attribution WHERE deleted_at IS NULL AND vendor_id IS NOT NULL AND commission_status NOT IN ('reversed','disqualified'))"
+        "SELECT pr.id, pr.vendor_id, pr.net_amount, pr.status, pr.created_at, pr.completed_at, fa.first_attributed_order_at FROM hawala_payout_request pr JOIN (SELECT oa.vendor_id, MIN(COALESCE(o.created_at, oa.created_at)) AS first_attributed_order_at FROM order_attribution oa LEFT JOIN \"order\" o ON o.id = oa.order_id WHERE oa.deleted_at IS NULL AND oa.vendor_id IS NOT NULL AND oa.commission_status NOT IN ('reversed','disqualified') GROUP BY oa.vendor_id) fa ON fa.vendor_id = pr.vendor_id WHERE pr.deleted_at IS NULL AND pr.status IN ('PROCESSING','IN_TRANSIT','COMPLETED') AND pr.created_at >= fa.first_attributed_order_at ORDER BY pr.created_at"
+      // (3b) Mercur's payouts, the rail vendors are paid by while that flag
+      // is off (the default): each attributed order Mercur has paid out.
+      const OPERATOR_SQL_3B =
+        "SELECT oa.id AS attribution_id, oa.order_id, oa.vendor_id, oa.commission_status, oa.commission_amount_cents, p.id AS payout_id, p.amount, p.currency_code, p.created_at FROM order_attribution oa JOIN order_payout op ON op.order_id = oa.order_id AND op.deleted_at IS NULL JOIN payout p ON p.id = op.payout_id AND p.deleted_at IS NULL WHERE oa.deleted_at IS NULL AND oa.level = 1 AND oa.commission_status NOT IN ('reversed','disqualified') ORDER BY p.created_at"
       const OPERATOR_SQL_4 =
         "SELECT b.order_id, b.total_creator_commission, b.total_to_producers FROM order_payout_breakdown b JOIN order_attribution oa ON oa.order_id = b.order_id AND oa.level = 1 WHERE COALESCE(oa.metadata->>'amount_unit','') <> 'minor' OR (oa.metadata -> 'amount_units_corrected') IS NOT NULL"
 
@@ -428,8 +505,13 @@ medusaIntegrationTestRunner({
           commission_amount_cents: 250,
           metadata: { [AMOUNT_UNIT_METADATA_KEY]: AMOUNT_UNIT_MINOR },
         })
+        // The held order's payment is captured and it settles, after its
+        // attribution was written: the vendor's earnings receive the sale and
+        // the breakdown is stored with the old creator line.
+        await settle(held.id, vendor.id)
+        const now = afterPayoutWindow()
 
-        const dry = await fixCreatorCommissionMinorUnits(container())
+        const dry = await fixCreatorCommissionMinorUnits(container(), { now })
         expect(dry.corrected).toEqual([
           { order_id: held.id, subtotal: { from: 25, to: 2500 }, commission_total: { from: 2, to: 250 }, rows: [heldRow.id] },
         ])
@@ -438,7 +520,7 @@ medusaIntegrationTestRunner({
         expect(dry.skipped).toEqual([{ order_id: fresh.id, reason: "marked_minor_units" }])
         expect(await read(heldRow.id)).toMatchObject({ subtotal: 25, basis: 25, commission: 2 })
 
-        const applied = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        const applied = await fixCreatorCommissionMinorUnits(container(), { apply: true, now })
         expect(applied.corrected.map((c) => c.order_id)).toEqual([held.id])
         const after = await read(heldRow.id)
         expect(after).toMatchObject({ subtotal: 2500, basis: 2500, commission: 250, status: CommissionStatus.HELD })
@@ -467,7 +549,7 @@ medusaIntegrationTestRunner({
         expect(await read(creditedRow.id)).toMatchObject({ subtotal: 25, commission: 2, status: CommissionStatus.APPROVED })
         expect(await read(freshRow.id)).toMatchObject({ subtotal: 2500, commission: 250 })
 
-        const again = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        const again = await fixCreatorCommissionMinorUnits(container(), { apply: true, now })
         expect(again.corrected).toEqual([])
         expect(again.skipped).toEqual(
           expect.arrayContaining([
@@ -489,46 +571,48 @@ medusaIntegrationTestRunner({
         const sql1 = await pg.raw(`SELECT q.id FROM (${OPERATOR_SQL_1}) q WHERE q.id = ANY(?)`, [ours])
         expect(sql1.rows.map((r: any) => r.id)).toEqual([creditedRow.id])
 
-        // A stored breakdown for the corrected order still carries the old
-        // creator line (breakdowns are not recomputed): SQL (4) names it, and
-        // not the new order's.
+        // The corrected order's stored breakdown still carries the old
+        // creator line, as settlement wrote it from the row's old figure
+        // (breakdowns are not recomputed): SQL (4) names it, and not the new
+        // order's.
         const breakdowns = container().resolve(PAYOUT_BREAKDOWN_MODULE)
-        for (const [orderId, creatorLine] of [
-          [held.id, 2],
-          [fresh.id, 250],
-        ] as const) {
-          await breakdowns.createOrderPayoutBreakdowns({
-            order_id: orderId,
-            customer_id: "cus_breakdown",
-            customer_paid: 2500,
-            breakdown_items: [],
-            seller_breakdown: [],
-            total_to_producers: 2500 - 75 - creatorLine,
-            total_platform_fees: 75,
-            total_payment_processing: 0,
-            total_creator_commission: creatorLine,
-          })
-        }
+        const [heldBreakdown] = await breakdowns.listOrderPayoutBreakdowns({ order_id: held.id })
+        expect(Number(heldBreakdown.total_creator_commission)).toBe(2)
+        await breakdowns.createOrderPayoutBreakdowns({
+          order_id: fresh.id,
+          customer_id: "cus_breakdown",
+          customer_paid: 2500,
+          breakdown_items: [],
+          seller_breakdown: [],
+          total_to_producers: 2500 - 75 - 250,
+          total_platform_fees: 75,
+          total_payment_processing: 0,
+          total_creator_commission: 250,
+        })
         const sql4 = await pg.raw(`SELECT q.order_id FROM (${OPERATOR_SQL_4}) q WHERE q.order_id = ANY(?)`, [
           [held.id, credited.id, fresh.id],
         ])
         expect(sql4.rows.map((r: any) => r.order_id)).toEqual([held.id])
-        // (2) and (3) are read-only listings; they run.
+        // (2) is a read-only listing; it runs. (3) and (3b) are checked in
+        // the cases below.
         await pg.raw(OPERATOR_SQL_2)
-        await pg.raw(OPERATOR_SQL_3)
       })
 
       it("lists instead of correcting a held row whose vendor was paid out after the order or did not sell it; corrects one whose vendor was paid only before it or not at all", async () => {
+        // Every order here settled to its seller's earnings, so each is
+        // listed for the one reason its fixture gives it.
         // Paid out after the order: a payout request whose legs took money
         // off the vendor's earnings, and a completed withdrawal leg.
         const paidVendor = await makeSeller("Paid")
         const paidOrder = await order25(paidVendor.id)
         const paidRow = await attributionRow(paidOrder.id, paidVendor.id)
+        await settle(paidOrder.id, paidVendor.id)
         const request = await payoutRequest(paidVendor.id, "COMPLETED")
 
         const withdrawnVendor = await makeSeller("Withdrawn")
         const withdrawnOrder = await order25(withdrawnVendor.id)
         const withdrawnRow = await attributionRow(withdrawnOrder.id, withdrawnVendor.id)
+        await settle(withdrawnOrder.id, withdrawnVendor.id)
         const earnings = await hawala().getOrCreateSellerEarnings(withdrawnVendor.id, "USD")
         const settlement = await hawala().getOrCreateSystemAccount("SETTLEMENT")
         const [withdrawal] = await hawala().createLedgerEntries([
@@ -543,11 +627,36 @@ medusaIntegrationTestRunner({
           },
         ])
 
+        // The same, after the daily settlement batch anchored the vendor's
+        // legs (jobs/hawala-settlement.ts re-labels COMPLETED as SETTLED):
+        // the settlement leg still counts as the order's proceeds arriving,
+        // and the withdrawal still counts as money gone.
+        const anchoredVendor = await makeSeller("Anchored")
+        const anchoredOrder = await order25(anchoredVendor.id)
+        const anchoredRow = await attributionRow(anchoredOrder.id, anchoredVendor.id)
+        const anchoredLeg = await settle(anchoredOrder.id, anchoredVendor.id)
+        const anchoredEarnings = await hawala().getOrCreateSellerEarnings(anchoredVendor.id, "USD")
+        const [anchoredWithdrawal] = await hawala().createLedgerEntries([
+          {
+            debit_account_id: anchoredEarnings.id,
+            credit_account_id: settlement.id,
+            amount: 10,
+            entry_type: "WITHDRAWAL",
+            status: "COMPLETED",
+            reference_type: "PAYOUT_REQUEST",
+            reference_id: "pr_anchored",
+          },
+        ])
+        for (const id of [anchoredLeg.id, anchoredWithdrawal.id]) {
+          await hawala().updateLedgerEntries({ id, status: "SETTLED", settled_at: new Date() })
+        }
+
         // Paid another vendor out of their earnings after the order
         // (createVendorToVendorPayment's leg type, outside the model's enum).
         const payingVendor = await makeSeller("Paying")
         const payingOrder = await order25(payingVendor.id)
         const payingRow = await attributionRow(payingOrder.id, payingVendor.id)
+        await settle(payingOrder.id, payingVendor.id)
         const payingEarnings = await hawala().getOrCreateSellerEarnings(payingVendor.id, "USD")
         const [vendorPayment] = await hawala().createLedgerEntries([
           {
@@ -560,34 +669,143 @@ medusaIntegrationTestRunner({
           },
         ])
 
-        // The creator's link named a vendor that did not sell this order.
+        // The creator's link named a vendor that did not sell this order;
+        // the order settled to its seller.
         const seller = await makeSeller("Seller")
         const linkVendor = await makeSeller("LinkVendor")
         const splitOrder = await order25(seller.id)
         const splitRow = await attributionRow(splitOrder.id, linkVendor.id)
+        await settle(splitOrder.id, seller.id)
 
         // Paid out only BEFORE the order, and a payout after it that failed
         // (moved nothing): neither counts, so this one is corrected.
         const earlyVendor = await makeSeller("Early")
-        await payoutRequest(earlyVendor.id, "COMPLETED")
+        const earlyRequest = await payoutRequest(earlyVendor.id, "COMPLETED")
         await new Promise((r) => setTimeout(r, 20))
         const earlyOrder = await order25(earlyVendor.id)
         const earlyRow = await attributionRow(earlyOrder.id, earlyVendor.id)
-        await payoutRequest(earlyVendor.id, "FAILED")
+        await settle(earlyOrder.id, earlyVendor.id)
+        const failedRequest = await payoutRequest(earlyVendor.id, "FAILED")
 
-        const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
         const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
-        expect(reasons[paidOrder.id]).toContain(`payout request ${request.id} COMPLETED`)
+        const paidOut = (vendorId: string, what: string) =>
+          `vendor ${vendorId} has been paid out since the order was placed (${what}), ` +
+          `and the commission was never carved out of what they were paid`
+        // Each of these four is listed for its payout and nothing else.
+        expect(why(reasons[paidOrder.id])).toBe(paidOut(paidVendor.id, `payout request ${request.id} COMPLETED`))
         expect(reasons[paidOrder.id]).toContain("from 2 to 250")
-        expect(reasons[withdrawnOrder.id]).toContain(`withdrawal ${withdrawal.id} COMPLETED`)
-        expect(reasons[payingOrder.id]).toContain(`vendor payment ${vendorPayment.id} COMPLETED`)
+        expect(why(reasons[withdrawnOrder.id])).toBe(paidOut(withdrawnVendor.id, `withdrawal ${withdrawal.id} COMPLETED`))
+        expect(why(reasons[anchoredOrder.id])).toBe(paidOut(anchoredVendor.id, `withdrawal ${anchoredWithdrawal.id} SETTLED`))
+        expect(why(reasons[payingOrder.id])).toBe(paidOut(payingVendor.id, `vendor payment ${vendorPayment.id} COMPLETED`))
         expect(reasons[splitOrder.id]).toContain(`the attributed vendor ${linkVendor.id} is not the order's seller ${seller.id}`)
+        // Its settlement credited the seller, which is not the link's vendor's earnings.
+        expect(reasons[splitOrder.id]).toContain(`the order's proceeds never reached vendor ${linkVendor.id}'s earnings in the ledger`)
         expect(summary.corrected.map((c) => c.order_id)).toEqual([earlyOrder.id])
 
-        for (const id of [paidRow.id, withdrawnRow.id, payingRow.id, splitRow.id]) {
+        for (const id of [paidRow.id, withdrawnRow.id, anchoredRow.id, payingRow.id, splitRow.id]) {
           expect(await read(id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
         }
         expect(await read(earlyRow.id)).toMatchObject({ subtotal: 2500, commission: 250 })
+
+        // Operator SQL (3): payout requests that moved money since the
+        // vendor's first attributed order. Not the one made before it, not
+        // the one that failed after it.
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const sql3 = await pg.raw(`SELECT q.id, q.vendor_id FROM (${OPERATOR_SQL_3}) q WHERE q.vendor_id = ANY(?)`, [
+          [paidVendor.id, earlyVendor.id],
+        ])
+        expect(sql3.rows).toEqual([{ id: request.id, vendor_id: paidVendor.id }])
+        expect([earlyRequest.id, failedRequest.id]).not.toContain(sql3.rows[0].id)
+      })
+
+      it("lists a held row whose order never settled to the vendor's earnings; corrects it once the settlement subscriber has run", async () => {
+        const vendor = await makeSeller("Unsettled")
+        const order = await order25(vendor.id)
+        const row = await attributionRow(order.id, vendor.id)
+
+        // No leg of this order exists: nothing credited the vendor. (With
+        // FF_CARD_ORDER_LEDGER_V1 off no order settles at all, SD-39.)
+        expect(await hawala().listLedgerEntries({ order_id: order.id })).toEqual([])
+        const before = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+        expect(before.corrected).toEqual([])
+        expect(before.review).toEqual([
+          {
+            order_id: order.id,
+            reason: expect.stringContaining(`the order's proceeds never reached vendor ${vendor.id}'s earnings in the ledger`),
+          },
+        ])
+        expect(before.review[0].reason).toContain("from 2 to 250")
+        expect(await read(row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+
+        // The same order once its payment is captured and the settlement
+        // subscriber has credited the vendor's earnings.
+        await settle(order.id, vendor.id)
+        const after = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+        expect(after.review).toEqual([])
+        expect(after.corrected.map((c) => c.order_id)).toEqual([order.id])
+        expect(await read(row.id)).toMatchObject({ subtotal: 2500, commission: 250, status: CommissionStatus.HELD })
+      })
+
+      it("lists a held row on an order placed in the last 2 days or one Mercur already paid out; corrects the first once the payout window has passed; operator SQL (3b) lists the Mercur payout", async () => {
+        // Settled to its seller, nobody paid: only its age stands in the way.
+        const recentVendor = await makeSeller("Recent")
+        const recentOrder = await order25(recentVendor.id)
+        const recentRow = await attributionRow(recentOrder.id, recentVendor.id)
+        await settle(recentOrder.id, recentVendor.id)
+
+        // Settled, and Mercur's nightly job has already paid the order out.
+        const mercurVendor = await makeSeller("MercurPaid")
+        const mercurOrder = await order25(mercurVendor.id)
+        const mercurRow = await attributionRow(mercurOrder.id, mercurVendor.id)
+        await settle(mercurOrder.id, mercurVendor.id)
+        const payout = await mercurPayout(mercurOrder.id, 24.25)
+        // An order Mercur paid that no creator is attributed on.
+        const plainOrder = await order25(mercurVendor.id)
+        await mercurPayout(plainOrder.id, 24.25)
+
+        // Run now, as the CLI does: both are listed, each for its own reason.
+        const today = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        const todays = Object.fromEntries(today.review.map((r) => [r.order_id, r.reason]))
+        expect(today.corrected).toEqual([])
+        expect(why(todays[recentOrder.id])).toBe(
+          "the order was placed 0 hours before this check, inside the 48 hours in which the nightly payout " +
+            "sends an order's proceeds to its vendor, and no payout for it exists yet"
+        )
+        expect(why(todays[mercurOrder.id])).toBe(
+          `the order's proceeds were already sent to the vendor by Mercur payout ${payout.id}`
+        )
+        for (const id of [recentRow.id, mercurRow.id]) {
+          expect(await read(id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+        }
+
+        // Three days on: the unpaid order is corrected; the one Mercur paid
+        // is still listed, whatever its age.
+        const later = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+        expect(later.corrected.map((c) => c.order_id)).toEqual([recentOrder.id])
+        expect(later.review.map((r) => r.order_id)).toEqual([mercurOrder.id])
+        expect(later.review[0].reason).toContain(`Mercur payout ${payout.id}`)
+        expect(await read(recentRow.id)).toMatchObject({ subtotal: 2500, commission: 250 })
+        expect(await read(mercurRow.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+
+        // Operator SQL (3b): Mercur payouts of attributed orders. The
+        // attributed order's payout, not the unattributed order's.
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const sql3b = await pg.raw(
+          `SELECT q.attribution_id, q.order_id, q.vendor_id, q.payout_id, q.amount::float AS amount, q.currency_code
+             FROM (${OPERATOR_SQL_3B}) q WHERE q.order_id = ANY(?)`,
+          [[recentOrder.id, mercurOrder.id, plainOrder.id]]
+        )
+        expect(sql3b.rows).toEqual([
+          {
+            attribution_id: mercurRow.id,
+            order_id: mercurOrder.id,
+            vendor_id: mercurVendor.id,
+            payout_id: payout.id,
+            amount: 24.25,
+            currency_code: "usd",
+          },
+        ])
       })
 
       it("writes an order's chain in one transaction: a row that changed since it was planned rolls back the rows before it", async () => {

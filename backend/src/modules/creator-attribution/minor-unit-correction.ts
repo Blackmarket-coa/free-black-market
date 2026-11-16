@@ -44,9 +44,11 @@ import { isMarkedMinorUnits, toMinorUnits } from "../../shared/minor-units"
  * with no commission carved out, and it is the approve-held job that later
  * debits the vendor (`vendor_id`) for the commission, at whatever the column
  * says when it runs. So correcting such a row raises that future debit 100×,
- * out of the vendor's balance at the time. {@link reviewVendorDebit} decides
- * whether that debit can be justified without a person; the script asks it
- * for every order this planner would correct.
+ * out of the vendor's balance at the time. {@link reviewVendorDebit} lists
+ * the orders where what the script can read already argues against that
+ * debit; the script asks it for every order this planner would correct. It
+ * is a check made once, when the script runs, of a debit that happens later:
+ * see its own comment for what it does not cover.
  */
 
 export type StoredAttributionAmounts = {
@@ -249,18 +251,40 @@ export function planCommissionMinorUnitCorrection(
   }
 }
 
-/** What the script reads about who approve-held would debit for an order, and whether they were paid since. */
+/**
+ * How long after an order is placed the nightly payout can still be about to
+ * send its proceeds to the vendor. The job runs once a day
+ * (`jobs/daily-payouts.ts`, "0 0 * * *") and pays every order not paid yet,
+ * so an order waits up to a day for its run, and the run's own queue, delays
+ * and retries take it past that. Two days.
+ */
+export const PAYOUT_WINDOW_MS = 2 * 24 * 60 * 60 * 1000
+
+/**
+ * What the script reads about who approve-held would debit for an order,
+ * whether the order's proceeds reached them, and whether they were paid
+ * since. All of it is true as of `checked_at` and no later.
+ */
 export type VendorDebitContext = {
   /** The order's seller (Mercur's seller link), or null when it has none. */
   order_seller_id: string | null
   /** When the order was placed (ISO), or null when unknown. */
   order_placed_at: string | null
+  /** When this was read (ISO): the moment the checks below speak for. */
+  checked_at: string
   /** Mercur payouts that paid this order's proceeds to the vendor (`order.payouts`). */
   order_payout_ids: readonly string[]
   /**
+   * Per vendor id: whether a settlement leg of this order that moved money
+   * (`order-payment-<order>-seller`, `-vendor` or `-consignor`, COMPLETED or
+   * since anchored as SETTLED) credited one of that vendor's SELLER_EARNINGS
+   * accounts. A vendor missing here counts as not settled.
+   */
+  order_settled_to_vendor: Readonly<Record<string, boolean>>
+  /**
    * Per vendor id: money that left that vendor's earnings after the order was
-   * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; completed
-   * WITHDRAWAL or VENDOR_PAYMENT legs off their SELLER_EARNINGS).
+   * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; WITHDRAWAL
+   * or VENDOR_PAYMENT legs off their SELLER_EARNINGS that moved money).
    */
   vendor_withdrawals: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
 }
@@ -273,32 +297,58 @@ export function vendorsDebitedOnApproval(rows: readonly StoredAttributionAmounts
   return [...new Set(ids)]
 }
 
+/** An age in whole hours for a review line, or "an unknown time" when it cannot be read. */
+function describeAge(ms: number): string {
+  return Number.isFinite(ms) ? `${Math.max(0, Math.floor(ms / 3_600_000))} hours` : "an unknown time"
+}
+
 /**
- * Whether correcting this order would set up a vendor debit nobody can
- * justify without a person. Returns the reason to list it for review, or
- * null when the correction can go ahead.
+ * Whether what the script could read, when it read it, already argues
+ * against the vendor debit that correcting this order sets up. Returns the
+ * reason to list the order for review, or null when nothing read does.
  *
  * The correction raises what approve-held will debit from `vendor_id`'s
  * SELLER_EARNINGS to the full commission (today every credit is refused, a
  * separate defect, so this lands when that is fixed). That is right only if
  * the vendor debited is the one who sold the order and the order's proceeds
- * are still in their balance. So an order is listed when any row
- * approve-held will still credit:
+ * are in their balance when the debit happens. So an order is listed when
+ * any row approve-held will still credit:
  *
  * - names a vendor that is not the order's seller (the vendor comes from the
  *   creator's link or promo code, never from the order; under Mercur's split
  *   a cart's other sellers' orders carry the link's vendor too), or the order
  *   has no seller to compare with;
+ * - names a vendor whose earnings the order's proceeds never entered: no
+ *   settlement leg of the order that moved money credits them. Settlement
+ *   with FF_CARD_ORDER_LEDGER_V1 off throws before any leg (SD-39), a charge
+ *   on a partner's connected account settles nothing here, a card order in
+ *   another currency is refused, and a consignment split can send the whole
+ *   seller side to the consignor. The debit would then come out of other
+ *   orders' proceeds, or fail on an empty account;
  * - names a vendor who has been paid out since the order was placed: a
  *   payout request that moved money, or a withdrawal or a payment to another
- *   vendor off their earnings. The
- *   commission was never carved out of that money, so the debit would come
- *   out of later sales' proceeds;
- * - is on an order whose proceeds a Mercur payout already sent; or
+ *   vendor off their earnings. The commission was never carved out of that
+ *   money, so the debit would come out of later sales' proceeds;
+ * - is on an order whose proceeds a Mercur payout already sent;
+ * - is on an order placed less than {@link PAYOUT_WINDOW_MS} before the
+ *   check with no Mercur payout yet: the nightly payout has not reached it,
+ *   and will send its proceeds in full, commission included; or
  * - the order's placement time is unknown, so the above cannot be checked.
  *
  * Rows approve-held will not credit (reversed, disqualified) and rows with no
  * vendor (approve-held disqualifies those) set up no debit and pass.
+ *
+ * WHAT A NULL DOES NOT MEAN. This looks once, at `checked_at`. The debit
+ * happens at approve-held, after the row's hold (7 days by default) and only
+ * once crediting works, and nothing looks again then: a vendor paid out between this check
+ * and that debit (an order older than the window whose seller only later
+ * gets an active payout account, a payout request raised the next day) is
+ * debited the full commission out of whatever they hold by then. Commission
+ * is not reserved from the vendor at settlement, for corrected rows or for
+ * any new attributed order; until it is, or until approve-held makes these
+ * checks itself, this narrows the cases and settles none of them. Hence: run
+ * the script immediately before the repair that makes crediting work
+ * deploys, not earlier.
  */
 export function reviewVendorDebit(
   plan: Extract<CommissionMinorUnitCorrection, { action: "correct" }>,
@@ -323,6 +373,13 @@ export function reviewVendorDebit(
           `(the vendor comes from the creator's link or promo code, not the order)`
       )
     }
+    if (ctx.order_settled_to_vendor[vendor] !== true) {
+      reasons.push(
+        `the order's proceeds never reached vendor ${vendor}'s earnings in the ledger ` +
+          `(no settlement leg of the order that moved money credits them), ` +
+          `so the debit would come out of other orders' proceeds`
+      )
+    }
     const paid = ctx.vendor_withdrawals[vendor] ?? []
     if (paid.length) {
       const shown = paid.slice(0, 3).map((w) => `${w.kind} ${w.id} ${w.status}`)
@@ -334,6 +391,17 @@ export function reviewVendorDebit(
   }
   if (ctx.order_payout_ids.length) {
     reasons.push(`the order's proceeds were already sent to the vendor by Mercur payout ${ctx.order_payout_ids.join(", ")}`)
+  } else if (ctx.order_placed_at) {
+    // Not paid by Mercur yet. Inside the payout window that is only because
+    // the nightly run has not reached the order. `!(>=)` so an unreadable
+    // time on either side lists the order too.
+    const age = Date.parse(ctx.checked_at) - Date.parse(ctx.order_placed_at)
+    if (!(age >= PAYOUT_WINDOW_MS)) {
+      reasons.push(
+        `the order was placed ${describeAge(age)} before this check, inside the ${PAYOUT_WINDOW_MS / 3_600_000} hours ` +
+          `in which the nightly payout sends an order's proceeds to its vendor, and no payout for it exists yet`
+      )
+    }
   }
   if (!reasons.length) return null
 
