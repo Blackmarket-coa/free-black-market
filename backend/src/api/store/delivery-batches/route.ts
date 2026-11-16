@@ -142,7 +142,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       | undefined
 
     const batch = await foodDistribution.createDeliveryBatch(
-      data.delivery_ids,
+      // Not `data.delivery_ids`: an id named twice is one delivery.
+      batchable.map((delivery) => delivery.id),
       data.courier_id,
       data.is_community_run,
       data.community_org_id,

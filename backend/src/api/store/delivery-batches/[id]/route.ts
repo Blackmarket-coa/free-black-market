@@ -113,11 +113,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 //     for a real id and 404 for a missing one. Every entry must now name a
 //     delivery in this batch.
 //   - `courier_id` decides who else reads the batch: its courier's owner is
-//     served every address in it by the GET above. `actorMayManage` lets any
-//     signed-in account write a batch with no owner on record
-//     (grandfathered), so on such a batch a stranger could name their own
-//     courier and then read the run. A courier is assigned by the batch's
-//     recorded owner only.
+//     served every address in it by the GET above.
+//
+// And on a batch with no owner on record, which `actorMayManage` lets any
+// signed-in account write (grandfathered), nothing here tells that account
+// about the deliveries in it. The GET above refuses them the batch, and this
+// verb was their way round it (each seen on Postgres):
+//   - the 200 echoed the batch row, whose `optimized_route` lists the id of
+//     every delivery in the run. The row is echoed to the recorded owner
+//     only; a write let through on an unknown owner is acknowledged with
+//     `{ id, status }`.
+//   - a route entry answered 200 for a delivery in the batch and 403 for one
+//     outside it, and rewrote the sequence and arrival time of deliveries the
+//     caller may not read. Route entries are the recorded owner's.
+//   - naming their own courier made them a reader of the run. A courier is
+//     assigned by the recorded owner only.
+// Status and notes on such a batch, and DELETE, are still theirs to write:
+// ending the grandfathering is the operator's call, not made here.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -133,7 +145,8 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     if (!existing || !actorMayManage(req, ownerId)) {
       return forbidden(res)
     }
-    if (data.courier_id && !actorOwnsResource(req, ownerId)) {
+    const isRecordedOwner = actorOwnsResource(req, ownerId)
+    if ((data.courier_id || data.optimized_route) && !isRecordedOwner) {
       return forbidden(res)
     }
     if (data.optimized_route) {
@@ -184,7 +197,9 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     
     const batch = await foodDistribution.updateDeliveryBatches(updateData)
     
-    res.json({ batch })
+    res.json({
+      batch: isRecordedOwner ? batch : { id: batch.id, status: batch.status },
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

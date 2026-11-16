@@ -222,10 +222,20 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 // `proof_pin_code`: the PIN the recipient reads out to prove the hand-over,
 // handed to the courier at the moment of claiming.
 //
+// A delivery is claimed only through a courier that has an owner on record.
+// `actorMayManage` lets any signed-in account act on a courier with no
+// `owner_id` (grandfathered), and the 200 here was that account's read of the
+// delivery: its address, its recipient's name and phone, its instructions
+// (seen on Postgres, a signed-in stranger through an ownerless courier). The
+// claim also left the delivery with a courier nobody can carry it as: every
+// courier-side step (`PUT /store/food-deliveries/:id`, `/track`, `/proof`)
+// asks `actorOwnsCourier`, which refuses a null owner. Same rule as naming a
+// courier on a batch: a courier is put on a delivery by an owner on record.
+//
 // Not decided here: WHO may claim. Any signed-in account can register a
-// courier, mark it AVAILABLE and claim a pending delivery whose id it holds,
-// and from then on reads it as its courier. That is the operator's ruling
-// (verified couriers only, the producer's own, anyone), not a default.
+// courier of its own, mark it AVAILABLE and claim a pending delivery whose id
+// it holds, and from then on reads it as its courier. That is the operator's
+// ruling (verified couriers only, the producer's own, anyone), not a default.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -245,6 +255,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!actorMayManage(req, (courier as any).owner_id)) {
       res.status(403).json({ message: "This courier is not yours to manage" })
       return
+    }
+    // No grandfathering on the claim: see the note above this handler.
+    if (!actorOwnsResource(req, (courier as { owner_id?: string | null }).owner_id)) {
+      return forbidden(res)
     }
     if (courier.status !== "AVAILABLE") {
       res.status(400).json({ message: "Courier is not available" })

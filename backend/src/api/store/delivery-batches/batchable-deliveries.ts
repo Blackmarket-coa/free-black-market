@@ -31,6 +31,11 @@ type BatchableDelivery = {
  * so a delivery that does not exist and one that belongs to someone else are
  * refused alike; whether a delivery is already in a batch is checked only
  * after this, so only someone entitled to it is told.
+ *
+ * Each delivery is returned once however often it is named. An id sent twice
+ * passed twice, and the batch was created with a `total_deliveries` (and add
+ * with a sequence) one higher than the deliveries in it. Callers write from
+ * the list returned here, not from the ids they were sent.
  */
 export async function deliveriesActorMayBatch<T extends BatchableDelivery>(
   req: MedusaRequest,
@@ -38,7 +43,7 @@ export async function deliveriesActorMayBatch<T extends BatchableDelivery>(
   deliveryIds: readonly string[]
 ): Promise<T[] | null> {
   const deliveries: T[] = []
-  for (const deliveryId of deliveryIds) {
+  for (const deliveryId of new Set(deliveryIds)) {
     const delivery = await retrieveDeliveryOrNull(service, deliveryId)
     if (!delivery || !(await actorMayReadDelivery(req, delivery))) {
       return null
