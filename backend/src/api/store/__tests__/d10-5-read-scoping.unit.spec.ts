@@ -363,6 +363,61 @@ describe("deliveries — the enumerable-id pair", () => {
       expect(res.statusCode).toBe(200)
     }
   })
+
+  it("ends the stream when the delivery is deleted while it is open", async () => {
+    // The poll read the delivery bare, so the module's not-found skipped the
+    // "Delivery not found" branch and landed in the catch: an error logged
+    // every 3 seconds, and a stream that never ended.
+    jest.useFakeTimers()
+    try {
+      let deleted = false
+      const retrieveFoodDelivery = jest.fn(async (id: string) => {
+        if (deleted) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodDelivery with id: ${id} was not found`)
+        }
+        return { ...DELIVERY, status: "EN_ROUTE_DELIVERY" }
+      })
+      const written: string[] = []
+      const end = jest.fn()
+      const res = { ...createRes(), setHeader: jest.fn(), write: (chunk: string) => written.push(chunk), end }
+      const req = {
+        ...makeReq({
+          actorId: "cus_recipient",
+          params: { id: "del_1" },
+          modules: { [FOOD_DISTRIBUTION_MODULE]: { retrieveFoodDelivery } },
+          rows: {
+            food_producer: [{ id: "prd_1", owner_id: "sel_1" }],
+            food_courier: [{ id: "cour_1", owner_id: "cus_courier" }],
+            food_order: [{ id: "fo_1", customer_id: "cus_recipient" }],
+          },
+        }),
+        on: jest.fn(),
+      }
+      await deliverySubscribe(req as never, res as never)
+      expect(written).toHaveLength(1)
+      expect(JSON.parse(written[0].replace(/^data: /, "")).type).toBe("initial")
+
+      // One poll while it exists: a heartbeat, and the stream stays open.
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(written[written.length - 1]).toBe(": heartbeat\n\n")
+      expect(end).not.toHaveBeenCalled()
+
+      deleted = true
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(JSON.parse(written[written.length - 1].replace(/^data: /, ""))).toEqual({
+        type: "error",
+        message: "Delivery not found",
+      })
+      expect(end).toHaveBeenCalledTimes(1)
+
+      // And the poll has stopped.
+      const lookups = retrieveFoodDelivery.mock.calls.length
+      await jest.advanceTimersByTimeAsync(9000)
+      expect(retrieveFoodDelivery.mock.calls.length).toBe(lookups)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
 })
 
 describe("delivery batches — a courier's run", () => {

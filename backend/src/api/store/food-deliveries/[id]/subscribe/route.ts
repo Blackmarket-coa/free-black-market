@@ -70,7 +70,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const pollInterval = setInterval(async () => {
     try {
-      const currentDelivery = await foodDistribution.retrieveFoodDelivery(deliveryId)
+      // A delivery deleted mid-stream ends the stream. Read bare, the
+      // module's not-found was thrown past this check into the catch below,
+      // which logged it every 3 seconds until the client went away.
+      const currentDelivery = await retrieveDeliveryOrNull(foodDistribution, deliveryId)
       if (!currentDelivery) {
         clearInterval(pollInterval)
         res.write(`data: ${JSON.stringify({ type: "error", message: "Delivery not found" })}\n\n`)
