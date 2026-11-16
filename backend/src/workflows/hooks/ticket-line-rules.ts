@@ -14,9 +14,9 @@ import { MedusaError } from "@medusajs/framework/utils"
  * so the cart page's + raised a seat line to 2 unrefused.
  *
  * The ticket checkout refuses such a line again before it takes the card
- * (`require-seated-ticket-cart.ts`, `validate-ticket-order.ts`); these hooks
- * say so when the line is made, which is also the only check a cart that goes
- * through Mercur's main checkout gets.
+ * (`require-seated-ticket-cart.ts`, `validate-ticket-order.ts`). Mercur's
+ * `POST /store/carts/:id/complete` has no ticket check at all, so for a cart
+ * completed there these two hooks are the only one.
  */
 
 /** The refusal of a ticket line asked for at any quantity but one. */
