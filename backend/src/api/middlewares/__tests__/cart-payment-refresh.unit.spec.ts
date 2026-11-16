@@ -21,7 +21,12 @@ jest.mock("../../../lib/cart-payment-refresh", () => ({
 
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import { CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE, CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../lib/cart-payment-amount"
+import {
+  CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE,
+  CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE,
+  CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE,
+  CART_PAYMENT_REFRESH_FAILED_MESSAGE,
+} from "../../../lib/cart-payment-amount"
 import { cartPaymentMiddlewareRoutes } from "../cart-payment-refresh"
 
 /**
@@ -49,7 +54,10 @@ type World = {
   graph?: "throws"
 }
 
-function request(world: World, init: { cartId?: string; method?: string; body?: unknown; fields?: string[] } = {}) {
+function request(
+  world: World,
+  init: { cartId?: string; method?: string; body?: unknown; fields?: string[]; path?: string; params?: Record<string, string> } = {}
+) {
   const events: string[] = []
   const listShippingMethods = jest.fn(async (filters: { cart_id?: string[]; id?: string[] }) => {
     if (world.listShippingMethods === "throws") throw new Error("cart module unavailable")
@@ -71,8 +79,8 @@ function request(world: World, init: { cartId?: string; method?: string; body?: 
   const cartId = init.cartId ?? "cart_1"
   const req = {
     method: init.method ?? "POST",
-    path: `/store/carts/${cartId}/shipping-methods`,
-    params: { id: cartId },
+    path: init.path ?? `/store/carts/${cartId}/shipping-methods`,
+    params: init.params ?? { id: cartId },
     body: init.body,
     validatedBody: init.body,
     queryConfig: { fields: init.fields ?? ["id", "total", "payment_collection.amount"] },
@@ -110,12 +118,16 @@ beforeEach(() => {
 })
 
 describe("the routes it sits in front of", () => {
-  it("are Mercur's two shipping-method routes, its line-item delete, and the completion", () => {
+  it("are Mercur's two shipping-method routes, its line-item delete, its completion, and FBM's four completions through Medusa's workflow", () => {
     expect(cartPaymentMiddlewareRoutes.map((r) => `${r.method} ${r.matcher}`)).toEqual([
       "POST /store/carts/:id/shipping-methods",
       "DELETE /store/carts/:id/shipping-methods",
       "DELETE /store/carts/:id/line-items/:line_id",
       "POST /store/carts/:id/complete",
+      "POST /store/carts/:id/complete-tickets",
+      "POST /store/carts/:id/complete-digital",
+      "POST /store/rentals/:cart_id",
+      "POST /store/subscriptions",
     ])
   })
 })
@@ -425,33 +437,62 @@ describe("POST /store/carts/:id/complete: a session for another amount is refuse
     expect(t.next).not.toHaveBeenCalled()
     expect(t.raw.statusCode).toBe(409)
     expect(t.raw.body).toEqual(refusal)
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("could not be refreshed"), { cart_id: "cart_1" })
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("its payment side could not be put right"), { cart_id: "cart_1" })
   })
 
-  it("closed on doubt: a cart that cannot be read, or amounts that cannot be compared, do not complete", async () => {
+  it("a session an earlier attempt authorized for another amount is refused like a pending one, and the cart is settled", async () => {
+    const authorized = { ...cartWith(36, 32), payment_collection: { payment_sessions: [{ id: "payses_1", amount: 32, status: "authorized" }] } }
+    const t = request({ methods: [], carts: { cart_1: authorized } })
+    await handler(t.req, t.res, t.next)
+
+    expect(t.next).not.toHaveBeenCalled()
+    expect(t.raw.statusCode).toBe(409)
+    expect(t.raw.body).toEqual(refusal)
+    expect(refreshCartPaymentCollection).toHaveBeenCalledWith(t.req.scope, "cart_1")
+  })
+
+  it("a captured session for another amount is refused with the message that does not say the card was not charged", async () => {
+    const captured = { ...cartWith(36, 32), payment_collection: { payment_sessions: [{ id: "payses_1", amount: 32, status: "captured" }] } }
+    const t = request({ methods: [], carts: { cart_1: captured } })
+    await handler(t.req, t.res, t.next)
+
+    expect(t.next).not.toHaveBeenCalled()
+    expect(t.raw.statusCode).toBe(409)
+    expect(t.raw.body).toEqual({ ...refusal, message: CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE })
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("captured session payses_1 is for 3200"), {
+      cart_id: "cart_1",
+      reason: "captured_amount_mismatch",
+    })
+  })
+
+  it("closed on doubt: a cart that cannot be read, or amounts that cannot be compared, do not complete, and the buyer is not told the total changed", async () => {
+    const unconfirmed = { ...refusal, message: CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE }
     const unreadable = request({ methods: [], carts: {}, graph: "throws" })
     await handler(unreadable.req, unreadable.res, unreadable.next)
     expect(unreadable.next).not.toHaveBeenCalled()
     expect(unreadable.raw.statusCode).toBe(409)
-    expect(unreadable.raw.body).toEqual(refusal)
+    expect(unreadable.raw.body).toEqual(unconfirmed)
     expect(logError).toHaveBeenCalledWith(expect.stringContaining("could not be read"), { cart_id: "cart_1", reason: "amount_unknown" })
+    // Nothing was read, so there is nothing to settle against.
+    expect(refreshCartPaymentCollection).not.toHaveBeenCalled()
 
     for (const cart of [cartWith(null, 32), cartWith(32, null), cartWith(32, 32, { currency_code: "zzz" })]) {
       const t = request({ methods: [], carts: { cart_1: cart } })
       await handler(t.req, t.res, t.next)
       expect(t.next).not.toHaveBeenCalled()
       expect(t.raw.statusCode).toBe(409)
-      expect(t.raw.body).toEqual(refusal)
+      expect(t.raw.body).toEqual(unconfirmed)
     }
   })
 
-  it("left to the route: a cart that does not exist, one that has completed, one with no session to authorize, one that owes nothing", async () => {
+  it("left to the route: a cart that does not exist, one that has completed, one with no session to pay with, one whose authorized session is for the total, one that owes nothing", async () => {
     const passes: Array<Record<string, unknown>> = [
       {},
       { cart_1: cartWith(36, 32, { completed_at: "2026-11-16T00:00:00.000Z" }) },
       { cart_1: { ...cartWith(36, 32), payment_collection: { id: "pay_col_1", payment_sessions: [] } } },
       { cart_1: { ...cartWith(36, 32), payment_collection: null } },
-      { cart_1: { ...cartWith(36, 32), payment_collection: { payment_sessions: [{ id: "payses_1", amount: 32, status: "authorized" }] } } },
+      { cart_1: { ...cartWith(36, 36), payment_collection: { payment_sessions: [{ id: "payses_1", amount: 36, status: "authorized" }] } } },
+      { cart_1: { ...cartWith(36, 32), payment_collection: { payment_sessions: [{ id: "payses_1", amount: 32, status: "canceled" }] } } },
       { cart_1: cartWith(0, 20) },
     ]
     for (const carts of passes) {
@@ -469,5 +510,93 @@ describe("POST /store/carts/:id/complete: a session for another amount is refuse
       await handler(t.req, t.res, t.next)
       expect(t.resolve.mock.calls.map((c) => c[0])).toEqual([ContainerRegistrationKeys.QUERY])
     }
+  })
+})
+
+describe("FBM's completions through Medusa's workflow: a cart refused inside it is settled before the refusal goes out", () => {
+  const refusal = {
+    code: "cart_payment_amount_mismatch",
+    type: "cart_payment_amount_mismatch",
+    message: CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE,
+  }
+  const ROUTES: Array<[string, { path: string; params: Record<string, string>; body?: unknown }]> = [
+    ["/store/carts/:id/complete-tickets", { path: "/store/carts/cart_1/complete-tickets", params: { id: "cart_1" } }],
+    ["/store/carts/:id/complete-digital", { path: "/store/carts/cart_1/complete-digital", params: { id: "cart_1" } }],
+    ["/store/rentals/:cart_id", { path: "/store/rentals/cart_1", params: { cart_id: "cart_1" } }],
+    ["/store/subscriptions", { path: "/store/subscriptions", params: {}, body: { cart_id: "cart_1", interval: "monthly", period: 1 } }],
+  ]
+
+  describe.each(ROUTES)("POST %s", (matcher, init) => {
+    const handler = handlerFor(matcher, "POST")
+
+    it("lets the route run and reads nothing beforehand: the workflow makes the decision, after the route's own checks", async () => {
+      const t = request({ methods: [], carts: {} }, init)
+      await handler(t.req, t.res, t.next)
+      expect(t.next).toHaveBeenCalledTimes(1)
+      expect(t.next).toHaveBeenCalledWith()
+      expect(t.resolve).not.toHaveBeenCalled()
+      expect(refreshCartPaymentCollection).not.toHaveBeenCalled()
+    })
+
+    it("the error handler answers the workflow's refusal: the cart is settled first, then the same answer is sent", async () => {
+      const t = request({ methods: [], carts: {} }, init)
+      refreshCartPaymentCollection.mockImplementation(async () => {
+        t.events.push("settle")
+      })
+      await handler(t.req, t.res, t.next)
+      t.res.status(409).json(refusal)
+      await t.sent
+
+      expect(refreshCartPaymentCollection).toHaveBeenCalledTimes(1)
+      expect(refreshCartPaymentCollection).toHaveBeenCalledWith(t.req.scope, "cart_1")
+      expect(t.events).toEqual(["settle", "sent 409"])
+      expect(t.raw.statusCode).toBe(409)
+      expect(t.raw.body).toBe(refusal)
+    })
+
+    it("settling fails: the refusal goes out all the same, and the failure is logged", async () => {
+      const t = request({ methods: [], carts: {} }, init)
+      refreshCartPaymentCollection.mockRejectedValue(new Error("Failed to acquire lock for key cart_1"))
+      await handler(t.req, t.res, t.next)
+      t.res.status(409).json(refusal)
+      await t.sent
+
+      expect(t.raw.statusCode).toBe(409)
+      expect(t.raw.body).toBe(refusal)
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("its payment side could not be put right"), { cart_id: "cart_1" })
+    })
+
+    it("every other answer goes straight out and settles nothing: an order, another refusal, the route's own 403, a 409 of another kind", async () => {
+      const others: Array<[number, unknown]> = [
+        [200, { type: "order", order: { id: "order_1" } }],
+        [201, { subscription: { id: "sub_1" }, order: { id: "order_1" } }],
+        [400, { type: "not_allowed", message: "This cart has 3 Coalition Credits reserved" }],
+        [403, { message: "Forbidden" }],
+        [409, { code: "cart_completion_incomplete", type: "cart_completion_incomplete", message: "Your order could not be completed" }],
+        // The code under another status is not the error handler's answer.
+        [400, refusal],
+        [409, null],
+      ]
+      for (const [status, body] of others) {
+        const t = request({ methods: [], carts: {} }, init)
+        await handler(t.req, t.res, t.next)
+        t.res.status(status).json(body)
+        expect(t.sendJson).toHaveBeenCalledTimes(1)
+        expect(t.raw.body).toBe(body)
+        expect(t.raw.statusCode).toBe(status)
+      }
+      expect(refreshCartPaymentCollection).not.toHaveBeenCalled()
+    })
+  })
+
+  it("a refusal with no cart named in the request settles nothing: there is no cart to act on", async () => {
+    const handler = handlerFor("/store/subscriptions", "POST")
+    for (const body of [undefined, null, {}, { cart_id: 7 }, { cart_id: "" }]) {
+      const t = request({ methods: [], carts: {} }, { path: "/store/subscriptions", params: {}, body })
+      await handler(t.req, t.res, t.next)
+      t.res.status(409).json(refusal)
+      expect(t.raw.body).toBe(refusal)
+    }
+    expect(refreshCartPaymentCollection).not.toHaveBeenCalled()
   })
 })

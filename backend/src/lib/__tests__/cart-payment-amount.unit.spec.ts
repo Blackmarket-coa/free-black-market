@@ -1,25 +1,36 @@
-import { BigNumber } from "@medusajs/framework/utils"
+import { BigNumber, MedusaError } from "@medusajs/framework/utils"
 import {
+  CART_ALREADY_COMPLETED_MESSAGE,
+  CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE,
   CART_PAYMENT_AMOUNT_MISMATCH,
   CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE,
+  CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE,
   CART_PAYMENT_REFRESH_FAILED,
   CART_PAYMENT_REFRESH_FAILED_MESSAGE,
+  CartPaymentAmountError,
   type CartPaymentAmounts,
+  cartAlreadyCompletedResponse,
   cartPaymentAmountMismatchResponse,
+  cartPaymentAmountRefusalResponse,
   cartPaymentRefreshFailedResponse,
+  isCartPaymentAmountRefusal,
   judgeCartPaymentAmount,
   minorUnitDigits,
+  sessionsNotForCartTotal,
   toMinorUnits,
 } from "../cart-payment-amount"
 
 /**
  * SD-115: the decision a completion is held to. A card is charged what its
  * session was opened for, so a cart goes on to completion only when every
- * session it could newly authorize is for the cart's total, in the currency's
- * minor unit; when that cannot be told, it does not go on.
+ * session the completion would pay with is for the cart's total, in the
+ * currency's minor unit; when that cannot be told, it does not go on.
  */
 
-const cart = (overrides: Partial<CartPaymentAmounts> = {}, sessions: Array<{ amount?: unknown; status?: string }> = []): CartPaymentAmounts => ({
+const cart = (
+  overrides: Partial<CartPaymentAmounts> = {},
+  sessions: Array<{ id?: string | null; amount?: unknown; status?: string }> = []
+): CartPaymentAmounts => ({
   id: "cart_1",
   completed_at: null,
   total: 32,
@@ -126,8 +137,44 @@ describe("judgeCartPaymentAmount", () => {
     expect(judgeCartPaymentAmount(cart({ total: null }, []))).toEqual({ ok: true })
   })
 
-  it("does not judge sessions an earlier attempt already authorized: a retry authorizes nothing new", () => {
-    for (const status of ["authorized", "captured", "canceled", "error"]) {
+  it("holds a session an earlier attempt authorized to the same amount: the orders are recorded on its payment at the cart's total", () => {
+    // Measured before this was compared: authorized at 32, the cart then
+    // repriced to 36, completed into orders of 15 and 21 on one payment of 32.
+    const verdict = judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 32, status: "authorized" }]))
+    expect(verdict).toMatchObject({ ok: false, reason: "session_amount_mismatch" })
+    expect((verdict as { detail: string }).detail).toContain("authorized session payses_1 is for 3200 and the cart's total is 3600")
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 36, status: "authorized" }]))).toEqual({ ok: true })
+  })
+
+  it("refuses a captured session for another amount with a reason of its own: money was taken, so the buyer's message must not say it was not", () => {
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 32, status: "captured" }]))).toMatchObject({
+      ok: false,
+      reason: "captured_amount_mismatch",
+    })
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 36, status: "captured" }]))).toEqual({ ok: true })
+    // It comes first when a pending session is wrong as well, whatever their order.
+    for (const sessions of [
+      [{ amount: 29 }, { amount: 32, status: "captured" }],
+      [{ amount: 32, status: "captured" }, { amount: 29 }],
+    ]) {
+      expect(judgeCartPaymentAmount(cart({ total: 36 }, sessions))).toMatchObject({ ok: false, reason: "captured_amount_mismatch" })
+    }
+  })
+
+  it("a known wrong amount is named before an unreadable one", () => {
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: null }, { amount: 32 }]))).toMatchObject({
+      ok: false,
+      reason: "session_amount_mismatch",
+    })
+    // A captured session whose amount cannot be read is not known to be for another amount.
+    expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: null, status: "captured" }]))).toMatchObject({
+      ok: false,
+      reason: "amount_unknown",
+    })
+  })
+
+  it("does not judge sessions no completion pays with: cancelled, or failed", () => {
+    for (const status of ["canceled", "error"]) {
       expect(judgeCartPaymentAmount(cart({ total: 36 }, [{ amount: 32, status }]))).toEqual({ ok: true })
     }
   })
@@ -150,7 +197,46 @@ describe("judgeCartPaymentAmount", () => {
   })
 })
 
-describe("the two answers", () => {
+describe("sessionsNotForCartTotal: what is deleted so that the next session is the only one, and is for the total", () => {
+  it("names every session that is not for the total and has captured nothing, whatever its status", () => {
+    const sessions = [
+      { id: "payses_ok", amount: 36 },
+      { id: "payses_pending", amount: 32 },
+      { id: "payses_more", amount: 29, status: "requires_more" },
+      { id: "payses_authorized", amount: 32, status: "authorized" },
+      { id: "payses_unreadable", amount: null },
+    ]
+    expect(sessionsNotForCartTotal(cart({ total: 36 }, sessions))).toEqual([
+      "payses_pending",
+      "payses_more",
+      "payses_authorized",
+      "payses_unreadable",
+    ])
+  })
+
+  it("never names a captured session: its intent cannot be cancelled and its money needs a refund", () => {
+    expect(sessionsNotForCartTotal(cart({ total: 36 }, [{ id: "payses_captured", amount: 32, status: "captured" }]))).toEqual([])
+  })
+
+  it("names none when every session is for the total, including with the collection behind it or not: only the session's own amount counts", () => {
+    expect(sessionsNotForCartTotal(cart({ total: 19 }, [{ amount: 19 }]))).toEqual([])
+    expect(sessionsNotForCartTotal(cart({ total: 19 }, [{ id: "payses_raced", amount: 17 }]))).toEqual(["payses_raced"])
+  })
+
+  it("names none where no comparison is owed, or the cart's own side cannot be read", () => {
+    const stale = [{ amount: 32 }]
+    expect(sessionsNotForCartTotal(cart({ total: 36, completed_at: new Date() }, stale))).toEqual([])
+    expect(sessionsNotForCartTotal(cart({ total: 0 }, stale))).toEqual([])
+    expect(sessionsNotForCartTotal(cart({ total: null }, stale))).toEqual([])
+    expect(sessionsNotForCartTotal(cart({ total: 36, currency_code: "zzz" }, stale))).toEqual([])
+    expect(sessionsNotForCartTotal(cart({ total: 36, payment_collection: null }))).toEqual([])
+    expect(sessionsNotForCartTotal(cart({ total: 36 }, [{ amount: 32, status: "canceled" }]))).toEqual([])
+    // A session with no id cannot be named.
+    expect(sessionsNotForCartTotal(cart({ total: 36 }, [{ id: null, amount: 32 }]))).toEqual([])
+  })
+})
+
+describe("the answers", () => {
   it("a completion refused for its session's amount: 409, a stable code, the buyer's message and no ids", () => {
     expect(cartPaymentAmountMismatchResponse()).toEqual({
       status: 409,
@@ -161,6 +247,52 @@ describe("the two answers", () => {
     expect(CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE).toMatch(/choose your payment method again/)
   })
 
+  it("each reason has the message that is true for it, under the one status and code", () => {
+    const body = (message: string) => ({ code: "cart_payment_amount_mismatch", type: "cart_payment_amount_mismatch", message })
+    expect(cartPaymentAmountMismatchResponse("session_amount_mismatch")).toEqual({ status: 409, body: body(CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE) })
+    expect(cartPaymentAmountMismatchResponse("captured_amount_mismatch")).toEqual({ status: 409, body: body(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE) })
+    expect(cartPaymentAmountMismatchResponse("amount_unknown")).toEqual({ status: 409, body: body(CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE) })
+
+    // Money was taken: nothing says it was not, and nothing sends the buyer to pay again.
+    expect(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE).toMatch(/was not placed/)
+    expect(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE).toMatch(/has already been taken/)
+    expect(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE).not.toMatch(/not charged|payment method again/)
+    // Nothing is known about the total: nothing says it changed.
+    expect(CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE).toMatch(/was not placed/)
+    expect(CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE).toMatch(/try again/)
+    expect(CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE).not.toMatch(/total changed|payment method again/)
+  })
+
+  it("the refusal as an error: not_allowed, the code, and the reason's message, for a workflow to throw", () => {
+    const error = new CartPaymentAmountError("captured_amount_mismatch")
+    expect(error).toBeInstanceOf(MedusaError)
+    expect(error.type).toBe(MedusaError.Types.NOT_ALLOWED)
+    expect(error.code).toBe("cart_payment_amount_mismatch")
+    expect(error.message).toBe(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE)
+    expect(error.reason).toBe("captured_amount_mismatch")
+    expect(isCartPaymentAmountRefusal(error)).toBe(true)
+  })
+
+  it("is known by its code alone, as an error that crossed a workflow boundary arrives", () => {
+    expect(isCartPaymentAmountRefusal({ code: "cart_payment_amount_mismatch" })).toBe(true)
+    for (const other of [null, undefined, "cart_payment_amount_mismatch", {}, { code: "cart_completion_incomplete" }, new Error("x")]) {
+      expect(isCartPaymentAmountRefusal(other)).toBe(false)
+    }
+  })
+
+  it("answers that error with one of its own messages and nothing else the error carries", () => {
+    const code = "cart_payment_amount_mismatch" as const
+    expect(cartPaymentAmountRefusalResponse(new CartPaymentAmountError("session_amount_mismatch"))).toEqual(cartPaymentAmountMismatchResponse())
+    expect(cartPaymentAmountRefusalResponse({ code, reason: "captured_amount_mismatch" }).body.message).toBe(CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE)
+    // The reason was lost on the way: the message says which it was.
+    expect(cartPaymentAmountRefusalResponse({ code, message: CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE }).body.message).toBe(
+      CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE
+    )
+    // Neither is one of ours: the message that claims least, never the error's text.
+    const unknown = cartPaymentAmountRefusalResponse({ code, reason: "toString", message: "relation \"cart\" does not exist" })
+    expect(unknown).toEqual(cartPaymentAmountMismatchResponse("amount_unknown"))
+  })
+
   it("a cart write whose payment could not be refreshed: 500, a stable code, and a message that says to try again", () => {
     expect(cartPaymentRefreshFailedResponse()).toEqual({
       status: 500,
@@ -168,5 +300,12 @@ describe("the two answers", () => {
     })
     expect(CART_PAYMENT_REFRESH_FAILED).toBe("cart_payment_refresh_failed")
     expect(CART_PAYMENT_REFRESH_FAILED_MESSAGE).toMatch(/try again/)
+  })
+
+  it("a reprice asked of a completed cart: 400 invalid_data, as Medusa's own cart writes answer one, with a code", () => {
+    expect(cartAlreadyCompletedResponse()).toEqual({
+      status: 400,
+      body: { code: "cart_already_completed", type: "invalid_data", message: CART_ALREADY_COMPLETED_MESSAGE },
+    })
   })
 })
