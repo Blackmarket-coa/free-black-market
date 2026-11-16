@@ -1599,7 +1599,7 @@ medusaIntegrationTestRunner({
           }
         })
 
-        it("lists one whose vendor's earnings were debited under the creator-commission label, whoever posted the leg: an admin's manual transfer so labelled, the same with the attribution reference on it, another order's commission as approve-held posts it; lists one whose own commission was already credited while its row is still held, and approve-held then approves that row at the old figure the ledger moved; corrects one whose vendor's earnings only gained since", async () => {
+        it("lists one whose vendor's earnings were debited under the creator-commission label, whoever posted the leg: an admin's manual transfer so labelled, the same with the attribution reference on it, another order's commission as approve-held posts it; corrects one whose vendor's earnings only gained since", async () => {
           // (B) The review's case: $20 off the vendor's earnings through
           // `POST /admin/hawala/transfers`, labelled CREATOR_COMMISSION. The
           // route hands the label to the ledger as it came.
@@ -1618,7 +1618,7 @@ medusaIntegrationTestRunner({
           // (B2) The same transfer with every label the route lets an admin
           // choose set as approve-held's leg has them: the reference type, and
           // for a reference id the attribution row of another order of the
-          // vendor's. The route takes no order id.
+          // vendor's. The route takes no order id: the one sent is dropped.
           const referenced = await storefrontOrder()
           const otherOrder = await order25(referenced.vendor.id)
           const otherRow = await attributionRow(otherOrder.id, referenced.vendor.id)
@@ -1671,37 +1671,6 @@ medusaIntegrationTestRunner({
           })
           expect(await balanceOf(commissioned.vendor.id)).toBe(4850 - 250)
 
-          // (D) The review's other case: this order's own commission already
-          // credited at the old figure, by the ledger call approve-held makes
-          // for this row, and the row still held with no ledger entry on it.
-          // approve-held credits first and updates the row second, so a row
-          // update that fails leaves exactly this.
-          const taken = await storefrontOrder()
-          await attribution().updateOrderAttributions({ id: taken.row.id, hold_until: new Date(Date.now() - 60_000) })
-          const credit = await hawala().creditCreatorCommission({
-            vendorSellerId: taken.vendor.id,
-            creatorSellerId: taken.creator.id,
-            amountCents: 2,
-            orderId: taken.order.id,
-            attributionId: taken.row.id,
-          })
-          const takenDebits = await debitsOf(taken.vendor.id)
-          expect(takenDebits).toHaveLength(1)
-          expect(takenDebits[0]).toMatchObject({
-            id: credit.id,
-            entry_type: "CREATOR_COMMISSION",
-            status: "COMPLETED",
-            reference_type: "CREATOR_ATTRIBUTION",
-            reference_id: taken.row.id,
-            order_id: taken.order.id,
-            idempotency_key: `creator-commission-${taken.row.id}`,
-          })
-          expect(card.cents(takenDebits[0].amount)).toBe(2)
-          expect((await attribution().listOrderAttributions({ id: taken.row.id }))[0]).toMatchObject({
-            commission_status: CommissionStatus.HELD,
-            ledger_entry_id: null,
-          })
-
           // Money came in since the order and none left: a later sale
           // settles to the same vendor. Nothing here lists an order.
           const gained = await storefrontOrder()
@@ -1709,7 +1678,7 @@ medusaIntegrationTestRunner({
           expect(await debitsOf(gained.vendor.id)).toEqual([])
           expect(await balanceOf(gained.vendor.id)).toBe(4850)
 
-          const all = [labelled, referenced, commissioned, taken, gained]
+          const all = [labelled, referenced, commissioned, gained]
           for (const o of all) expect((await read(o.row.id)).status).toBe(CommissionStatus.HELD)
 
           // A dry run first, as the review ran it, then the same with `apply`.
@@ -1727,39 +1696,166 @@ medusaIntegrationTestRunner({
           expect(why(reasons[labelled.order.id])).toBe(
             drawnOn(labelled.vendor.id, `CREATOR_COMMISSION leg ${labelledDebits[0].id} COMPLETED`)
           )
+          expect(reasons[labelled.order.id]).toContain("from 2 to 250")
           expect(why(reasons[referenced.order.id])).toBe(
             drawnOn(referenced.vendor.id, `CREATOR_COMMISSION leg for CREATOR_ATTRIBUTION ${referencedDebits[0].id} COMPLETED`)
           )
           expect(why(reasons[commissioned.order.id])).toBe(
             drawnOn(commissioned.vendor.id, `CREATOR_COMMISSION leg of order ${laterSale.id} ${commissionedDebits[0].id} COMPLETED`)
           )
-          // The order's own commission is worded as that, once: the leg is
-          // not named a second time as earnings drawn on.
-          expect(why(reasons[taken.order.id])).toBe(
-            `commission was already taken from vendor ${taken.vendor.id} for this order: ledger entry ${credit.id} (0.02 COMPLETED) ` +
-              `is under the key approve-held credits row ${taken.row.id} with, and the row is still held with no ledger entry recorded on it, ` +
-              `so approve-held would be handed that entry back, move nothing more, and approve the row at whatever its column then says`
-          )
-          expect(reasons[taken.order.id]).toContain("from 2 to 250")
           // (B2)'s other order is an attributed order too, and never settled.
           expect(summary.never_settled).toEqual([otherOrder.id])
-          for (const o of [labelled, referenced, commissioned, taken]) {
+          for (const o of [labelled, referenced, commissioned]) {
+            expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
+          }
+        })
+
+        it("lists one that already has a ledger entry under the key approve-held credits its row with: the job's own credit landed and its row update did not (commission already taken), an admin posted one under the key by hand, the job's credit failed at the balance move; approve-held is then handed each entry back and approves the row, at the old figure because the row was left alone", async () => {
+          const due = (rowId: string) => attribution().updateOrderAttributions({ id: rowId, hold_until: new Date(Date.now() - 60_000) })
+          const notDue = (rowId: string) => attribution().updateOrderAttributions({ id: rowId, hold_until: new Date(Date.now() + 86_400_000) })
+          const rowOf = async (rowId: string) => (await attribution().listOrderAttributions({ id: rowId }))[0]
+          const underKey = async (rowId: string) =>
+            (await hawala().listLedgerEntries({ idempotency_key: `creator-commission-${rowId}` })) as Array<{
+              id: string
+              status: string
+              amount: unknown
+              entry_type: string
+              reference_type: string | null
+              reference_id: string | null
+              order_id: string | null
+              debit_account_id: string
+            }>
+          // The creator's earnings account opened in the ledger's own "USD",
+          // so the job's credit is not refused for the code alone (SD-99 (1)
+          // in docs/AUDIT_DEBT.md: the job opens it in the attribution's "usd").
+          const creatorEarnings = async (creatorId: string) => hawala().getOrCreateCreatorEarnings(creatorId, "USD")
+          const heldUntouched = { commission_status: CommissionStatus.HELD, ledger_entry_id: null }
+
+          // (D) The review's case, made by the job itself: approve-held
+          // credits first and updates the row second, and here the row
+          // update is lost. The $0.02 has moved; the row still says held.
+          const taken = await storefrontOrder()
+          await creatorEarnings(taken.creator.id)
+          await due(taken.row.id)
+          const lostUpdate = jest
+            .spyOn(attribution(), "approveCommission")
+            .mockRejectedValueOnce(new Error("spec: the row update was lost"))
+          await approveHeldCreatorAttributionsJob(container())
+          expect(lostUpdate).toHaveBeenCalledTimes(1)
+          lostUpdate.mockRestore()
+          await notDue(taken.row.id)
+          const [credit] = await underKey(taken.row.id)
+          expect(credit).toMatchObject({
+            entry_type: "CREATOR_COMMISSION",
+            status: "COMPLETED",
+            reference_type: "CREATOR_ATTRIBUTION",
+            reference_id: taken.row.id,
+            order_id: taken.order.id,
+            debit_account_id: (await card.sellerEarnings(taken.vendor.id)).id,
+          })
+          expect(card.cents(credit.amount)).toBe(2)
+          expect((await debitsOf(taken.vendor.id)).map((l) => l.id)).toEqual([credit.id])
+          expect(await balanceOf(taken.vendor.id)).toBe(2425 - 2)
+          expect(await rowOf(taken.row.id)).toMatchObject(heldUntouched)
+
+          // (D2) An entry under the row's key that the vendor's earnings
+          // never saw: an admin pays the creator the commission by hand out
+          // of another seller's earnings, through the manual-transfer route,
+          // which takes an idempotency key as it takes a label.
+          const byHand = await storefrontOrder()
+          const bank = await makeSeller("Bank")
+          await settle((await order25(bank.id)).id, bank.id)
+          const paid = await adminTransfer(bank.id, {
+            credit_account_id: (await creatorEarnings(byHand.creator.id)).id,
+            amount: 0.02,
+            entry_type: "CREATOR_COMMISSION",
+            reference_type: "CREATOR_ATTRIBUTION",
+            reference_id: byHand.row.id,
+            idempotency_key: `creator-commission-${byHand.row.id}`,
+          })
+          expect({ status: paid.status, body: paid.status === 201 ? null : paid.data }).toEqual({ status: 201, body: null })
+          const [handEntry] = await underKey(byHand.row.id)
+          expect(handEntry).toMatchObject({ status: "COMPLETED", debit_account_id: (await card.sellerEarnings(bank.id)).id })
+          expect(await debitsOf(byHand.vendor.id)).toEqual([])
+          expect(await balanceOf(byHand.vendor.id)).toBe(2425)
+          expect(await rowOf(byHand.row.id)).toMatchObject(heldUntouched)
+
+          // (D3) The job's credit fails at the balance move (the balance
+          // changed under it, a lost race): `createTransfer` has already
+          // written the leg and marks it FAILED. Nothing moved; the entry
+          // stays under the row's key.
+          const failedCredit = await storefrontOrder()
+          await creatorEarnings(failedCredit.creator.id)
+          await due(failedCredit.row.id)
+          const lostRace = jest
+            .spyOn(hawala(), "updateBalancesAtomic")
+            .mockRejectedValueOnce(new Error("spec: the balance moved under the transfer"))
+          await approveHeldCreatorAttributionsJob(container())
+          expect(lostRace).toHaveBeenCalledTimes(1)
+          lostRace.mockRestore()
+          await notDue(failedCredit.row.id)
+          const [failedEntry] = await underKey(failedCredit.row.id)
+          expect(failedEntry).toMatchObject({ entry_type: "CREATOR_COMMISSION", status: "FAILED", order_id: failedCredit.order.id })
+          expect(await balanceOf(failedCredit.vendor.id)).toBe(2425)
+          expect(await rowOf(failedCredit.row.id)).toMatchObject(heldUntouched)
+
+          // No entry under its key, no debit: corrected.
+          const clean = await storefrontOrder()
+          expect(await underKey(clean.row.id)).toEqual([])
+
+          const dry = await fixCreatorCommissionMinorUnits(container(), { now: afterPayoutWindow() })
+          expect(dry.corrected.map((c) => c.order_id)).toEqual([clean.order.id])
+          const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+          const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+          expect(summary.corrected.map((c) => c.order_id)).toEqual([clean.order.id])
+          expect(dry.review).toEqual(summary.review)
+
+          // Each is listed for the entry under its key and for nothing else.
+          // The entry is named once: (D)'s and (D3)'s also debit the
+          // vendor's earnings and are not listed again as a debit of them.
+          const handedBack = (rowId: string) =>
+            `is under the key approve-held credits row ${rowId} with, and the row is still held with no ledger entry recorded on it, ` +
+            `so approve-held would be handed that entry back, move nothing more, and approve the row at whatever its column then says`
+          expect(why(reasons[taken.order.id])).toBe(
+            `commission was already taken from vendor ${taken.vendor.id} for this order: ledger entry ${credit.id} (0.02 COMPLETED) ` +
+              handedBack(taken.row.id)
+          )
+          expect(reasons[taken.order.id]).toContain("from 2 to 250")
+          expect(why(reasons[byHand.order.id])).toBe(
+            `a commission credit for this order is already in the ledger: ledger entry ${handEntry.id} (0.02 COMPLETED) ` +
+              handedBack(byHand.row.id)
+          )
+          expect(why(reasons[failedCredit.order.id])).toBe(
+            `a commission credit for this order is already in the ledger: ledger entry ${failedEntry.id} (0.02 FAILED) ` +
+              handedBack(failedCredit.row.id)
+          )
+          expect(summary.never_settled).toEqual([])
+          for (const o of [taken, byHand, failedCredit]) {
             expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
           }
 
-          // What that line says approve-held would do, run: the job (the
-          // row's hold has ended) is handed the existing entry back and
-          // approves the row. Left at the old figure, the row says 2 and the
-          // ledger moved $0.02. Corrected first, it would have said 250.
+          // What those lines say approve-held would do, run: with the holds
+          // ended, the job is handed each existing entry back, moves nothing,
+          // and approves the row with that entry's id. (D): left at the old
+          // figure, the row says 2 and the ledger moved $0.02; corrected
+          // first, it would have said 250. (D2) and (D3) are approved on an
+          // entry that took nothing from the vendor, and for (D3) paid the
+          // creator nothing: `createTransfer` returns whatever sits under a
+          // key, FAILED included, and the job does not look at its status.
+          // Pinned as it is; when approve-held checks the entry it is
+          // handed, the last two change.
+          for (const o of [taken, byHand, failedCredit]) await due(o.row.id)
           await approveHeldCreatorAttributionsJob(container())
-          expect((await attribution().listOrderAttributions({ id: taken.row.id }))[0]).toMatchObject({
-            commission_status: CommissionStatus.APPROVED,
-            ledger_entry_id: credit.id,
-          })
+          expect(await rowOf(taken.row.id)).toMatchObject({ commission_status: CommissionStatus.APPROVED, ledger_entry_id: credit.id })
           expect(await read(taken.row.id)).toMatchObject({ subtotal: 25, commission: 2 })
-          const takenAfter = await debitsOf(taken.vendor.id)
-          expect(takenAfter.map((l) => l.id)).toEqual([credit.id])
+          expect((await debitsOf(taken.vendor.id)).map((l) => l.id)).toEqual([credit.id])
           expect(await balanceOf(taken.vendor.id)).toBe(2425 - 2)
+          expect(await rowOf(byHand.row.id)).toMatchObject({ commission_status: CommissionStatus.APPROVED, ledger_entry_id: handEntry.id })
+          expect(await balanceOf(byHand.vendor.id)).toBe(2425)
+          expect(await rowOf(failedCredit.row.id)).toMatchObject({ commission_status: CommissionStatus.APPROVED, ledger_entry_id: failedEntry.id })
+          expect((await underKey(failedCredit.row.id)).map((e) => e.status)).toEqual(["FAILED"])
+          expect(await balanceOf(failedCredit.vendor.id)).toBe(2425)
+          expect(card.cents((await creatorEarnings(failedCredit.creator.id)).balance)).toBe(0)
         })
 
         it("lists one with a leg off the vendor's earnings that is still PENDING, whether its money moved (a transfer cut off before it was marked COMPLETED) or not (a leg written and never applied); corrects one with neither", async () => {
