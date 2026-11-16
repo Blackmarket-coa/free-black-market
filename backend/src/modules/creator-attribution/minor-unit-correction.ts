@@ -272,8 +272,9 @@ export const PAYOUT_WINDOW_MS = 2 * 24 * 60 * 60 * 1000
 
 /**
  * What the script reads about who approve-held would debit for an order,
- * whether the order's proceeds reached them, and whether they were paid
- * since. All of it is true as of `checked_at` and no later.
+ * whether the order's proceeds reached them, whether it was refunded, and
+ * whether they were paid, or their earnings otherwise debited, since. All
+ * of it is true as of `checked_at` and no later.
  */
 export type VendorDebitContext = {
   /** The order's seller (Mercur's seller link), or null when it has none. */
@@ -326,21 +327,38 @@ export type VendorDebitContext = {
   /** Why `order_payment` is null, for the review line. */
   order_payment_unread?: string | null
   /**
+   * Every payment collection linked to the order (Medusa's order to payment
+   * collection link), read by the script on its own, or null when the order
+   * was not found. `order_payment` speaks for the collections it names and
+   * no others: for a storefront order that is the one its split payment row
+   * names, so a second collection (an order change that raised the total
+   * takes its further payment on a new one) is not read, and a refund made
+   * there is invisible to it. An order whose linked collections are not
+   * exactly the ones `order_payment` was read from is listed. A context with
+   * none lists the order.
+   */
+  order_payment_collection_ids: readonly string[] | null
+  /**
    * Per vendor id: money that left that vendor's earnings after the order was
    * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; WITHDRAWAL
    * or VENDOR_PAYMENT legs off their SELLER_EARNINGS that moved money).
    */
   vendor_withdrawals: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
   /**
-   * Per vendor id: money taken from that vendor's earnings after the order
-   * was placed other than by a payout: ADJUSTMENT legs off their
-   * SELLER_EARNINGS that moved money (the ledger's recoveries of what a
-   * vendor owes — card processing, a refund made after a payout, a
-   * chargeback fee — taken from each later seller credit and before each
-   * payout; a manual adjustment posts the same type) and ADVANCE_REPAYMENT
-   * legs. A vendor missing here has none.
+   * Per vendor id: every other leg that debited that vendor's
+   * SELLER_EARNINGS after the order was placed and moved money, WHATEVER ITS
+   * ENTRY TYPE. Not a list of types to look for: `createTransfer` takes any
+   * entry type, and the ledger takes money off a vendor's earnings under
+   * many (ADJUSTMENT for its recoveries of what a vendor owes,
+   * ADVANCE_REPAYMENT, TRANSFER when a vendor funds a creator reward pool or
+   * an admin moves money by hand, COMMISSION, FEE, INVESTMENT, a REFUND of
+   * another order of theirs). The script leaves out two kinds only, both
+   * accounted for elsewhere: CREATOR_COMMISSION legs (another order's
+   * commission, taken by approve-held, which is the debit this is about) and
+   * this order's own REFUND legs (`order_refunds`). `kind` names the leg for
+   * the line. A vendor missing here has none.
    */
-  vendor_recoveries: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
+  vendor_other_debits: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
 }
 
 /**
@@ -405,9 +423,48 @@ function describeAmount(amount: unknown): string {
 }
 
 /**
+ * The reasons to list an order because its payment records were not read
+ * from exactly the payment collections linked to it. The records speak for
+ * the collections they name: a storefront order's are read from the one its
+ * split payment row names, and a refund on any other collection of the
+ * order's is not in them.
+ */
+function reviewPaymentCollectionsRead(ctx: VendorDebitContext, readFrom: readonly string[]): string[] {
+  const linked = ctx.order_payment_collection_ids
+  if (!Array.isArray(linked)) {
+    return [
+      `the payment collections linked to the order could not be read, ` +
+        `so it cannot be shown that its payment records cover every one of them`,
+    ]
+  }
+  const reasons: string[] = []
+  const from = readFrom.length ? `payment collection ${readFrom.join(", ")}` : "no payment collection"
+  const unread = [...new Set(linked.filter((id) => !readFrom.includes(id)))]
+  if (unread.length) {
+    const one = unread.length === 1
+    reasons.push(
+      `payment collection${one ? "" : "s"} ${unread.join(", ")} of the order's ${one ? "was" : "were"} not read: ` +
+        `its payment records were read from ${from} only ` +
+        `(a storefront order's are read from the collection its split payment row names), ` +
+        `so a refund made on ${one ? "it" : "them"} is not seen`
+    )
+  }
+  const foreign = [...new Set(readFrom.filter((id) => !linked.includes(id)))]
+  if (foreign.length) {
+    reasons.push(
+      `the order's payment records were read from payment collection ${foreign.join(", ")}, which is not among ` +
+        `the collections linked to the order (${linked.length ? linked.join(", ") : "it has none"}), ` +
+        `so they may not be this order's`
+    )
+  }
+  return reasons
+}
+
+/**
  * The reasons the order's payment records give to list it: they could not be
  * read, they are not a card payment's, they cannot say what was refunded for
- * this order, or they show a refund or an open dispute. Every comparison is
+ * this order, they were not read from every payment collection of the
+ * order's, or they show a refund or an open dispute. Every comparison is
  * written so that a missing or unreadable figure lists the order.
  */
 function reviewOrderPayment(ctx: VendorDebitContext): string[] {
@@ -434,6 +491,7 @@ function reviewOrderPayment(ctx: VendorDebitContext): string[] {
         `so it cannot be shown that it was not refunded`
     )
   }
+  reasons.push(...reviewPaymentCollectionsRead(ctx, ids))
   if (typeof pay.refunded === "number" && pay.refunded > 0) {
     const figure =
       `the order's payment records show ${describeAmount(pay.refunded)} refunded` +
@@ -513,7 +571,11 @@ function describeAge(ms: number): string {
  *   kept for what it adds to the line and this is what decides;
  * - is on an order whose payment records cannot answer that: the read
  *   returned nothing or failed, the order was not paid through FBM's own
- *   card account, or the records put no amount on this one order. What
+ *   card account, the records put no amount on this one order, or they were
+ *   not read from exactly the payment collections linked to the order
+ *   (`order_payment_collection_ids`: a storefront order's records come from
+ *   the collection its split payment row names, so a refund on a second
+ *   collection of the order's is not in them). What
  *   `readCardSettlementOrder` returns for an order not paid by card is a
  *   record with funding `other` (or `connect_direct`) and, when the order
  *   has its own payment collection, that collection's captured and refunded
@@ -524,11 +586,14 @@ function describeAge(ms: number): string {
  *   payout request that moved money, or a withdrawal or a payment to another
  *   vendor off their earnings. The commission was never carved out of that
  *   money, so the debit would come out of later sales' proceeds;
- * - names a vendor whose earnings were drawn on since the order was placed
- *   to recover what they owed (an ADJUSTMENT leg: card processing, a refund
- *   after a payout, a chargeback fee; a manual adjustment is the same type)
- *   or to repay an advance (ADVANCE_REPAYMENT). The same reasoning: what was
- *   taken had no commission carved out of it;
+ * - names a vendor whose earnings were debited since the order was placed
+ *   by any other ledger leg that moved money, whatever its entry type
+ *   (`vendor_other_debits`): the ledger's recovery of what they owed, an
+ *   advance repayment, a creator reward pool they funded, a transfer an
+ *   admin made by hand, a refund of another order of theirs. The same
+ *   reasoning: what was taken had no commission carved out of it. Only
+ *   another order's CREATOR_COMMISSION and this order's own refund legs are
+ *   left out;
  * - is on an order whose proceeds a Mercur payout already sent;
  * - is on an order placed, or settled to the vendor's earnings, less than
  *   {@link PAYOUT_WINDOW_MS} before the check with no Mercur payout yet: the
@@ -547,17 +612,20 @@ function describeAge(ms: number): string {
  * between this check and that debit (an order older than the window whose
  * seller only later gets an active payout account, a payout request raised
  * the next day), or an order refunded in between, is debited the full
- * commission out of whatever the vendor holds by then. Nor does it read
- * every way money leaves a vendor's earnings: payout requests, and legs of
- * type WITHDRAWAL, VENDOR_PAYMENT, ADJUSTMENT and ADVANCE_REPAYMENT off
- * them, are read; a debit of any other entry type is not looked at. And
- * "not refunded" is what the ledger and the payment records show at
+ * commission out of whatever the vendor holds by then. What has left a
+ * vendor's earnings is read from payout requests and from ledger legs that
+ * debit their SELLER_EARNINGS and are COMPLETED or SETTLED: a leg still
+ * PENDING, and money that is not in SELLER_EARNINGS at all, are not looked
+ * at. And "not refunded" is what the ledger and the payment records show at
  * `checked_at`: a refund made in Stripe's dashboard is in neither until
- * Stripe's webhook has recorded it. Commission is not reserved from the
- * vendor at settlement, for corrected rows or for any new attributed order;
- * until it is, or until approve-held makes these checks itself, this narrows
- * the cases and settles none of them. Hence: run the script immediately
- * before the repair that makes crediting work deploys, not earlier.
+ * Stripe's webhook has recorded it, and a refund that is owed but not yet
+ * made (a return received, an order dispute decided for the buyer, which
+ * moves no money by itself) is in neither either. Commission is not
+ * reserved from the vendor at settlement, for corrected rows or for any new
+ * attributed order; until it is, or until approve-held makes these checks
+ * itself, this narrows the cases and settles none of them. Hence: run the
+ * script immediately before the repair that makes crediting work deploys,
+ * not earlier.
  */
 export function reviewVendorDebit(
   plan: Extract<CommissionMinorUnitCorrection, { action: "correct" }>,
@@ -608,12 +676,12 @@ export function reviewVendorDebit(
           `and the commission was never carved out of what they were paid`
       )
     }
-    const recovered = ctx.vendor_recoveries[vendor] ?? []
-    if (recovered.length) {
-      const shown = recovered.slice(0, 3).map((w) => `${w.kind} ${w.id} ${w.status}`)
+    const debited = ctx.vendor_other_debits[vendor] ?? []
+    if (debited.length) {
+      const shown = debited.slice(0, 3).map((w) => `${w.kind} ${w.id} ${w.status}`)
       reasons.push(
         `vendor ${vendor}'s earnings were drawn on since the order was placed ` +
-          `(${shown.join(", ")}${recovered.length > 3 ? ", …" : ""}: a recovery of what they owed, or a manual adjustment), ` +
+          `(${shown.join(", ")}${debited.length > 3 ? ", …" : ""}), ` +
           `and the commission was never carved out of what was taken`
       )
     }

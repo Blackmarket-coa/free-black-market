@@ -4,6 +4,7 @@ import { refundPaymentWorkflow } from "@medusajs/medusa/core-flows"
 import { PAYOUT_MODULE } from "@mercurjs/b2c-core/modules/payout"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { refundSplitOrderPaymentWorkflow } from "@mercurjs/b2c-core/workflows"
+import jwt from "jsonwebtoken"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../src/modules/creator-attribution"
 import { CommissionStatus } from "../../src/modules/creator-attribution/models/order-attribution"
 import { HAWALA_LEDGER_MODULE } from "../../src/modules/hawala-ledger"
@@ -1025,7 +1026,7 @@ medusaIntegrationTestRunner({
         const owedReason = why(reasons[owedOrder.id])
         const drawnOn =
           `vendor ${owedVendor.id}'s earnings were drawn on since the order was placed ` +
-          `(adjustment ${taken.id} COMPLETED: a recovery of what they owed, or a manual adjustment), ` +
+          `(adjustment ${taken.id} COMPLETED), ` +
           `and the commission was never carved out of what was taken; `
         expect(owedReason.startsWith(`${drawnOn}the order was refunded in the ledger (refund leg `)).toBe(true)
         expect(owedReason.endsWith(`) with nothing taken from ${owedVendor.id}'s earnings, ${notReversed}; ${onPaymentRecords(20)}`)).toBe(true)
@@ -1147,8 +1148,7 @@ medusaIntegrationTestRunner({
         const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
         const drawnOn = (vendorId: string, what: string) =>
           `vendor ${vendorId}'s earnings were drawn on since the order was placed ` +
-          `(${what}: a recovery of what they owed, or a manual adjustment), ` +
-          `and the commission was never carved out of what was taken`
+          `(${what}), and the commission was never carved out of what was taken`
         expect(summary.corrected).toEqual([])
         // Each is listed for that and nothing else. The transfer made before
         // the order was placed is not named: only what left since counts.
@@ -1276,6 +1276,12 @@ medusaIntegrationTestRunner({
        * after the order's legs were anchored SETTLED. The script reads the
        * payment records for these; before it did, each order here was
        * corrected to 250 with its attribution still held.
+       *
+       * Two more, found by the review of that read, each corrected before
+       * its case below: a vendor's earnings debited since the order by a leg
+       * of an entry type the script did not name (it named four), and a
+       * refund on a second payment collection of the order's, which the
+       * payment records (read from the split row's collection) do not see.
        */
       describe("on orders placed through the storefront checkout", () => {
         afterEach(async () => {
@@ -1465,6 +1471,217 @@ medusaIntegrationTestRunner({
             `the order was refunded out of vendor ${split.vendor.id}'s earnings (refund leg ${offVendor[0].id} 19.4 COMPLETED) and ${notReversed}; ` +
               `the order's payment records show 20 refunded of 25 captured`
           )
+        })
+
+        it("lists one whose vendor's earnings were debited since the order by a leg of an entry type no list would name: a creator reward pool funded from the vendor's earnings, a transfer an admin makes through the manual-transfer route, a refund of another order of the vendor's; corrects one whose vendor's only debit since is another order's creator commission", async () => {
+          const secret = process.env.JWT_SECRET as string
+          expect(secret).toBeTruthy()
+          const asAdmin = async () => {
+            const [user] = await container().resolve(Modules.USER).createUsers([{ email: `admin+${uid()}@example.com` }])
+            const token = jwt.sign(
+              { actor_id: user.id, actor_type: "user", auth_identity_id: "", app_metadata: { user_id: user.id } },
+              secret,
+              { expiresIn: "1h" }
+            )
+            return { headers: { authorization: `Bearer ${token}` } }
+          }
+          /** Every leg that debits the vendor's earnings, whatever its type or status. */
+          const debitsOf = async (vendorId: string) =>
+            (await hawala().listLedgerEntries(
+              { debit_account_id: (await card.sellerEarnings(vendorId)).id },
+              { order: { created_at: "ASC" } }
+            )) as Array<{
+              id: string
+              entry_type: string
+              status: string
+              amount: unknown
+              reference_type: string | null
+              order_id: string | null
+            }>
+          const balanceOf = async (vendorId: string) => card.cents((await card.sellerEarnings(vendorId)).balance)
+
+          // Money came in since the order, and the one thing that left is
+          // another order's creator commission: a second sale settles to the
+          // same vendor, and its commission goes to a creator out of the
+          // vendor's earnings (`creditCreatorCommission`, the ledger call
+          // approve-held makes, here in the ledger's own currency code). That
+          // is the debit this script is about, not a reason against it, so
+          // the order is corrected.
+          const clean = await storefrontOrder()
+          const laterSale = await order25(clean.vendor.id)
+          await settle(laterSale.id, clean.vendor.id)
+          await hawala().creditCreatorCommission({
+            vendorSellerId: clean.vendor.id,
+            creatorSellerId: (await makeSeller("OtherCreator")).id,
+            amountCents: 250,
+            orderId: laterSale.id,
+            attributionId: `oatt_${uid()}`,
+          })
+          const cleanDebits = await debitsOf(clean.vendor.id)
+          expect(cleanDebits).toHaveLength(1)
+          expect(cleanDebits[0]).toMatchObject({ entry_type: "CREATOR_COMMISSION", status: "COMPLETED", order_id: laterSale.id })
+          expect(await balanceOf(clean.vendor.id)).toBe(4850 - 250)
+
+          // (1) A creator reward pool funded out of the vendor's earnings:
+          // the ledger call `POST /v1/seller/programs/:id/reward-pools`
+          // makes once it has stored the pool, with that route's arguments.
+          // The call, not the route: on a database built from the migrations
+          // the route answers 400 before it, because `reward_pool` has no
+          // `raw_total_cents` column there (SD-63 in docs/AUDIT_DEBT.md).
+          const funded = await storefrontOrder()
+          await hawala().fundCreatorRewardPool({
+            poolId: `rpool_${uid()}`,
+            funderSellerId: funded.vendor.id,
+            amountCents: 2000,
+            currencyCode: "USD",
+          })
+          const fundedDebits = await debitsOf(funded.vendor.id)
+          expect(fundedDebits).toHaveLength(1)
+          expect(fundedDebits[0]).toMatchObject({ entry_type: "TRANSFER", status: "COMPLETED", reference_type: "CREATOR_REWARD_POOL", order_id: null })
+          expect(card.cents(fundedDebits[0].amount)).toBe(2000)
+          // $24.25 came in for the order; $4.25 of it is left.
+          expect(await balanceOf(funded.vendor.id)).toBe(425)
+
+          // (2) An admin moves money off the vendor's earnings by hand,
+          // through `POST /admin/hawala/transfers`, under an entry type of
+          // their own wording: the route passes it to the ledger unchanged.
+          const moved = await storefrontOrder()
+          const reserve = await hawala().getOrCreateSystemAccount("RESERVE")
+          const manual = await api
+            .post(
+              `/admin/hawala/transfers`,
+              {
+                debit_account_id: (await card.sellerEarnings(moved.vendor.id)).id,
+                credit_account_id: reserve.id,
+                amount: 20,
+                entry_type: "CORRECTION",
+                description: "spec: an admin's manual transfer off the vendor's earnings",
+              },
+              await asAdmin()
+            )
+            .catch((e: any) => e.response)
+          expect({ status: manual.status, body: manual.status === 201 ? null : manual.data }).toEqual({ status: 201, body: null })
+          const movedDebits = await debitsOf(moved.vendor.id)
+          expect(movedDebits).toHaveLength(1)
+          expect(movedDebits[0]).toMatchObject({ entry_type: "CORRECTION", status: "COMPLETED", reference_type: null, order_id: null })
+          expect(await balanceOf(moved.vendor.id)).toBe(425)
+
+          // (3) Another order of the vendor's, placed later, is refunded
+          // $20: the seller's share comes out of the same earnings.
+          const sibling = await storefrontOrder()
+          const laterOrder = await order25(sibling.vendor.id)
+          const laterPaid = await settle(laterOrder.id, sibling.vendor.id)
+          process.env[CARD] = "true"
+          await card.refund(laterPaid.paymentId, 20)
+          await card.refunded(laterPaid.paymentId)
+          delete process.env[CARD]
+          await drainSubscribers()
+          const siblingDebits = await debitsOf(sibling.vendor.id)
+          expect(siblingDebits).toHaveLength(1)
+          expect(siblingDebits[0]).toMatchObject({ entry_type: "REFUND", status: "COMPLETED", order_id: laterOrder.id })
+          expect(card.cents(siblingDebits[0].amount)).toBe(1940)
+          // The attributed order itself has no refund: not in the ledger, not on its payment records.
+          expect(await refundLegsOf(sibling.order.id)).toEqual([])
+          expect(await readCardSettlementOrder(container(), sibling.order.id)).toMatchObject({ refunded: 0, unattributed_refund: null })
+
+          for (const o of [clean, funded, moved, sibling]) expect((await read(o.row.id)).status).toBe(CommissionStatus.HELD)
+
+          const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+          const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+          const drawnOn = (vendorId: string, what: string) =>
+            `vendor ${vendorId}'s earnings were drawn on since the order was placed (${what}), ` +
+            `and the commission was never carved out of what was taken`
+          expect(summary.corrected.map((c) => c.order_id)).toEqual([clean.order.id])
+          expect(await read(clean.row.id)).toMatchObject({ subtotal: 2500, commission: 250, status: CommissionStatus.HELD })
+          // Each of the three is listed for that debit and for nothing else.
+          expect(why(reasons[funded.order.id])).toBe(
+            drawnOn(funded.vendor.id, `TRANSFER leg for CREATOR_REWARD_POOL ${fundedDebits[0].id} COMPLETED`)
+          )
+          expect(reasons[funded.order.id]).toContain("from 2 to 250")
+          expect(why(reasons[moved.order.id])).toBe(drawnOn(moved.vendor.id, `CORRECTION leg ${movedDebits[0].id} COMPLETED`))
+          expect(why(reasons[sibling.order.id])).toBe(
+            drawnOn(sibling.vendor.id, `REFUND leg of order ${laterOrder.id} ${siblingDebits[0].id} COMPLETED`)
+          )
+          expect(summary.never_settled).toEqual([])
+          for (const o of [funded, moved, sibling]) {
+            expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
+          }
+        })
+
+        it("lists one with a second payment collection its payment records were not read from, whether $10 was refunded there or nothing was; corrects one whose only collection is the one its split row names", async () => {
+          const linkedCollections = async (orderId: string) => {
+            const { data: [order] } = await container()
+              .resolve(ContainerRegistrationKeys.QUERY)
+              .graph({ entity: "order", fields: ["id", "subtotal", "payment_collections.id"], filters: { id: orderId } })
+            return {
+              subtotal: Number(order.subtotal),
+              collections: ((order.payment_collections ?? []) as Array<{ id: string }>).map((c) => c.id).sort(),
+            }
+          }
+
+          const clean = await storefrontOrder()
+          expect(await linkedCollections(clean.order.id)).toEqual({ subtotal: 25, collections: [clean.collectionId] })
+
+          // (1) A second collection linked to the order, $10 captured on it
+          // and refunded there, with the app's card-refund subscriber. Built
+          // from fixtures: Medusa adds a further collection to an order only
+          // after an order change raised its total, and such a change moves
+          // the subtotal, which the planner lists on its own. The subtotal
+          // here is untouched, so only the payment side can list the order.
+          const second = await storefrontOrder()
+          process.env[CARD] = "true"
+          const extra = await card.pay([second.order.id], 10, { capture: true })
+          await card.refund(extra.paymentId, 10)
+          await card.refunded(extra.paymentId)
+          delete process.env[CARD]
+          await drainSubscribers()
+          const extraCollection = await container().resolve(Modules.PAYMENT).retrievePaymentCollection(extra.collectionId)
+          expect({ captured: Number(extraCollection.captured_amount), refunded: Number(extraCollection.refunded_amount) }).toEqual({
+            captured: 10,
+            refunded: 10,
+          })
+          expect(await linkedCollections(second.order.id)).toEqual({
+            subtotal: 25,
+            collections: [second.collectionId, extra.collectionId].sort(),
+          })
+          // The refund is in neither place the script reads refunds from:
+          // no leg in the ledger, and the payment records, read from the
+          // split row's collection alone, show nothing refunded.
+          expect(await refundLegsOf(second.order.id)).toEqual([])
+          expect(await readCardSettlementOrder(container(), second.order.id)).toMatchObject({
+            funding: "fbm_card",
+            payment_collection_ids: [second.collectionId],
+            captured: 25,
+            refunded: 0,
+            unattributed_refund: null,
+            refund_attribution: "complete",
+            dispute_open: 0,
+          })
+
+          // (2) A second collection with nothing refunded on it: still a
+          // collection the records were not read from.
+          const idle = await storefrontOrder()
+          const unread = await card.pay([idle.order.id], 10, { capture: true })
+          expect((await linkedCollections(idle.order.id)).collections).toEqual([idle.collectionId, unread.collectionId].sort())
+
+          for (const o of [clean, second, idle]) expect((await read(o.row.id)).status).toBe(CommissionStatus.HELD)
+
+          const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+          const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+          const notRead = (collectionId: string, readFrom: string) =>
+            `payment collection ${collectionId} of the order's was not read: its payment records were read from ` +
+            `payment collection ${readFrom} only (a storefront order's are read from the collection its split payment row names), ` +
+            `so a refund made on it is not seen`
+          expect(summary.corrected.map((c) => c.order_id)).toEqual([clean.order.id])
+          expect(await read(clean.row.id)).toMatchObject({ subtotal: 2500, commission: 250, status: CommissionStatus.HELD })
+          // Each is listed for the unread collection and for nothing else.
+          expect(why(reasons[second.order.id])).toBe(notRead(extra.collectionId, second.collectionId))
+          expect(reasons[second.order.id]).toContain("from 2 to 250")
+          expect(why(reasons[idle.order.id])).toBe(notRead(unread.collectionId, idle.collectionId))
+          expect(summary.never_settled).toEqual([])
+          for (const o of [second, idle]) {
+            expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
+          }
         })
       })
 

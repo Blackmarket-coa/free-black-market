@@ -81,14 +81,26 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  *     corrected all three;
  * - the order's payment records cannot answer that: they could not be read,
  *   the order was not paid through FBM's own card account (no payment
- *   collection, another provider, a partner's connected account), or they
- *   put no amount on this one order. Listed, not assumed unrefunded;
+ *   collection, another provider, a partner's connected account), they put
+ *   no amount on this one order, or they were not read from every payment
+ *   collection linked to the order. A storefront order's are read from the
+ *   collection its split payment row names; a further collection (an order
+ *   change that raised the total takes its payment on a new one) is not
+ *   read, and a refund made there was corrected. Listed, not assumed
+ *   unrefunded;
  * - the vendor has been paid out since the order was placed (a payout
  *   request that moved money, or a withdrawal or a payment to another vendor
  *   off their earnings);
- * - the vendor's earnings were drawn on since the order was placed to
- *   recover what they owed or by a manual adjustment (an ADJUSTMENT or
- *   ADVANCE_REPAYMENT leg off their earnings);
+ * - the vendor's earnings were debited since the order was placed by any
+ *   other ledger leg that moved money, whatever its entry type: the ledger's
+ *   recovery of what they owed (ADJUSTMENT), an advance repayment, a creator
+ *   reward pool funded from their earnings (`fundCreatorRewardPool`, a
+ *   TRANSFER leg), a transfer an admin made by hand (`POST
+ *   /admin/hawala/transfers` posts whatever entry type it is given), a hub's
+ *   cut, a refund of another order of theirs. The read names no entry types
+ *   to look for; it leaves out only CREATOR_COMMISSION legs (another order's
+ *   commission, which is the very debit this is about) and this order's own
+ *   refund legs (listed above);
  * - Mercur already paid the order's proceeds out (`order.payouts`); or
  * - the order was placed, or settled to the vendor's earnings, in the last
  *   2 days and Mercur has not paid it yet: the nightly payout
@@ -100,14 +112,17 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  *
  * What is corrected is an order placed and settled at least 2 days ago whose
  * seller is the vendor debited, whose proceeds entered that vendor's
- * earnings, which was paid by card, whose payment records show nothing
- * refunded for it, nothing refunded on its collection that no order accounts
- * for and no open dispute, which has no refund leg in the ledger, and whose
- * vendor's earnings no payout or recovery has drawn on since. That is all
- * "not refunded" means here: a refund made in Stripe's dashboard is seen
- * only once Stripe's webhook has recorded it, and a debit of a vendor's
- * earnings of any entry type other than WITHDRAWAL, VENDOR_PAYMENT,
- * ADJUSTMENT and ADVANCE_REPAYMENT is not read. With
+ * earnings, which was paid by card, whose payment records were read from
+ * every payment collection linked to it and show nothing refunded for it,
+ * nothing refunded on its collection that no order accounts for and no open
+ * dispute, which has no refund leg in the ledger, and whose vendor's
+ * earnings no payout request and no ledger leg that moved money has debited
+ * since (other than another order's creator commission). That is all "not
+ * refunded" and "not drawn on" mean here. NOT SEEN: a refund made in
+ * Stripe's dashboard before Stripe's webhook has recorded it; a refund that
+ * is owed but not yet made (a return received, an order dispute decided for
+ * the buyer: the decision moves no money, the refund follows); a leg off the
+ * vendor's earnings that is still PENDING; and anything after this run. With
  * FF_CARD_ORDER_LEDGER_V1 off (the default) no order settles to the ledger
  * (the legacy settlement throws before any leg, SD-39), so no held or
  * pending row that names a vendor is corrected: every one is listed.
@@ -175,21 +190,62 @@ const SETTLEMENT_LEG_STATUSES = [...MOVED_ENTRY_STATUSES, "REVERSED"] as const
 /**
  * Ledger legs by which money leaves a vendor's earnings at the vendor's own
  * hand: a withdrawal (a payout request's leg, a Mercur-paid order booked out,
- * an ACH withdrawal) or a payment to another vendor.
+ * an ACH withdrawal) or a payment to another vendor. Used ONLY to word the
+ * review line ("paid out"); which legs count is not decided by entry type.
  */
 const OUTFLOW_ENTRY_TYPES = ["WITHDRAWAL", "VENDOR_PAYMENT"] as const
 
 /**
- * Ledger legs by which money is taken from a vendor's earnings other than by
- * a payout. ADJUSTMENT: the ledger's recoveries of what a vendor owes (card
- * processing they could not absorb, a refund made after they were paid out,
- * a chargeback fee), taken from each later seller credit and before each
- * payout (`recoverCardProcessingShortfall`); a manual adjustment posts the
- * same type. ADVANCE_REPAYMENT: `processAdvanceRepayment`'s leg (nothing
- * calls it today). Only legs that DEBIT the vendor's earnings are read, so
- * an ADJUSTMENT that returns a failed payout to them is not one.
+ * The one entry type a debit of a vendor's earnings is not counted under.
+ * CREATOR_COMMISSION is approve-held's own leg (`creditCreatorCommission`):
+ * another order's commission, taken from the vendor because that order's
+ * proceeds held it. It is the debit this script is about, not money gone
+ * that this order's commission was part of.
+ *
+ * Every other leg that debits the vendor's SELLER_EARNINGS counts, WHATEVER
+ * ITS ENTRY TYPE. The read deliberately names no types to look for. The
+ * column is plain text and `createTransfer` posts whatever it is given: the
+ * ledger's recoveries of what a vendor owes are ADJUSTMENT
+ * (`recoverCardProcessingShortfall`), `processAdvanceRepayment` posts
+ * ADVANCE_REPAYMENT, a creator reward pool funded from a vendor's earnings
+ * is a TRANSFER (`fundCreatorRewardPool`, which `POST
+ * /v1/seller/programs/:id/reward-pools` calls once it has stored the pool),
+ * a hub's cut of a grower's sale is COMMISSION
+ * (`payout-breakdown/grower-payout.ts`), and `POST /admin/hawala/transfers`
+ * passes the admin's own `entry_type` straight through. A list of types
+ * here was twice found one short. Only legs that DEBIT the earnings are
+ * read, so an ADJUSTMENT that returns a failed payout to them is not one.
  */
-const RECOVERY_ENTRY_TYPES = ["ADJUSTMENT", "ADVANCE_REPAYMENT"] as const
+const DEBITS_NOT_COUNTED = ["CREATOR_COMMISSION"] as const
+
+/** How many of a vendor's debits are read for the review line; one is enough to list the order. */
+const DEBITS_READ = 10
+
+/** What to call a debit of a vendor's earnings in the review line, by its entry type. */
+const DEBIT_KINDS: Readonly<Record<string, string>> = {
+  WITHDRAWAL: "withdrawal",
+  // Not in the model's entry_type enum: createTransfer takes any string and
+  // createVendorToVendorPayment posts this one.
+  VENDOR_PAYMENT: "vendor payment",
+  ADJUSTMENT: "adjustment",
+  // Not in the enum either (`processAdvanceRepayment`).
+  ADVANCE_REPAYMENT: "advance repayment",
+}
+
+/**
+ * A debit of a vendor's earnings, named for the review line: the four kinds
+ * with a name of their own, otherwise the leg's raw entry type with the
+ * order or the reference type it carries, so an operator can tell a funded
+ * reward pool and a refund of another order apart.
+ */
+function debitKind(leg: { entry_type?: unknown; reference_type?: unknown; order_id?: unknown }): string {
+  const type = String(leg.entry_type)
+  const known = DEBIT_KINDS[type]
+  if (known) return known
+  if (typeof leg.order_id === "string" && leg.order_id) return `${type} leg of order ${leg.order_id}`
+  if (typeof leg.reference_type === "string" && leg.reference_type) return `${type} leg for ${leg.reference_type}`
+  return `${type} leg`
+}
 
 /**
  * The idempotency keys of the legs by which settlement credits an order's
@@ -293,8 +349,10 @@ async function readOrderPayment(
 /**
  * Who approve-held would debit for this order, whether and when the order's
  * proceeds reached them, whether the order was refunded (by the ledger and
- * by its payment records), and whether they have been paid, or their
- * earnings drawn on, since it was placed (`reviewVendorDebit`).
+ * by its payment records, and which payment collections of the order's
+ * those records were read from), and whether they have been paid, or their
+ * earnings debited by any other leg, since it was placed
+ * (`reviewVendorDebit`).
  * `placedAtFallback` is the L1 row's `created_at`: the subscriber writes it
  * at `order.placed`. `now` is when this is read; the answer speaks for that
  * moment only.
@@ -309,13 +367,16 @@ async function readVendorDebitContext(
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const { data } = await query.graph({
     entity: "order",
-    fields: ["id", "created_at", "seller.id", "payouts.id"],
+    // `payment_collections.id`: every collection linked to the order, to set
+    // against the ones its payment records were read from.
+    fields: ["id", "created_at", "seller.id", "payouts.id", "payment_collections.id"],
     filters: { id: orderId },
   })
   const row = (data as Array<{
     created_at?: Date | string | null
     seller?: { id?: string | null } | null
     payouts?: Array<{ id?: string | null } | null> | null
+    payment_collections?: Array<{ id?: string | null } | null> | null
   }>)[0]
   const placed = row?.created_at ?? placedAtFallback ?? null
   const since = placed ? new Date(placed) : null
@@ -344,7 +405,7 @@ async function readVendorDebitContext(
   const order_settlement_reversed: Record<string, boolean> = {}
   const vendorByEarningsAccount = new Map<string, string>()
   const vendor_withdrawals: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
-  const vendor_recoveries: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
+  const vendor_other_debits: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
   for (const vendorId of vendorIds) {
     const accounts = await hawala.listLedgerAccounts({ owner_id: vendorId, account_type: "SELLER_EARNINGS" })
     for (const account of accounts) vendorByEarningsAccount.set(account.id, vendorId)
@@ -359,45 +420,41 @@ async function readVendorDebitContext(
       { vendor_id: vendorId, status: [...PAID_OUT_STATUSES], created_at: { $gte: placedAt } },
       { take: 5, order: { created_at: "ASC" } }
     )
-    const withdrawals = accounts.length
+    // Every leg that debited the vendor's earnings since the order was
+    // placed and moved money. No entry type is asked for (see
+    // DEBITS_NOT_COUNTED): what is left out is another order's creator
+    // commission, and this order's own refund legs, which `refundLegs` above
+    // already holds and the review lists as a refund.
+    const debits = accounts.length
       ? await hawala.listLedgerEntries(
           {
             debit_account_id: accounts.map((a) => a.id),
-            entry_type: [...OUTFLOW_ENTRY_TYPES],
+            entry_type: { $nin: [...DEBITS_NOT_COUNTED] },
+            ...(refundLegs.length ? { id: { $nin: refundLegs.map((e) => e.id) } } : {}),
             status: [...MOVED_ENTRY_STATUSES],
             created_at: { $gte: placedAt },
           },
-          { take: 5, order: { created_at: "ASC" } }
+          { take: DEBITS_READ, order: { created_at: "ASC" } }
         )
       : []
+    const named = debits.map((e) => ({
+      paidOut: (OUTFLOW_ENTRY_TYPES as readonly string[]).includes(String(e.entry_type)),
+      leg: { id: e.id, kind: debitKind(e), status: String(e.status) },
+    }))
     vendor_withdrawals[vendorId] = [
       ...requests.map((r) => ({ id: r.id, kind: "payout request", status: String(r.status) })),
-      ...withdrawals.map((e) => ({
-        id: e.id,
-        // Not in the model's entry_type enum: createTransfer takes any
-        // string and createVendorToVendorPayment posts this one.
-        kind: String(e.entry_type) === "VENDOR_PAYMENT" ? "vendor payment" : "withdrawal",
-        status: String(e.status),
-      })),
+      ...named.filter((d) => d.paidOut).map((d) => d.leg),
     ]
-    const recoveries = accounts.length
-      ? await hawala.listLedgerEntries(
-          {
-            debit_account_id: accounts.map((a) => a.id),
-            entry_type: [...RECOVERY_ENTRY_TYPES],
-            status: [...MOVED_ENTRY_STATUSES],
-            created_at: { $gte: placedAt },
-          },
-          { take: 5, order: { created_at: "ASC" } }
-        )
-      : []
-    vendor_recoveries[vendorId] = recoveries.map((e) => ({
-      id: e.id,
-      // Not in the model's entry_type enum either: createTransfer takes any string.
-      kind: String(e.entry_type) === "ADVANCE_REPAYMENT" ? "advance repayment" : "adjustment",
-      status: String(e.status),
-    }))
+    vendor_other_debits[vendorId] = named.filter((d) => !d.paidOut).map((d) => d.leg)
   }
+
+  // Every payment collection linked to the order. Null (which lists the
+  // order) when the order was not found or the read answered with something
+  // that is not a list; a found order with nothing there has none linked.
+  const linked: unknown = row ? (row.payment_collections ?? []) : null
+  const linkedCollections = Array.isArray(linked)
+    ? [...new Set(linked.map((c: { id?: unknown } | null) => c?.id).filter((id): id is string => typeof id === "string" && !!id))]
+    : null
 
   return {
     order_seller_id: row?.seller?.id ?? null,
@@ -415,8 +472,9 @@ async function readVendorDebitContext(
     })),
     order_payment: paymentSide.payment,
     order_payment_unread: paymentSide.unread,
+    order_payment_collection_ids: linkedCollections,
     vendor_withdrawals,
-    vendor_recoveries,
+    vendor_other_debits,
   }
 }
 
@@ -541,14 +599,16 @@ export default async function run({ container, args }: ExecArgs) {
         `whose proceeds are not in the vendor's earnings in the ledger, which have a refund leg in the ledger, whose ` +
         `payment records (the order's split payment row, its payment collection, Stripe's figures for the charge) show ` +
         `a refund for the order, a refund on its payment collection recorded on no order, or an open card dispute, ` +
-        `whose payment records could not be read or are not a card payment's, whose vendor was paid out or had their ` +
-        `earnings drawn on after the order, whose proceeds Mercur paid out, or which were placed or settled in the ` +
-        `last 2 days are listed for review instead.`
+        `whose payment records could not be read, are not a card payment's, or were not read from every payment ` +
+        `collection linked to the order, whose vendor was paid out after the order or had their earnings debited by ` +
+        `any other ledger leg that moved money (whatever its entry type, except another order's creator commission), ` +
+        `whose proceeds Mercur paid out, or which were placed or settled in the last 2 days are listed for review instead.`
     )
     logger.warn(
       `${tag} Those checks were made once, just now. Nothing repeats them when approve-held debits the vendor: ` +
         `a vendor paid out after this run, or whose order is refunded after it, is still debited the full commission. ` +
-        `A refund made in Stripe's dashboard is seen only once Stripe's webhook has recorded it here. ` +
+        `A refund made in Stripe's dashboard is seen only once Stripe's webhook has recorded it here, and a refund ` +
+        `that is owed but not yet made (a return received, an order dispute decided for the buyer) is not seen at all. ` +
         `Run this with \`apply\` immediately before the repair that makes commission crediting work deploys, not earlier, ` +
         `and not in the minute approve-held runs (:00).`
     )

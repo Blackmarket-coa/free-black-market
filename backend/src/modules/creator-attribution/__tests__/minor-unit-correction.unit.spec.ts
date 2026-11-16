@@ -194,8 +194,10 @@ describe("reviewVendorDebit", () => {
     order_settlement_reversed: {},
     order_refunds: [],
     order_payment: paidByCard,
+    // The one collection linked to the order is the one its records were read from.
+    order_payment_collection_ids: ["pay_col_1"],
     vendor_withdrawals: { sel_vendor: [] },
-    vendor_recoveries: { sel_vendor: [] },
+    vendor_other_debits: { sel_vendor: [] },
   }
   const DAY = 24 * 60 * 60 * 1000
   const planFor = (rows: StoredAttributionAmounts[]) => {
@@ -377,11 +379,15 @@ describe("reviewVendorDebit", () => {
     const unpaid = reviewVendorDebit(planFor(rows), rows, {
       ...clean,
       order_payment: { ...paidByCard, funding: "other", payment_collection_ids: [], captured: null, refunded: null },
+      order_payment_collection_ids: [],
     })
     expect(unpaid).toContain(
       `the order was not paid through FBM's own card account (its payment reads as "other"; it has no payment collection), ` +
-        `so its payment records cannot show that it was not refunded`
+        `so its payment records cannot show that it was not refunded. Correcting would raise`
     )
+    // No collection linked and none read from: that alone is no reason.
+    expect(unpaid).not.toContain("was not read")
+    expect(unpaid).not.toContain("not among")
     for (const funding of ["other", "connect_direct"]) {
       const reason = reviewVendorDebit(planFor(rows), rows, { ...clean, order_payment: { ...paidByCard, funding } })
       expect(reason).toContain(`(its payment reads as "${funding}"; payment collection pay_col_1)`)
@@ -399,39 +405,93 @@ describe("reviewVendorDebit", () => {
     ).toContain("what was refunded for the order cannot be read")
   })
 
-  it("lists an order whose vendor's earnings were drawn on since it was placed by a recovery or an advance repayment", () => {
+  it("lists an order with a payment collection its payment records were not read from, or whose linked collections are unknown", () => {
+    const rows = [row()]
+    const linked = (order_payment_collection_ids: VendorDebitContext["order_payment_collection_ids"], readFrom = ["pay_col_1"]) =>
+      reviewVendorDebit(planFor(rows), rows, {
+        ...clean,
+        order_payment: { ...paidByCard, payment_collection_ids: readFrom },
+        order_payment_collection_ids,
+      })
+
+    // A storefront order's records come from the collection its split row
+    // names. A second collection of the order's (a further payment taken
+    // after an order change) was not read, and a refund there is unseen.
+    const second = linked(["pay_col_1", "pay_col_2"])
+    expect(second).toBe(
+      "payment collection pay_col_2 of the order's was not read: its payment records were read from payment collection pay_col_1 only " +
+        "(a storefront order's are read from the collection its split payment row names), so a refund made on it is not seen. " +
+        "Correcting would raise what the approve-held job debits from sel_vendor's current earnings for this order from 2 to 250 once commission " +
+        "crediting works. Operator decision, not changed here"
+    )
+    // Several, each named once.
+    expect(linked(["pay_col_3", "pay_col_1", "pay_col_2", "pay_col_3"])).toContain(
+      "payment collections pay_col_3, pay_col_2 of the order's were not read: its payment records were read from payment collection pay_col_1 only " +
+        "(a storefront order's are read from the collection its split payment row names), so a refund made on them is not seen"
+    )
+    // Linked to a collection, read from none.
+    expect(linked(["pay_col_1"], [])).toContain(
+      "payment collection pay_col_1 of the order's was not read: its payment records were read from no payment collection only"
+    )
+
+    // Read from a collection the order is not linked to.
+    expect(linked([])).toContain(
+      "the order's payment records were read from payment collection pay_col_1, which is not among the collections linked to the order (it has none), " +
+        "so they may not be this order's"
+    )
+    const swapped = linked(["pay_col_2"])
+    expect(swapped).toContain("payment collection pay_col_2 of the order's was not read")
+    expect(swapped).toContain(
+      "the order's payment records were read from payment collection pay_col_1, which is not among the collections linked to the order (pay_col_2)"
+    )
+
+    // The links could not be read; a context built with none is read the same way.
+    const unknown =
+      "the payment collections linked to the order could not be read, so it cannot be shown that its payment records cover every one of them"
+    expect(linked(null)).toContain(unknown)
+    const { order_payment_collection_ids: _none, ...withoutLinks } = clean
+    expect(reviewVendorDebit(planFor(rows), rows, withoutLinks as VendorDebitContext)).toContain(unknown)
+
+    // The same collections on both sides pass, in any order and named twice.
+    expect(linked(["pay_col_1"])).toBeNull()
+    expect(linked(["pay_col_1", "pay_col_1"])).toBeNull()
+    expect(linked(["pay_col_2", "pay_col_1"], ["pay_col_1", "pay_col_2"])).toBeNull()
+  })
+
+  it("lists an order whose vendor's earnings were debited since it was placed by any other leg, named as the script named it", () => {
     const rows = [row()]
     const reason = reviewVendorDebit(planFor(rows), rows, {
       ...clean,
-      vendor_recoveries: {
+      vendor_other_debits: {
         sel_vendor: [
-          { id: "hle_adj", kind: "adjustment", status: "COMPLETED" },
-          { id: "hle_adv", kind: "advance repayment", status: "SETTLED" },
+          { id: "hle_pool", kind: "TRANSFER leg for CREATOR_REWARD_POOL", status: "COMPLETED" },
+          { id: "hle_adj", kind: "adjustment", status: "SETTLED" },
         ],
       },
     })
-    expect(reason).toContain(
+    expect(reason).toBe(
       "vendor sel_vendor's earnings were drawn on since the order was placed " +
-        "(adjustment hle_adj COMPLETED, advance repayment hle_adv SETTLED: a recovery of what they owed, or a manual adjustment), " +
-        "and the commission was never carved out of what was taken"
+        "(TRANSFER leg for CREATOR_REWARD_POOL hle_pool COMPLETED, adjustment hle_adj SETTLED), " +
+        "and the commission was never carved out of what was taken. " +
+        "Correcting would raise what the approve-held job debits from sel_vendor's current earnings for this order from 2 to 250 once commission " +
+        "crediting works. Operator decision, not changed here"
     )
-    expect(reason).toContain("from 2 to 250")
     expect(reason).not.toContain("has been paid out")
-    // Another vendor's recoveries are not this vendor's; a vendor the script
+    // Another vendor's debits are not this vendor's; a vendor the script
     // did not answer for has none.
     expect(
       reviewVendorDebit(planFor(rows), rows, {
         ...clean,
-        vendor_recoveries: { sel_other: [{ id: "hle_adj", kind: "adjustment", status: "COMPLETED" }] },
+        vendor_other_debits: { sel_other: [{ id: "hle_adj", kind: "adjustment", status: "COMPLETED" }] },
       })
     ).toBeNull()
-    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, vendor_recoveries: {} })).toBeNull()
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, vendor_other_debits: {} })).toBeNull()
     // More than three are cut short.
     const many = reviewVendorDebit(planFor(rows), rows, {
       ...clean,
-      vendor_recoveries: { sel_vendor: ["a", "b", "c", "d"].map((id) => ({ id: `hle_${id}`, kind: "adjustment", status: "COMPLETED" })) },
+      vendor_other_debits: { sel_vendor: ["a", "b", "c", "d"].map((id) => ({ id: `hle_${id}`, kind: "CORRECTION leg", status: "COMPLETED" })) },
     })
-    expect(many).toContain("(adjustment hle_a COMPLETED, adjustment hle_b COMPLETED, adjustment hle_c COMPLETED, …: a recovery")
+    expect(many).toContain("(CORRECTION leg hle_a COMPLETED, CORRECTION leg hle_b COMPLETED, CORRECTION leg hle_c COMPLETED, …), and the commission")
   })
 
   it("lists an order placed inside the payout window that Mercur has not paid yet; one exactly at the window's end passes", () => {
@@ -537,8 +597,10 @@ describe("reviewVendorDebit", () => {
       order_refunds: [{ id: "hle_r1", status: "COMPLETED", amount: 19.4, from_vendor_id: "sel_vendor" }],
       // Refunded and disputed by the payment records, or not readable at all.
       order_payment: { ...paidByCard, refunded: 20, unattributed_refund: 5, dispute_open: 25 },
+      // A collection the records were not read from.
+      order_payment_collection_ids: ["pay_col_1", "pay_col_2"],
       vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
-      vendor_recoveries: { sel_vendor: [{ id: "hle_adj", kind: "adjustment", status: "COMPLETED" }] },
+      vendor_other_debits: { sel_vendor: [{ id: "hle_pool", kind: "TRANSFER leg for CREATOR_REWARD_POOL", status: "COMPLETED" }] },
     }
     for (const rows of [
       [row({ commission_status: CommissionStatus.REVERSED })],
@@ -548,6 +610,7 @@ describe("reviewVendorDebit", () => {
       expect(vendorsDebitedOnApproval(rows)).toEqual([])
       expect(reviewVendorDebit(planFor(rows), rows, paidOut)).toBeNull()
       expect(reviewVendorDebit(planFor(rows), rows, { ...paidOut, order_payment: null })).toBeNull()
+      expect(reviewVendorDebit(planFor(rows), rows, { ...paidOut, order_payment_collection_ids: null })).toBeNull()
     }
   })
 

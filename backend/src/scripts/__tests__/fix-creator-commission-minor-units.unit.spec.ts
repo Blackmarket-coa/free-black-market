@@ -13,8 +13,10 @@ import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../../modules/stripe-connect-
  * correcting an order where what it reads argues against the vendor debit
  * the correction sets up (vendor not the seller, proceeds never settled to
  * the vendor or reversed by a refund, order refunded by the ledger or by its
- * payment records, payment records unreadable, vendor paid out or drawn on
- * since, order placed or settled too recently). Its decisions are tested in
+ * payment records, payment records unreadable or not read from every payment
+ * collection of the order's, vendor paid out or their earnings debited by any
+ * other leg since, order placed or settled too recently). Its decisions are
+ * tested in
  * `modules/creator-attribution/__tests__/minor-unit-correction.unit.spec.ts`;
  * the same run on Postgres in `integration-tests/http/creator-commission-minor-units.spec.ts`.
  *
@@ -23,15 +25,18 @@ import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../../modules/stripe-connect-
  * The ledger stub answers like the table would: a settlement-leg read gets
  * only the legs whose key and status it asked for, a refund-leg read only
  * the order's REFUND legs in the statuses it asked for, and a read of legs
- * off the vendor's earnings only those of the entry types it asked for, so
- * asking with the wrong keys, order, statuses or types finds nothing.
+ * off accounts every leg that debits one of them (the order's refund legs
+ * among them) and passes each filter given: entry types in or not in a
+ * list, ids not in a list, statuses, written since a time. A read that
+ * leaves a filter out gets what the table would give without it.
  *
  * The order's payment records are read by the real `readCardSettlementOrder`
  * (`lib/card-order-settlement.ts`), not a stand-in: the query stub answers
  * its reads (the order with its split payment row and payment collections,
  * the orders on a collection, a collection's split rows) with rows shaped as
  * Postgres returns them, so what the script lists is what that read makes of
- * the rows.
+ * the rows. The script's own read of the order carries the payment
+ * collections linked to it only when it asks for them.
  */
 
 const legacy = {
@@ -113,6 +118,16 @@ type SettlementLeg = {
   created_at?: string | Date | null
 }
 type RefundLeg = { id: string; order_id: string; status: string; amount: number; debit_account_id: string }
+/** A ledger leg that debits an account. Defaults: off the vendor's earnings, completed, written a day after the order. */
+type DebitLeg = {
+  id: string
+  entry_type: string
+  status?: string
+  debit_account_id?: string
+  reference_type?: string | null
+  order_id?: string | null
+  created_at?: string
+}
 
 /**
  * The order's settlement as the card path writes it for a payment captured
@@ -135,8 +150,16 @@ function makeContainer(
     written?: { written: true } | { written: false; stale_id: string }
     seller?: string | null
     payoutRequests?: Array<{ id: string; status: string }>
-    withdrawals?: Array<{ id: string; status: string; entry_type?: string }>
+    /** Every other leg in the ledger that debits an account, whatever its type, status or date. Default: none. */
+    debits?: DebitLeg[]
     orderPayouts?: Array<{ id: string }>
+    /**
+     * The payment collections linked to the order, as the script's own read
+     * of the order finds them. Default: those on the order row the
+     * payment-side read gets. `null`: the script's read finds no such order.
+     * "malformed": the read answers with something that is not a list.
+     */
+    linkedCollections?: string[] | null | "malformed"
     /** Every ledger entry carrying a key of this order, whatever its status. Default: settled to the vendor. */
     settlementLegs?: SettlementLeg[]
     /** Every REFUND entry in the ledger, whatever its order or status. Default: none. */
@@ -174,18 +197,26 @@ function makeContainer(
       if (opts.payment === "throws") throw new Error("payment module unavailable")
       return { data: opts.payment === null ? [] : [opts.payment ?? paidByCard()] }
     }
-    return input.fields.includes("seller.id")
-      ? {
-          data: [
-            {
-              id: "order_1",
-              created_at: "2026-10-01T12:00:00.000Z",
-              seller: opts.seller === null ? null : { id: opts.seller ?? "sel_vendor" },
-              payouts: opts.orderPayouts ?? [],
-            },
-          ],
-        }
-      : { data: [{ id: "order_1", subtotal: 25, total: 25, currency_code: "usd" }] }
+    if (!input.fields.includes("seller.id")) return { data: [{ id: "order_1", subtotal: 25, total: 25, currency_code: "usd" }] }
+    // The script's own read of the order.
+    if (opts.linkedCollections === null) return { data: [] }
+    const paymentRow = opts.payment && opts.payment !== "throws" ? opts.payment : paidByCard()
+    const linked =
+      opts.linkedCollections === "malformed"
+        ? { id: "pay_col_1" }
+        : (opts.linkedCollections ?? paymentRow.payment_collections.map((c) => c.id)).map((id) => ({ id }))
+    return {
+      data: [
+        {
+          id: "order_1",
+          created_at: "2026-10-01T12:00:00.000Z",
+          seller: opts.seller === null ? null : { id: opts.seller ?? "sel_vendor" },
+          payouts: opts.orderPayouts ?? [],
+          // Only what was asked for comes back.
+          ...(input.fields.includes("payment_collections.id") ? { payment_collections: linked } : {}),
+        },
+      ],
+    }
   })
   const listPayoutRequests = jest.fn(async (_filters: Record<string, unknown>, _config?: unknown) => opts.payoutRequests ?? [])
   const listLedgerAccounts = jest.fn(async (_filters: Record<string, unknown>) => [{ id: "hla_vendor" }])
@@ -200,8 +231,29 @@ function makeContainer(
     if (filters.entry_type === "REFUND") {
       return (opts.refundLegs ?? []).filter((leg) => leg.order_id === filters.order_id && statuses.includes(leg.status))
     }
-    const types = filters.entry_type as string[]
-    return (opts.withdrawals ?? []).filter((leg) => types.includes(leg.entry_type ?? "WITHDRAWAL"))
+    // A read of legs off accounts: every leg that debits one of them, the
+    // order's refund legs included, narrowed by each filter that was given.
+    const accounts = filters.debit_account_id as string[] | undefined
+    const types = filters.entry_type as string[] | { $nin: string[] } | undefined
+    const notIds = (filters.id as { $nin?: string[] } | undefined)?.$nin ?? []
+    const since = (filters.created_at as { $gte?: Date } | undefined)?.$gte
+    const table = [
+      ...(opts.debits ?? []).map((leg) => ({
+        status: "COMPLETED",
+        debit_account_id: "hla_vendor",
+        created_at: "2026-10-02T12:00:00.000Z",
+        ...leg,
+      })),
+      ...(opts.refundLegs ?? []).map((leg) => ({ ...leg, entry_type: "REFUND", created_at: "2026-10-02T12:00:00.000Z" })),
+    ]
+    return table.filter(
+      (leg) =>
+        (!accounts || accounts.includes(leg.debit_account_id)) &&
+        (!types || (Array.isArray(types) ? types.includes(leg.entry_type) : !types.$nin.includes(leg.entry_type))) &&
+        !notIds.includes(leg.id) &&
+        (!statuses || statuses.includes(leg.status)) &&
+        (!since || new Date(leg.created_at).getTime() >= since.getTime())
+    )
   })
   const listCardChargeStates = jest.fn(async (_filters: Record<string, unknown>) => opts.chargeStates ?? [])
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
@@ -259,9 +311,17 @@ describe("fix-creator-commission-minor-units", () => {
       "whose payment records (the order's split payment row, its payment collection, Stripe's figures for the charge) show " +
         "a refund for the order, a refund on its payment collection recorded on no order, or an open card dispute"
     )
-    expect(warned).toContain("whose payment records could not be read or are not a card payment's")
-    expect(warned).toContain("whose vendor was paid out or had their earnings drawn on after the order")
+    expect(warned).toContain(
+      "whose payment records could not be read, are not a card payment's, or were not read from every payment collection linked to the order"
+    )
+    expect(warned).toContain(
+      "whose vendor was paid out after the order or had their earnings debited by any other ledger leg that moved money " +
+        "(whatever its entry type, except another order's creator commission)"
+    )
     expect(warned).toContain("A refund made in Stripe's dashboard is seen only once Stripe's webhook has recorded it here")
+    expect(warned).toContain(
+      "a refund that is owed but not yet made (a return received, an order dispute decided for the buyer) is not seen at all"
+    )
     // Nothing was listed for never settling, so the flag is not brought up.
     expect(warned).not.toContain("FF_CARD_ORDER_LEDGER_V1")
   })
@@ -297,31 +357,37 @@ describe("fix-creator-commission-minor-units", () => {
   it("looks for the vendor's payouts since the order was placed, and lists the order when there are any", async () => {
     const { container, correctAttributionAmountsIfUnchanged, listPayoutRequests, listLedgerEntries } = makeContainer({
       payoutRequests: [{ id: "pr_1", status: "COMPLETED" }],
-      withdrawals: [
-        { id: "hle_w1", status: "COMPLETED", entry_type: "WITHDRAWAL" },
-        { id: "hle_vp1", status: "COMPLETED", entry_type: "VENDOR_PAYMENT" },
+      debits: [
+        { id: "hle_w1", entry_type: "WITHDRAWAL" },
+        { id: "hle_vp1", entry_type: "VENDOR_PAYMENT" },
       ],
     })
     const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
     expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
     expect(summary.corrected).toEqual([])
     expect(summary.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining("payout request pr_1 COMPLETED") }])
-    expect(summary.review[0].reason).toContain("withdrawal hle_w1 COMPLETED")
-    expect(summary.review[0].reason).toContain("vendor payment hle_vp1 COMPLETED")
+    expect(summary.review[0].reason).toContain(
+      "vendor sel_vendor has been paid out since the order was placed " +
+        "(payout request pr_1 COMPLETED, withdrawal hle_w1 COMPLETED, vendor payment hle_vp1 COMPLETED)"
+    )
+    // Worded as payouts, and only as payouts.
+    expect(summary.review[0].reason).not.toContain("earnings were drawn on")
     const placed = new Date("2026-10-01T12:00:00.000Z")
     expect(listPayoutRequests).toHaveBeenCalledWith(
       { vendor_id: "sel_vendor", status: ["PROCESSING", "IN_TRANSIT", "COMPLETED"], created_at: { $gte: placed } },
       expect.anything()
     )
+    // One read of every leg off the vendor's earnings: no entry type is
+    // asked for, only another order's creator commission is left out.
     expect(listLedgerEntries).toHaveBeenCalledWith(
       {
         debit_account_id: ["hla_vendor"],
-        entry_type: ["WITHDRAWAL", "VENDOR_PAYMENT"],
+        entry_type: { $nin: ["CREATOR_COMMISSION"] },
         // SETTLED too: the settlement batch re-labels a completed leg once it is anchored.
         status: ["COMPLETED", "SETTLED"],
         created_at: { $gte: placed },
       },
-      expect.anything()
+      { take: 10, order: { created_at: "ASC" } }
     )
   })
 
@@ -517,6 +583,17 @@ describe("fix-creator-commission-minor-units", () => {
       entry_type: "REFUND",
       status: ["COMPLETED", "SETTLED"],
     })
+    // The leg that took the refund from the vendor's earnings debits them,
+    // and the read of every debit is told to leave the order's own refund
+    // legs out: listed as a refund, once, and not again as earnings drawn on.
+    expect(summary.review[0].reason).not.toContain("earnings were drawn on")
+    expect(partial.listLedgerEntries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        debit_account_id: ["hla_vendor"],
+        id: { $nin: ["hle_refund_fee", "hle_refund_seller", "hle_refund_customer"] },
+      }),
+      expect.anything()
+    )
 
     // Refunded with nothing taken from the vendor's earnings (they held
     // nothing; the ledger records it as owed by the vendor): listed too.
@@ -534,18 +611,35 @@ describe("fix-creator-commission-minor-units", () => {
       },
     ])
 
-    // Refund legs that moved nothing, and another order's, are not this order refunded.
+    // Refund legs that moved nothing, and another order's off someone
+    // else's account, are not this order refunded.
     for (const refundLegs of [
       [refundLeg({ status: "FAILED" })],
       [refundLeg({ status: "PENDING" })],
       [refundLeg({ status: "REVERSED" })],
-      [refundLeg({ order_id: "order_10" })],
+      [refundLeg({ order_id: "order_10", debit_account_id: "hla_other" })],
     ]) {
       const { container } = makeContainer({ refundLegs })
       const run = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
       expect(run.review).toEqual([])
       expect(run.corrected.map((c) => c.order_id)).toEqual(["order_1"])
     }
+
+    // Another order's refund taken from this vendor's earnings is not this
+    // order refunded either, but it is money gone from those earnings since
+    // the order: listed, worded as that.
+    const sibling = makeContainer({ refundLegs: [refundLeg({ id: "hle_refund_other", order_id: "order_10" })] })
+    const siblingRun = await fixCreatorCommissionMinorUnits(sibling.container, { apply: true, now: LATER })
+    expect(sibling.correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+    expect(siblingRun.review).toEqual([
+      {
+        order_id: "order_1",
+        reason: expect.stringContaining(
+          "vendor sel_vendor's earnings were drawn on since the order was placed (REFUND leg of order order_10 hle_refund_other COMPLETED)"
+        ),
+      },
+    ])
+    expect(siblingRun.review[0].reason).not.toContain("the order was refunded")
   })
 
   it("reads the order's payment records and lists an order they show refunded when the ledger has no refund leg for it", async () => {
@@ -672,37 +766,133 @@ describe("fix-creator-commission-minor-units", () => {
     }
   })
 
-  it("reads adjustment and advance-repayment legs off the vendor's earnings since the order, and lists the order when there are any", async () => {
-    const { container, correctAttributionAmountsIfUnchanged, listLedgerEntries } = makeContainer({
-      withdrawals: [
-        { id: "hle_adj", status: "COMPLETED", entry_type: "ADJUSTMENT" },
-        { id: "hle_adv", status: "SETTLED", entry_type: "ADVANCE_REPAYMENT" },
+  it("reads every leg that debited the vendor's earnings since the order, whatever its entry type, and lists the order when there is any", async () => {
+    const drawnOn = (what: string) =>
+      `vendor sel_vendor's earnings were drawn on since the order was placed (${what}), ` +
+      `and the commission was never carved out of what was taken`
+
+    for (const [leg, named] of [
+      // The ledger's recovery of what the vendor owed, and an advance repayment.
+      [{ id: "hle_adj", entry_type: "ADJUSTMENT" }, "adjustment hle_adj COMPLETED"],
+      [{ id: "hle_adv", entry_type: "ADVANCE_REPAYMENT", status: "SETTLED", order_id: "order_1" }, "advance repayment hle_adv SETTLED"],
+      // A creator reward pool the vendor funded from earnings (`fundCreatorRewardPool`).
+      [
+        { id: "hle_pool", entry_type: "TRANSFER", reference_type: "CREATOR_REWARD_POOL" },
+        "TRANSFER leg for CREATOR_REWARD_POOL hle_pool COMPLETED",
       ],
+      // A transfer an admin made by hand, under an entry type of their own wording.
+      [{ id: "hle_manual", entry_type: "CORRECTION" }, "CORRECTION leg hle_manual COMPLETED"],
+      // A hub's share of this order, and a refund of another order of the vendor's.
+      [
+        { id: "hle_hub", entry_type: "COMMISSION", reference_type: "ORDER", order_id: "order_1" },
+        "COMMISSION leg of order order_1 hle_hub COMPLETED",
+      ],
+      [
+        { id: "hle_other_refund", entry_type: "REFUND", reference_type: "ORDER", order_id: "order_2" },
+        "REFUND leg of order order_2 hle_other_refund COMPLETED",
+      ],
+    ] as Array<[DebitLeg, string]>) {
+      const { container, correctAttributionAmountsIfUnchanged } = makeContainer({ debits: [leg] })
+      const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
+      expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(summary.corrected).toEqual([])
+      expect(summary.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining(drawnOn(named)) }])
+      // Not worded as a payout: none of these is one.
+      expect(summary.review[0].reason).not.toContain("has been paid out")
+    }
+
+    // Not counted, each corrected: another order's creator commission (the
+    // debit approve-held makes); a leg that moved no money; a leg written
+    // before the order was placed; a leg off someone else's account.
+    for (const leg of [
+      { id: "hle_cc", entry_type: "CREATOR_COMMISSION", order_id: "order_2" },
+      { id: "hle_pending", entry_type: "TRANSFER", status: "PENDING" },
+      { id: "hle_failed", entry_type: "TRANSFER", status: "FAILED" },
+      { id: "hle_reversed", entry_type: "WITHDRAWAL", status: "REVERSED" },
+      { id: "hle_before", entry_type: "TRANSFER", created_at: "2026-10-01T11:59:59.999Z" },
+      { id: "hle_elsewhere", entry_type: "TRANSFER", debit_account_id: "hla_other" },
+    ] as DebitLeg[]) {
+      const { container } = makeContainer({ debits: [leg] })
+      const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
+      expect(summary.review).toEqual([])
+      expect(summary.corrected.map((c) => c.order_id)).toEqual(["order_1"])
+    }
+
+    // A leg written at the very moment the order was placed counts.
+    const atPlacement = makeContainer({ debits: [{ id: "hle_at", entry_type: "TRANSFER", created_at: "2026-10-01T12:00:00.000Z" }] })
+    const listed = await fixCreatorCommissionMinorUnits(atPlacement.container, { apply: true, now: LATER })
+    expect(listed.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining(drawnOn("TRANSFER leg hle_at COMPLETED")) }])
+
+    // The order's own refund leg off the vendor's earnings, beside a reward
+    // pool: the refund is listed as a refund and the pool as earnings drawn
+    // on; the refund leg is not named a second time.
+    const both = makeContainer({
+      refundLegs: [{ id: "hle_refund_seller", order_id: "order_1", status: "COMPLETED", amount: 19.4, debit_account_id: "hla_vendor" }],
+      debits: [{ id: "hle_pool", entry_type: "TRANSFER", reference_type: "CREATOR_REWARD_POOL" }],
     })
-    const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
-    expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+    const mixed = await fixCreatorCommissionMinorUnits(both.container, { apply: true, now: LATER })
+    expect(mixed.review[0].reason).toContain("refund leg hle_refund_seller 19.4 COMPLETED")
+    expect(mixed.review[0].reason).toContain(drawnOn("TRANSFER leg for CREATOR_REWARD_POOL hle_pool COMPLETED"))
+  })
+
+  it("asks which payment collections are linked to the order, and lists an order with one its payment records were not read from", async () => {
+    // A storefront order: its split payment row names pay_col_1, and the
+    // payment records are read from that collection alone. A second
+    // collection is linked to the order, $10 captured and refunded there.
+    const second = cardCollection({ id: "pay_col_2", amount: 10, captured_amount: 10, refunded_amount: 10, payments: [{ id: "pay_2", provider_id: "pp_stripe_stripe" }] })
+    const storefront = makeContainer({
+      payment: paidByCard({ split_order_payment: splitRow(), payment_collections: [cardCollection(), second] }),
+    })
+    const summary = await fixCreatorCommissionMinorUnits(storefront.container, { apply: true, now: LATER })
+    expect(storefront.correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
     expect(summary.corrected).toEqual([])
     expect(summary.review).toEqual([
       {
         order_id: "order_1",
         reason: expect.stringContaining(
-          "vendor sel_vendor's earnings were drawn on since the order was placed " +
-            "(adjustment hle_adj COMPLETED, advance repayment hle_adv SETTLED: a recovery of what they owed, or a manual adjustment)"
+          "payment collection pay_col_2 of the order's was not read: its payment records were read from payment collection pay_col_1 only " +
+            "(a storefront order's are read from the collection its split payment row names), so a refund made on it is not seen. Correcting would raise"
         ),
       },
     ])
-    // Not worded as a payout: neither is one.
-    expect(summary.review[0].reason).not.toContain("has been paid out")
-    expect(listLedgerEntries).toHaveBeenCalledWith(
-      {
-        // Legs that debit the vendor's earnings only: an ADJUSTMENT that returns a failed payout credits them.
-        debit_account_id: ["hla_vendor"],
-        entry_type: ["ADJUSTMENT", "ADVANCE_REPAYMENT"],
-        status: ["COMPLETED", "SETTLED"],
-        created_at: { $gte: new Date("2026-10-01T12:00:00.000Z") },
-      },
-      expect.anything()
-    )
+    // Nothing else lists it: the records that were read show no refund.
+    expect(summary.review[0].reason.startsWith("payment collection pay_col_2 of the order's was not read")).toBe(true)
+    expect(summary.never_settled).toEqual([])
+    expect(storefront.graph).toHaveBeenCalledWith({
+      entity: "order",
+      fields: ["id", "created_at", "seller.id", "payouts.id", "payment_collections.id"],
+      filters: { id: "order_1" },
+    })
+
+    // The same storefront order with the one collection: corrected.
+    const single = makeContainer({ payment: paidByCard({ split_order_payment: splitRow() }) })
+    const clean = await fixCreatorCommissionMinorUnits(single.container, { apply: true, now: LATER })
+    expect(clean.review).toEqual([])
+    expect(clean.corrected.map((c) => c.order_id)).toEqual(["order_1"])
+
+    // The link read and the payment-side read disagree the other way: the
+    // records came from a collection the order is not linked to.
+    for (const [linkedCollections, expected] of [
+      [[], "the order's payment records were read from payment collection pay_col_1, which is not among the collections linked to the order (it has none)"],
+      [["pay_col_9"], "payment collection pay_col_9 of the order's was not read"],
+    ] as Array<[string[], string]>) {
+      const { container, correctAttributionAmountsIfUnchanged } = makeContainer({ linkedCollections })
+      const run = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
+      expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(run.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining(expected) }])
+    }
+
+    // The script's own read finds no such order, or answers with something
+    // that is not a list: the links are unknown, which is not "none".
+    for (const linkedCollections of [null, "malformed" as const]) {
+      const missing = makeContainer({ linkedCollections })
+      const unknown = await fixCreatorCommissionMinorUnits(missing.container, { apply: true, now: LATER })
+      expect(missing.correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(unknown.corrected).toEqual([])
+      expect(unknown.review[0].reason).toContain(
+        "the payment collections linked to the order could not be read, so it cannot be shown that its payment records cover every one of them"
+      )
+    }
   })
 
   it("lists an order placed and settled in the last 2 days, measured from when it runs; corrects it once the payout window has passed", async () => {
