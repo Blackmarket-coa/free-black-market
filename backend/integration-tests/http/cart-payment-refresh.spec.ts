@@ -83,6 +83,8 @@ medusaIntegrationTestRunner({
        * the intent.
        */
       captureAtAuthorization: (intentId: string) => void
+      /** Every refund asked of Stripe; none reaches its real API. */
+      refunds: Array<{ payment_intent: string; amount: number }>
     }
     let stripe: Stripe
     let drainSubscribers: () => Promise<void> = async () => {}
@@ -105,7 +107,13 @@ medusaIntegrationTestRunner({
 
     beforeEach(() => {
       drainSubscribers = trackSubscribers(container)
-      const api_ = container().resolve(Modules.PAYMENT).paymentProviderService_.retrieveProvider(CARD).stripe_.paymentIntents
+      const client = container().resolve(Modules.PAYMENT).paymentProviderService_.retrieveProvider(CARD).stripe_
+      const api_ = client.paymentIntents
+      const refunds: Array<{ payment_intent: string; amount: number }> = []
+      jest.spyOn(client.refunds, "create").mockImplementation(async (params: any) => {
+        refunds.push({ payment_intent: params.payment_intent, amount: params.amount })
+        return { id: `re_test_cpr_${refunds.length}`, object: "refund", status: "succeeded", ...params }
+      })
       const intents: Intent[] = []
       const byId = new Map<string, Record<string, unknown>>()
       jest.spyOn(api_, "create").mockImplementation(async (params: any) => {
@@ -140,6 +148,7 @@ medusaIntegrationTestRunner({
         captureAtAuthorization: (intentId: string) => {
           capturedAtOnce.add(intentId)
         },
+        refunds,
         capture: jest
           .spyOn(api_, "capture")
           .mockImplementation(async (id: any) => ({ ...(byId.get(id) ?? {}), id, object: "payment_intent", status: "succeeded" })),
@@ -927,9 +936,13 @@ medusaIntegrationTestRunner({
         expect(refused.data).toEqual({ code: CART_PAYMENT_AMOUNT_MISMATCH, type: CART_PAYMENT_AMOUNT_MISMATCH, message: CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE })
         expect(await orderSetsOf(cart.id)).toEqual([])
         expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
-        // The money stays where it is for a person to refund: the session and its captured payment stand.
+        // The money stays where it is for a person to refund: the session and
+        // its captured payment stand (Stripe refused to cancel the intent when
+        // the settle's refresh tried to delete the session), and nothing on
+        // this route refunds it.
         expect((await stateOf(cart.id)).sessions).toEqual([{ id: session.id, amount: 32, status: "authorized" }])
         expect(await paymentsOf(cart.id)).toEqual([{ id: expect.any(String), amount: 32, intent: "pi_test_cpr_1", captured: true, canceled: false }])
+        expect(stripe.refunds).toEqual([])
       })
 
       it("the collection already at the total and only the session behind it: the refusal deletes that session, and the next one is for the total", async () => {
@@ -1233,6 +1246,11 @@ medusaIntegrationTestRunner({
         expect(await ordersOf(customer.id)).toEqual([])
         expect((await stateOf(cart.id)).sessions).toEqual([{ id: session.id, amount: 15, status: "authorized" }])
         expect(await paymentsOf(cart.id)).toEqual([{ id: expect.any(String), amount: 15, intent: "pi_test_cpr_1", captured: true, canceled: false }])
+        // On this path Medusa's own compensation for the failed completion
+        // (`compensatePaymentIfNeededStep`, the step just before the hook)
+        // asks for the refund; the message does not promise it, since that
+        // can fail.
+        expect(stripe.refunds).toEqual([{ payment_intent: "pi_test_cpr_1", amount: 1500 }])
       })
 
       it("a session behind a collection that is already at the total is deleted after the refusal too (complete-digital)", async () => {
