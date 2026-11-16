@@ -1,8 +1,9 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { ContainerRegistrationKeys, Modules, PromotionActions } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, PaymentActions, PromotionActions } from "@medusajs/framework/utils"
 import {
   createRegionsWorkflow,
   createShippingOptionsWorkflow,
+  processPaymentWorkflow,
   refreshPaymentCollectionForCartWorkflow,
   updateCartPromotionsWorkflow,
 } from "@medusajs/medusa/core-flows"
@@ -347,6 +348,46 @@ medusaIntegrationTestRunner({
       expect(state.total).toBe(total)
       expect(state.collection).toBe(total)
       expect(state.sessions.filter((s) => s.amount !== total)).toEqual([])
+    }
+
+    /**
+     * A write of a line's price through the cart module, which goes round
+     * every route and every refresh: what a writer nobody has found yet, or a
+     * refresh that failed, leaves behind.
+     */
+    async function repriceFirstLine(cartId: string, unitPrice: number) {
+      const carts = container().resolve(Modules.CART)
+      const [line] = await carts.listLineItems({ cart_id: cartId }, { select: ["id"], take: 1 })
+      await carts.updateLineItems(line.id, { unit_price: unitPrice, is_custom_price: true })
+    }
+
+    /**
+     * The other stale state: the collection at the cart's total and its
+     * session still for the old one. What a session opened while a write that
+     * changed the total was on its way leaves (it reads the collection before
+     * that write's refresh and is stored after it); reproduced here without
+     * the timing, by repricing a line and then setting the collection's amount.
+     */
+    async function sessionBehindCollection(cartId: string, unitPrice: number) {
+      await repriceFirstLine(cartId, unitPrice)
+      const { total, collection } = await stateOf(cartId)
+      const { data } = await container().resolve(ContainerRegistrationKeys.QUERY).graph({
+        entity: "cart",
+        fields: ["payment_collection.id"],
+        filters: { id: cartId },
+      })
+      expect(collection).not.toBe(total)
+      await container().resolve(Modules.PAYMENT).updatePaymentCollections(data[0].payment_collection.id, { amount: total })
+    }
+
+    /** The answer to a completion refused for its session's amount. */
+    function expectRefused(answer: Answer) {
+      expectStatus(answer, 409)
+      expect(answer.data).toEqual({
+        code: CART_PAYMENT_AMOUNT_MISMATCH,
+        type: CART_PAYMENT_AMOUNT_MISMATCH,
+        message: CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE,
+      })
     }
 
     async function orderSetsOf(cartId: string) {
@@ -726,6 +767,191 @@ medusaIntegrationTestRunner({
         const answer = expectStatus(await complete(w, cart.id), 400)
         expect(answer.data.code).not.toBe(CART_PAYMENT_AMOUNT_MISMATCH)
         expect(await orderSetsOf(cart.id)).toEqual([])
+      })
+
+      it("a session an earlier attempt authorized for less is refused as well: Mercur would record the orders at the cart's total on that one payment", async () => {
+        const w = await world()
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA, w.productB], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await pickShipping(w, cart.id, w.optionB.id)
+        await openCardSession(w, cart.id)
+        // An attempt that authorized the card and went no further.
+        const [session] = (await stateOf(cart.id)).sessions
+        await container().resolve(Modules.PAYMENT).authorizePaymentSession(session.id, {})
+        expect((await stateOf(cart.id)).sessions).toEqual([{ id: session.id, amount: 32, status: "authorized" }])
+
+        await repriceFirstLine(cart.id, 14)
+        expect(await stateOf(cart.id)).toMatchObject({ total: 36, collection: 32 })
+
+        const authorizations = stripe.retrieve.mock.calls.length
+        expectRefused(await complete(w, cart.id))
+        expect(stripe.retrieve.mock.calls.length).toBe(authorizations)
+        expect(await orderSetsOf(cart.id)).toEqual([])
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+        // The authorized session is deleted with its intent, which releases the hold.
+        const healed = await stateOf(cart.id)
+        expectInStep(healed, 36)
+        expect(healed.sessions).toEqual([])
+        expect(stripe.cancel).toHaveBeenCalledWith("pi_test_cpr_1", expect.anything())
+      })
+
+      it("the collection already at the total and only the session behind it: the refusal deletes that session, and the next one is for the total", async () => {
+        const w = await world()
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA, w.productB], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await pickShipping(w, cart.id, w.optionB.id)
+        await openCardSession(w, cart.id)
+        await sessionBehindCollection(cart.id, 14)
+        const stale = await stateOf(cart.id)
+        expect(stale).toMatchObject({ total: 36, collection: 36 })
+        expect(stale.sessions).toEqual([{ id: expect.any(String), amount: 32, status: "pending" }])
+
+        expectRefused(await complete(w, cart.id))
+        expect(stripe.retrieve).not.toHaveBeenCalled()
+        expect(await orderSetsOf(cart.id)).toEqual([])
+        // Medusa's refresh alone changes nothing here (the collection agrees
+        // with the total); the session for 32 is deleted all the same.
+        const healed = await stateOf(cart.id)
+        expectInStep(healed, 36)
+        expect(healed.sessions).toEqual([])
+        expect(stripe.cancel).toHaveBeenCalledWith("pi_test_cpr_1", expect.anything())
+
+        // A second attempt is not refused for ever: the next session is for the total, and that completes.
+        await openCardSession(w, cart.id)
+        expect(lastIntent()).toMatchObject({ amount: 3600 })
+        expect(expectStatus(await complete(w, cart.id), 200).data.order_set?.id).toBeTruthy()
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(2)
+      })
+    })
+
+    /**
+     * SD-115 review: every other way a cart completes runs Medusa's
+     * completeCartWorkflow, whose validate hook FBM composes
+     * (src/workflows/hooks/complete-cart-guards.ts). The payment-amount guard
+     * is the last one there. Each store route that completes that way is
+     * driven here with an ordinary cart (flags at this tree's defaults), on a
+     * session for less than the cart's total: refused before anything is
+     * authorized, no order, the cart not completed, and the cart's payment
+     * side settled after the workflow has let go of the cart. Then the cart is
+     * paid at its total and completes through the same route.
+     */
+    describe("the completions through Medusa's completeCartWorkflow (SD-115 review)", () => {
+      afterEach(settleBeforeTeardown)
+
+      /** A one-seller cart owned by a customer, a card session for 15.00, then repriced to 19.00 round every refresh. */
+      async function staleOneSellerCart(w: World, customer?: { id: string; email: string }) {
+        const owner = customer ?? (await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }]))[0]
+        const cart = await w.makeCart([w.productA], { customer_id: owner.id, email: owner.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await openCardSession(w, cart.id)
+        expectInStep(await stateOf(cart.id), 15)
+        expect(lastIntent()).toMatchObject({ amount: 1500 })
+        await repriceFirstLine(cart.id, 14)
+        const stale = await stateOf(cart.id)
+        expect(stale).toMatchObject({ total: 19, collection: 15 })
+        expect(stale.sessions).toEqual([{ id: expect.any(String), amount: 15, status: "pending" }])
+        return { cart, customer: owner as { id: string; email: string } }
+      }
+
+      async function ordersOf(customerId: string) {
+        const { data } = await container()
+          .resolve(ContainerRegistrationKeys.QUERY)
+          .graph({ entity: "order", fields: ["id", "total"], filters: { customer_id: customerId } })
+        return (data as Array<{ id: string; total: unknown }>).map((o) => ({ id: o.id, total: num(o.total) }))
+      }
+
+      async function expectRefusedAndSettled(cartId: string, customerId: string) {
+        // Nothing was authorized, nothing was ordered, the cart did not complete.
+        expect(stripe.retrieve).not.toHaveBeenCalled()
+        expect(await ordersOf(customerId)).toEqual([])
+        expect((await container().resolve(Modules.CART).retrieveCart(cartId)).completed_at ?? null).toBeNull()
+        // Settled after the workflow ended: the collection is at the total and the 15.00 session is gone with its intent.
+        const healed = await stateOf(cartId)
+        expectInStep(healed, 19)
+        expect(healed.sessions).toEqual([])
+        expect(stripe.cancel).toHaveBeenCalledWith("pi_test_cpr_1", expect.anything())
+      }
+
+      const ROUTES: Array<[string, (cartId: string) => string]> = [
+        ["POST /store/carts/:id/complete-tickets", (id) => `/store/carts/${id}/complete-tickets`],
+        ["POST /store/carts/:id/complete-digital", (id) => `/store/carts/${id}/complete-digital`],
+        ["POST /store/rentals/:cart_id", (id) => `/store/rentals/${id}`],
+      ]
+
+      it.each(ROUTES)("%s: refused with 409 and settled, then paid at the total and completed", async (_name, path) => {
+        const w = await world()
+        const { cart, customer } = await staleOneSellerCart(w)
+
+        expectRefused(await api.post(path(cart.id), {}, w.pak).catch(answerOf))
+        await expectRefusedAndSettled(cart.id, customer.id)
+
+        await openCardSession(w, cart.id)
+        expect(lastIntent()).toMatchObject({ amount: 1900 })
+        const completed = expectStatus(await api.post(path(cart.id), {}, w.pak).catch(answerOf), 200)
+        expect(completed.data.type).toBe("order")
+        expect(await ordersOf(customer.id)).toEqual([{ id: expect.any(String), total: 19 }])
+      })
+
+      it("POST /store/subscriptions: refused with 409 and settled, then paid at the total and completed", async () => {
+        const w = await world()
+        const email = `buyer-${uid()}@example.com`
+        const password = `${uid()}-${uid()}`
+        const registered = await api.post("/auth/customer/emailpass/register", { email, password })
+        const created = await api.post(
+          "/store/customers",
+          { email },
+          { headers: { authorization: `Bearer ${registered.data.token}`, ...w.pak.headers } }
+        )
+        const login = await api.post("/auth/customer/emailpass", { email, password })
+        const asCustomer = { headers: { authorization: `Bearer ${login.data.token}`, ...w.pak.headers } }
+        const { cart, customer } = await staleOneSellerCart(w, created.data.customer)
+        const body = { cart_id: cart.id, interval: "monthly", period: 1, type: "membership" }
+
+        expectRefused(await api.post("/store/subscriptions", body, asCustomer).catch(answerOf))
+        await expectRefusedAndSettled(cart.id, customer.id)
+
+        await openCardSession(w, cart.id)
+        expect(lastIntent()).toMatchObject({ amount: 1900 })
+        const completed = expectStatus(await api.post("/store/subscriptions", body, asCustomer).catch(answerOf), 201)
+        expect(completed.data.order?.id).toBeTruthy()
+        expect(await ordersOf(customer.id)).toEqual([{ id: completed.data.order.id, total: 19 }])
+      })
+
+      it("a session behind a collection that is already at the total is deleted after the refusal too (complete-digital)", async () => {
+        const w = await world()
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await openCardSession(w, cart.id)
+        await sessionBehindCollection(cart.id, 14)
+        expect(await stateOf(cart.id)).toMatchObject({ total: 19, collection: 19, sessions: [{ amount: 15, status: "pending" }] })
+
+        expectRefused(await api.post(`/store/carts/${cart.id}/complete-digital`, {}, w.pak).catch(answerOf))
+        await expectRefusedAndSettled(cart.id, customer.id)
+      })
+
+      it("Medusa's payment webhook (processPaymentWorkflow, a card authorized at Stripe): the completion it runs is refused, no order, nothing authorized, and the session is left as it was", async () => {
+        const w = await world()
+        const { cart, customer } = await staleOneSellerCart(w)
+        const [session] = (await stateOf(cart.id)).sessions
+
+        // What Medusa's webhook subscriber runs for payment_intent.amount_capturable_updated.
+        // The completion step is run with continueOnPermanentFailure, so the
+        // webhook's own run does not fail with it; its result is not what is
+        // asserted, the cart is.
+        await processPaymentWorkflow(container()).run({
+          input: { action: PaymentActions.AUTHORIZED, data: { session_id: session.id, amount: 15 } },
+          throwOnError: false,
+        })
+
+        expect(stripe.retrieve).not.toHaveBeenCalled()
+        expect(await ordersOf(customer.id)).toEqual([])
+        expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at ?? null).toBeNull()
+        // No caller to answer and the cart was locked while the guard ran, so nothing settles it here.
+        expect(await stateOf(cart.id)).toMatchObject({ total: 19, collection: 15, sessions: [{ id: session.id, amount: 15, status: "pending" }] })
+        expect(stripe.cancel).not.toHaveBeenCalled()
       })
     })
   },

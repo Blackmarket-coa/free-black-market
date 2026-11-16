@@ -20,6 +20,7 @@ jest.mock("../validate-sliding-scale-tier", () => ({ validateSlidingScaleTier: j
 jest.mock("../../rental/hooks/validate-rental", () => ({ validateRentalOnCompleteCart: jest.fn() }))
 jest.mock("../validate-ccr-reservation", () => ({ validateCcrReservation: jest.fn() }))
 jest.mock("../validate-order-cycle", () => ({ validateOrderCycleOnCompleteCart: jest.fn() }))
+jest.mock("../validate-cart-payment-amount", () => ({ validateCartPaymentAmount: jest.fn() }))
 
 import { runCompleteCartGuards } from "../complete-cart-guards"
 import { cartAlreadyCompleted } from "../complete-cart-validate-args"
@@ -27,12 +28,14 @@ import { validateSlidingScaleTier } from "../validate-sliding-scale-tier"
 import { validateRentalOnCompleteCart } from "../../rental/hooks/validate-rental"
 import { validateCcrReservation } from "../validate-ccr-reservation"
 import { validateOrderCycleOnCompleteCart } from "../validate-order-cycle"
+import { validateCartPaymentAmount } from "../validate-cart-payment-amount"
 
 const GUARDS = {
   "sliding-scale": jest.mocked(validateSlidingScaleTier),
   rental: jest.mocked(validateRentalOnCompleteCart),
   ccr: jest.mocked(validateCcrReservation),
   "order-cycle": jest.mocked(validateOrderCycleOnCompleteCart),
+  "payment-amount": jest.mocked(validateCartPaymentAmount),
 }
 
 /** The guards that ran, in the order they were called, with what each was handed. */
@@ -49,7 +52,8 @@ function calls(): Array<{ guard: string; args: unknown; context: unknown }> {
 type MedusaValidateArgs = { input: CompleteCartWorkflowInput; cart: unknown }
 
 const CONTEXT = { container: { resolve: () => ({}) } }
-const ALL_FOUR = ["sliding-scale", "rental", "ccr", "order-cycle"]
+/** SD-115: the payment-amount guard is last, and is handed the argument only (it reads nothing but the hook's cart). */
+const ALL_FIVE = ["sliding-scale", "rental", "ccr", "order-cycle", "payment-amount"]
 
 beforeEach(() => {
   for (const fn of Object.values(GUARDS)) {
@@ -59,19 +63,19 @@ beforeEach(() => {
 })
 
 describe("runCompleteCartGuards", () => {
-  it("runs all four guards, in order, on a cart that has not completed, each with the hook's own argument and context", async () => {
+  it("runs all five guards, in order, on a cart that has not completed, each with the hook's own argument and the first four with its context", async () => {
     const args: MedusaValidateArgs = { input: { id: "cart_1" }, cart: { id: "cart_1", completed_at: null } }
     await runCompleteCartGuards(args, CONTEXT)
-    expect(calls().map((c) => c.guard)).toEqual(ALL_FOUR)
+    expect(calls().map((c) => c.guard)).toEqual(ALL_FIVE)
     for (const call of calls()) {
       expect(call.args).toBe(args)
-      expect(call.context).toBe(CONTEXT)
+      expect(call.context).toBe(call.guard === "payment-amount" ? undefined : CONTEXT)
     }
   })
 
-  it("runs all four when the hook carries no cart (nothing says it completed)", async () => {
+  it("runs all five when the hook carries no cart (nothing says it completed; the payment-amount guard refuses that itself)", async () => {
     await runCompleteCartGuards({ input: { id: "cart_1" } }, CONTEXT)
-    expect(calls().map((c) => c.guard)).toEqual(ALL_FOUR)
+    expect(calls().map((c) => c.guard)).toEqual(ALL_FIVE)
   })
 
   it.each([

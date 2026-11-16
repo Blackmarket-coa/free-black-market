@@ -554,6 +554,21 @@ describe("FBM's completions through Medusa's workflow: a cart refused inside it 
       expect(t.raw.body).toBe(refusal)
     })
 
+    it("settles the cart the request named when the middleware ran, after the error handler has been handed the request with its own path parameters", async () => {
+      // Express gives the application's error handler, which answers the
+      // workflow's refusal, the request with that handler's parameters: none.
+      // Read at that point, the cart in the path is gone.
+      const t = request({ methods: [], carts: {} }, init)
+      await handler(t.req, t.res, t.next)
+      ;(t.req as unknown as { params: Record<string, string> }).params = {}
+      t.res.status(409).json(refusal)
+      await t.sent
+
+      expect(refreshCartPaymentCollection).toHaveBeenCalledTimes(1)
+      expect(refreshCartPaymentCollection).toHaveBeenCalledWith(t.req.scope, "cart_1")
+      expect(t.raw.body).toBe(refusal)
+    })
+
     it("settling fails: the refusal goes out all the same, and the failure is logged", async () => {
       const t = request({ methods: [], carts: {} }, init)
       refreshCartPaymentCollection.mockRejectedValue(new Error("Failed to acquire lock for key cart_1"))

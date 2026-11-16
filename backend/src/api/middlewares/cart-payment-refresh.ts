@@ -345,13 +345,20 @@ const cartInBody: CartOf = (req) => (req.body as { cart_id?: unknown } | null | 
  * not the caller's with 403) never reaches the refusal and cannot have this
  * delete a session on someone else's cart. The answer itself is passed on
  * unchanged.
+ *
+ * The cart is read from the request when this middleware runs, not when the
+ * answer is sent. The refusal is answered by the application's error
+ * handler, and Express hands that handler the request with its own (empty)
+ * path parameters, so `req.params.id` is gone by then: read late, the three
+ * routes that name the cart in the path settled nothing (measured on
+ * Postgres; the body-named cart of `POST /store/subscriptions` was settled).
  */
 export function settleCartPaymentAfterRefusedCompletion(cartOf: CartOf) {
   return function settleCartPaymentAfterRefusal(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction): void {
+    const cartId = cartOf(req)
     const json = res.json.bind(res)
     let held = false
     res.json = ((body: unknown) => {
-      const cartId = cartOf(req)
       const refused =
         !held &&
         statusOf(res) === cartPaymentAmountMismatchResponse().status &&

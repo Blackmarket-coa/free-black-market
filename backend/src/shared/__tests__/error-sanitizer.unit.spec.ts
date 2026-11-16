@@ -127,6 +127,42 @@ describe("error-sanitizer", () => {
     })
   })
 
+  describe.each(["production", "test"])("a completion refused for its payment session's amount (SD-115, %s)", (env) => {
+    // As the workflow's error reaches the handler: a plain object carrying
+    // the error's own fields, including what the core handler would write.
+    const refused = {
+      name: "MedusaError",
+      type: "not_allowed",
+      code: "cart_payment_amount_mismatch",
+      reason: "session_amount_mismatch",
+      message:
+        "Your order total changed after you chose how to pay, so your order was not placed and your card was not charged. " +
+        "If your card shows a pending authorization, it will be released. " +
+        "Please choose your payment method again to pay the current total.",
+      status: 400,
+      body: { type: "not_allowed", message: "the core handler's answer" },
+    }
+
+    it("answers 409 cart_payment_amount_mismatch with the buyer's message, not the core handler's 400", () => {
+      const handler = loadHandler(env)
+      const res = makeRes()
+      handler(refused, makeReq(), res, jest.fn())
+
+      expect(res.statusCode).toBe(409)
+      expect(res.body).toEqual({ code: "cart_payment_amount_mismatch", type: "cart_payment_amount_mismatch", message: refused.message })
+    })
+
+    it("sends one of its own messages whatever text the error carries", () => {
+      const handler = loadHandler(env)
+      const res = makeRes()
+      handler({ ...refused, reason: undefined, message: DB_LEAK }, makeReq(), res, jest.fn())
+
+      expect(res.statusCode).toBe(409)
+      expect(res.body.code).toBe("cart_payment_amount_mismatch")
+      expect(JSON.stringify(res.body)).not.toContain("users_email_unique")
+    })
+  })
+
   it("answers any other unexpected_state error as the core handler does", () => {
     const handler = loadHandler("production")
     const res = makeRes()
