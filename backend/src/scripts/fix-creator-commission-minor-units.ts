@@ -92,15 +92,27 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  *   request that moved money, or a withdrawal or a payment to another vendor
  *   off their earnings);
  * - the vendor's earnings were debited since the order was placed by any
- *   other ledger leg that moved money, whatever its entry type: the ledger's
- *   recovery of what they owed (ADJUSTMENT), an advance repayment, a creator
- *   reward pool funded from their earnings (`fundCreatorRewardPool`, a
- *   TRANSFER leg), a transfer an admin made by hand (`POST
- *   /admin/hawala/transfers` posts whatever entry type it is given), a hub's
- *   cut, a refund of another order of theirs. The read names no entry types
- *   to look for; it leaves out only CREATOR_COMMISSION legs (another order's
- *   commission, which is the very debit this is about) and this order's own
- *   refund legs (listed above);
+ *   other ledger leg, whatever its entry type and whatever its status: the
+ *   ledger's recovery of what they owed (ADJUSTMENT), an advance repayment,
+ *   a creator reward pool funded from their earnings
+ *   (`fundCreatorRewardPool`, a TRANSFER leg), a transfer an admin made by
+ *   hand (`POST /admin/hawala/transfers` posts whatever entry type it is
+ *   given), a hub's cut, a refund of another order of theirs, another
+ *   order's creator commission. The read asks for no entry type and no
+ *   status. A leg that is COMPLETED or SETTLED is listed as money taken; a
+ *   leg in any other status (PENDING, REVERSED, FAILED) is listed as a debit
+ *   the ledger cannot say moved no money. The only legs left out, by id, are
+ *   ones the order is already listed for: its own refund legs that moved
+ *   money (above) and the entries under its own commission keys (next);
+ * - a commission credit for the order is already in the ledger: an entry
+ *   exists, in any status, under the key approve-held credits one of the
+ *   order's rows with (`creator-commission-<row id>`), while the row says
+ *   no money has moved. approve-held credits first and updates the row
+ *   second, so a row update that failed leaves a held row whose commission
+ *   was taken at the old figure. The job would then be handed that entry
+ *   back (`createTransfer` returns whatever exists under a key), move
+ *   nothing more, and approve the row at whatever the column says:
+ *   corrected first, the row would say 100 times what the ledger moved;
  * - Mercur already paid the order's proceeds out (`order.payouts`); or
  * - the order was placed, or settled to the vendor's earnings, in the last
  *   2 days and Mercur has not paid it yet: the nightly payout
@@ -115,17 +127,18 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  * earnings, which was paid by card, whose payment records were read from
  * every payment collection linked to it and show nothing refunded for it,
  * nothing refunded on its collection that no order accounts for and no open
- * dispute, which has no refund leg in the ledger, and whose vendor's
- * earnings no payout request and no ledger leg that moved money has debited
- * since (other than another order's creator commission). That is all "not
- * refunded" and "not drawn on" mean here. NOT SEEN: a refund made in
- * Stripe's dashboard before Stripe's webhook has recorded it; a refund that
- * is owed but not yet made (a return received, an order dispute decided for
- * the buyer: the decision moves no money, the refund follows); a leg off the
- * vendor's earnings that is still PENDING; and anything after this run. With
- * FF_CARD_ORDER_LEDGER_V1 off (the default) no order settles to the ledger
- * (the legacy settlement throws before any leg, SD-39), so no held or
- * pending row that names a vendor is corrected: every one is listed.
+ * dispute, which has no refund leg in the ledger and no entry under any of
+ * its rows' commission keys, and whose vendor's earnings no payout request
+ * that moved money and no ledger leg of any entry type or status has debited
+ * since. That is all "not refunded" and "not drawn on" mean here. NOT SEEN:
+ * a refund made in Stripe's dashboard before Stripe's webhook has recorded
+ * it; a refund that is owed but not yet made (a return received, an order
+ * dispute decided for the buyer: the decision moves no money, the refund
+ * follows); money of the vendor's that is not in SELLER_EARNINGS; and
+ * anything after this run. With FF_CARD_ORDER_LEDGER_V1 off (the default)
+ * no order settles to the ledger (the legacy settlement throws before any
+ * leg, SD-39), so no held or pending row that names a vendor is corrected:
+ * every one is listed.
  *
  * WHEN TO RUN IT: IMMEDIATELY BEFORE THE REPAIR THAT MAKES COMMISSION
  * CREDITING WORK DEPLOYS, NOT EARLIER. Those checks are made once, when
@@ -168,7 +181,14 @@ const PAGE = 200
 
 type Row = StoredAttributionAmounts & { created_at?: Date | string }
 
-/** Payout request statuses whose legs have taken the money off the vendor's earnings. */
+/**
+ * Payout request statuses whose legs have taken the money off the vendor's
+ * earnings. Read to name the payout in the review line. A request's legs
+ * (`requestPayout`: a WITHDRAWAL and, with a fee, a FEE leg off the vendor's
+ * earnings) are read with every other debit, whatever the request's own
+ * status says, so a request left PENDING after its legs posted is listed by
+ * its legs.
+ */
 const PAID_OUT_STATUSES = ["PROCESSING", "IN_TRANSIT", "COMPLETED"] as const
 
 /**
@@ -196,27 +216,67 @@ const SETTLEMENT_LEG_STATUSES = [...MOVED_ENTRY_STATUSES, "REVERSED"] as const
 const OUTFLOW_ENTRY_TYPES = ["WITHDRAWAL", "VENDOR_PAYMENT"] as const
 
 /**
- * The one entry type a debit of a vendor's earnings is not counted under.
- * CREATOR_COMMISSION is approve-held's own leg (`creditCreatorCommission`):
- * another order's commission, taken from the vendor because that order's
- * proceeds held it. It is the debit this script is about, not money gone
- * that this order's commission was part of.
+ * WHICH DEBITS OF A VENDOR'S EARNINGS COUNT: every one written since the
+ * order was placed. The read asks for no entry type and no status.
  *
- * Every other leg that debits the vendor's SELLER_EARNINGS counts, WHATEVER
- * ITS ENTRY TYPE. The read deliberately names no types to look for. The
- * column is plain text and `createTransfer` posts whatever it is given: the
- * ledger's recoveries of what a vendor owes are ADJUSTMENT
- * (`recoverCardProcessingShortfall`), `processAdvanceRepayment` posts
- * ADVANCE_REPAYMENT, a creator reward pool funded from a vendor's earnings
- * is a TRANSFER (`fundCreatorRewardPool`, which `POST
+ * No entry type, because the column is plain text and `createTransfer` posts
+ * whatever it is given: the ledger's recoveries of what a vendor owes are
+ * ADJUSTMENT (`recoverCardProcessingShortfall`), `processAdvanceRepayment`
+ * posts ADVANCE_REPAYMENT, a creator reward pool funded from a vendor's
+ * earnings is a TRANSFER (`fundCreatorRewardPool`, which `POST
  * /v1/seller/programs/:id/reward-pools` calls once it has stored the pool),
  * a hub's cut of a grower's sale is COMMISSION
  * (`payout-breakdown/grower-payout.ts`), and `POST /admin/hawala/transfers`
- * passes the admin's own `entry_type` straight through. A list of types
- * here was twice found one short. Only legs that DEBIT the earnings are
- * read, so an ADJUSTMENT that returns a failed payout to them is not one.
+ * passes the admin's own `entry_type` straight through. A list of types to
+ * look for was twice found one short, and the one type this read then left
+ * out, CREATOR_COMMISSION, was a third: it was meant as "another order's
+ * commission, the debit approve-held makes", and it let through an admin's
+ * transfer under that label and this order's own commission leg.
+ *
+ * Another order's commission is not left out in a narrower form either.
+ * `creditCreatorCommission` posts it as CREATOR_COMMISSION with reference
+ * type CREATOR_ATTRIBUTION, the attribution row's id as the reference, the
+ * order's id and the key `creator-commission-<row id>`, off the vendor's
+ * SELLER_EARNINGS into the creator's CREATOR_EARNINGS. Every one of those is
+ * a label `createTransfer` takes from its caller, and the admin route
+ * forwards all of them but the order id today. And a leg that IS another
+ * order's commission takes nothing of this order's only if that order's own
+ * proceeds were in the same earnings, which would need this whole gate run
+ * on that order. What the gate is for is to list an order when money has
+ * left the earnings its commission would be debited from; such a leg is
+ * money that left them, so the order is listed and the line names the other
+ * order. It costs nothing where this script is meant to run: no commission
+ * is credited today (SD-99), so no such leg exists; where one does,
+ * crediting already works for that vendor, and the operator should hear it.
+ *
+ * No status, for the same reason and one more. `createTransfer` writes a leg
+ * PENDING, moves both balances in one database transaction, then marks the
+ * leg COMPLETED in a separate statement. A process that stops, or a
+ * statement that fails, between the two leaves a PENDING leg whose money
+ * moved; one that stops before the transaction leaves a PENDING leg whose
+ * money did not; and any transfer in flight while this runs is PENDING for
+ * that moment. The ledger cannot tell these apart, so a PENDING leg lists
+ * the order. REVERSED is a leg that moved money and that a refund
+ * relabelled (`processRefund`); it posts the refund as legs of its own and
+ * returns nothing to the vendor by the label. FAILED is set when the balance
+ * move threw: rolled back whole when it ran in a database transaction, but
+ * the ledger's fallback path can leave the debit applied
+ * (`applyBalancePairWithCompensation`, which logs it for manual
+ * reconciliation), so it is counted too, and the line says FAILED. Only
+ * legs that DEBIT the earnings are read, so an ADJUSTMENT that returns a
+ * failed payout to them is not one.
  */
-const DEBITS_NOT_COUNTED = ["CREATOR_COMMISSION"] as const
+
+/**
+ * The idempotency key approve-held's ledger call credits an attribution row
+ * under (`creditCreatorCommission` in `modules/hawala-ledger/service.ts`).
+ * `createTransfer` looks an entry up by its key before anything else and
+ * returns the one it finds, in whatever status, so an entry under this key
+ * is what approve-held gets back for the row instead of a new credit.
+ */
+function commissionCreditKey(attributionId: string): string {
+  return `creator-commission-${attributionId}`
+}
 
 /** How many of a vendor's debits are read for the review line; one is enough to list the order. */
 const DEBITS_READ = 10
@@ -350,9 +410,10 @@ async function readOrderPayment(
  * Who approve-held would debit for this order, whether and when the order's
  * proceeds reached them, whether the order was refunded (by the ledger and
  * by its payment records, and which payment collections of the order's
- * those records were read from), and whether they have been paid, or their
- * earnings debited by any other leg, since it was placed
- * (`reviewVendorDebit`).
+ * those records were read from), whether a commission credit for any of its
+ * rows (`attributionIds`) is already in the ledger, and whether they have
+ * been paid, or their earnings debited by any other leg, since it was
+ * placed (`reviewVendorDebit`).
  * `placedAtFallback` is the L1 row's `created_at`: the subscriber writes it
  * at `order.placed`. `now` is when this is read; the answer speaks for that
  * moment only.
@@ -361,6 +422,7 @@ async function readVendorDebitContext(
   container: MedusaContainer,
   orderId: string,
   vendorIds: readonly string[],
+  attributionIds: readonly string[],
   placedAtFallback: Date | string | undefined,
   now: Date
 ): Promise<VendorDebitContext> {
@@ -398,6 +460,16 @@ async function readVendorDebitContext(
     entry_type: "REFUND",
     status: [...MOVED_ENTRY_STATUSES],
   })
+  // Whatever already sits under the key approve-held credits each of the
+  // order's rows with. No status is asked for and no account: the key alone
+  // decides what the job is handed back.
+  const rowByCommissionKey = new Map(attributionIds.map((id) => [commissionCreditKey(id), id]))
+  const commissionEntries = rowByCommissionKey.size
+    ? await hawala.listLedgerEntries({ idempotency_key: [...rowByCommissionKey.keys()] })
+    : []
+  // The legs the order is listed for under a reason of their own. Left out
+  // of the read of every debit BY ID, so nothing is left out by a label.
+  const listedByOwnReason = [...refundLegs, ...commissionEntries].map((e) => e.id)
   const paymentSide = await readOrderPayment(container, orderId)
 
   const order_settled_to_vendor: Record<string, boolean> = {}
@@ -406,6 +478,7 @@ async function readVendorDebitContext(
   const vendorByEarningsAccount = new Map<string, string>()
   const vendor_withdrawals: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
   const vendor_other_debits: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
+  const vendor_unconfirmed_debits: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
   for (const vendorId of vendorIds) {
     const accounts = await hawala.listLedgerAccounts({ owner_id: vendorId, account_type: "SELLER_EARNINGS" })
     for (const account of accounts) vendorByEarningsAccount.set(account.id, vendorId)
@@ -420,32 +493,32 @@ async function readVendorDebitContext(
       { vendor_id: vendorId, status: [...PAID_OUT_STATUSES], created_at: { $gte: placedAt } },
       { take: 5, order: { created_at: "ASC" } }
     )
-    // Every leg that debited the vendor's earnings since the order was
-    // placed and moved money. No entry type is asked for (see
-    // DEBITS_NOT_COUNTED): what is left out is another order's creator
-    // commission, and this order's own refund legs, which `refundLegs` above
-    // already holds and the review lists as a refund.
+    // Every leg that debits the vendor's earnings, written since the order
+    // was placed. No entry type and no status is asked for (see WHICH DEBITS
+    // OF A VENDOR'S EARNINGS COUNT above).
     const debits = accounts.length
       ? await hawala.listLedgerEntries(
           {
             debit_account_id: accounts.map((a) => a.id),
-            entry_type: { $nin: [...DEBITS_NOT_COUNTED] },
-            ...(refundLegs.length ? { id: { $nin: refundLegs.map((e) => e.id) } } : {}),
-            status: [...MOVED_ENTRY_STATUSES],
+            ...(listedByOwnReason.length ? { id: { $nin: listedByOwnReason } } : {}),
             created_at: { $gte: placedAt },
           },
           { take: DEBITS_READ, order: { created_at: "ASC" } }
         )
       : []
     const named = debits.map((e) => ({
+      moved: movedMoney(e.status),
       paidOut: (OUTFLOW_ENTRY_TYPES as readonly string[]).includes(String(e.entry_type)),
       leg: { id: e.id, kind: debitKind(e), status: String(e.status) },
     }))
     vendor_withdrawals[vendorId] = [
       ...requests.map((r) => ({ id: r.id, kind: "payout request", status: String(r.status) })),
-      ...named.filter((d) => d.paidOut).map((d) => d.leg),
+      ...named.filter((d) => d.moved && d.paidOut).map((d) => d.leg),
     ]
-    vendor_other_debits[vendorId] = named.filter((d) => !d.paidOut).map((d) => d.leg)
+    vendor_other_debits[vendorId] = named.filter((d) => d.moved && !d.paidOut).map((d) => d.leg)
+    // Not COMPLETED and not SETTLED: the ledger does not say this money
+    // stayed where it was.
+    vendor_unconfirmed_debits[vendorId] = named.filter((d) => !d.moved).map((d) => d.leg)
   }
 
   // Every payment collection linked to the order. Null (which lists the
@@ -473,8 +546,17 @@ async function readVendorDebitContext(
     order_payment: paymentSide.payment,
     order_payment_unread: paymentSide.unread,
     order_payment_collection_ids: linkedCollections,
+    order_commission_entries: commissionEntries.map((e) => ({
+      id: e.id,
+      attribution_id: rowByCommissionKey.get(String(e.idempotency_key)) ?? String(e.idempotency_key),
+      status: String(e.status),
+      amount: Number(e.amount),
+      moved: movedMoney(e.status),
+      from_vendor_id: vendorByEarningsAccount.get(e.debit_account_id) ?? null,
+    })),
     vendor_withdrawals,
     vendor_other_debits,
+    vendor_unconfirmed_debits,
   }
 }
 
@@ -521,7 +603,14 @@ export async function fixCreatorCommissionMinorUnits(
       // and whether anything readable now already argues against that debit.
       const debited = vendorsDebitedOnApproval(rows)
       if (debited.length) {
-        const ctx = await readVendorDebitContext(container, orderId, debited, head.created_at, opts.now ?? new Date())
+        const ctx = await readVendorDebitContext(
+          container,
+          orderId,
+          debited,
+          rows.map((r) => r.id),
+          head.created_at,
+          opts.now ?? new Date()
+        )
         const reason = reviewVendorDebit(plan, rows, ctx)
         if (reason) {
           summary.review.push({ order_id: orderId, reason })
@@ -601,8 +690,10 @@ export default async function run({ container, args }: ExecArgs) {
         `a refund for the order, a refund on its payment collection recorded on no order, or an open card dispute, ` +
         `whose payment records could not be read, are not a card payment's, or were not read from every payment ` +
         `collection linked to the order, whose vendor was paid out after the order or had their earnings debited by ` +
-        `any other ledger leg that moved money (whatever its entry type, except another order's creator commission), ` +
-        `whose proceeds Mercur paid out, or which were placed or settled in the last 2 days are listed for review instead.`
+        `any other ledger leg since (whatever its entry type and whatever its status: a leg labelled as a creator ` +
+        `commission and a leg still PENDING count), which already have a ledger entry under the key approve-held credits ` +
+        `one of their rows with, whose proceeds Mercur paid out, or which were placed or settled in the last 2 days are ` +
+        `listed for review instead.`
     )
     logger.warn(
       `${tag} Those checks were made once, just now. Nothing repeats them when approve-held debits the vendor: ` +

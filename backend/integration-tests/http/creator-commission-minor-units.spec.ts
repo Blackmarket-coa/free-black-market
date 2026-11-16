@@ -1515,28 +1515,16 @@ medusaIntegrationTestRunner({
           )
         })
 
-        it("lists one whose vendor's earnings were debited since the order by a leg of an entry type no list would name: a creator reward pool funded from the vendor's earnings, a transfer an admin makes through the manual-transfer route, a refund of another order of the vendor's; corrects one whose vendor's only debit since is another order's creator commission", async () => {
-          // Money came in since the order, and the one thing that left is
-          // another order's creator commission: a second sale settles to the
-          // same vendor, and its commission goes to a creator out of the
-          // vendor's earnings (`creditCreatorCommission`, the ledger call
-          // approve-held makes, here in the ledger's own currency code). That
-          // is the debit this script is about, not a reason against it, so
-          // the order is corrected.
+        it("lists one whose vendor's earnings were debited since the order by a leg of an entry type no list would name: a creator reward pool funded from the vendor's earnings, a transfer an admin makes through the manual-transfer route, a refund of another order of the vendor's; corrects one whose vendor's earnings only gained since", async () => {
+          // Money came in since the order and nothing left: a second sale
+          // settles to the same vendor. That lists nothing. (Another order's
+          // creator commission off the same earnings is a debit like any
+          // other; it has a case of its own below.)
           const clean = await storefrontOrder()
           const laterSale = await order25(clean.vendor.id)
           await settle(laterSale.id, clean.vendor.id)
-          await hawala().creditCreatorCommission({
-            vendorSellerId: clean.vendor.id,
-            creatorSellerId: (await makeSeller("OtherCreator")).id,
-            amountCents: 250,
-            orderId: laterSale.id,
-            attributionId: `oatt_${uid()}`,
-          })
-          const cleanDebits = await debitsOf(clean.vendor.id)
-          expect(cleanDebits).toHaveLength(1)
-          expect(cleanDebits[0]).toMatchObject({ entry_type: "CREATOR_COMMISSION", status: "COMPLETED", order_id: laterSale.id })
-          expect(await balanceOf(clean.vendor.id)).toBe(4850 - 250)
+          expect(await debitsOf(clean.vendor.id)).toEqual([])
+          expect(await balanceOf(clean.vendor.id)).toBe(4850)
 
           // (1) A creator reward pool funded out of the vendor's earnings:
           // the ledger call `POST /v1/seller/programs/:id/reward-pools`
@@ -1753,7 +1741,8 @@ medusaIntegrationTestRunner({
               `so approve-held would be handed that entry back, move nothing more, and approve the row at whatever its column then says`
           )
           expect(reasons[taken.order.id]).toContain("from 2 to 250")
-          expect(summary.never_settled).toEqual([])
+          // (B2)'s other order is an attributed order too, and never settled.
+          expect(summary.never_settled).toEqual([otherOrder.id])
           for (const o of [labelled, referenced, commissioned, taken]) {
             expect(await read(o.row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
           }

@@ -196,8 +196,11 @@ describe("reviewVendorDebit", () => {
     order_payment: paidByCard,
     // The one collection linked to the order is the one its records were read from.
     order_payment_collection_ids: ["pay_col_1"],
+    // Nothing sits under the key approve-held credits the order's rows with.
+    order_commission_entries: [],
     vendor_withdrawals: { sel_vendor: [] },
     vendor_other_debits: { sel_vendor: [] },
+    vendor_unconfirmed_debits: { sel_vendor: [] },
   }
   const DAY = 24 * 60 * 60 * 1000
   const planFor = (rows: StoredAttributionAmounts[]) => {
@@ -494,6 +497,120 @@ describe("reviewVendorDebit", () => {
     expect(many).toContain("(CORRECTION leg hle_a COMPLETED, CORRECTION leg hle_b COMPLETED, CORRECTION leg hle_c COMPLETED, …), and the commission")
   })
 
+  it("lists an order whose vendor's earnings carry a debit since it was placed that is neither COMPLETED nor SETTLED, worded as a debit the ledger cannot vouch for", () => {
+    const rows = [row()]
+    const reason = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      vendor_unconfirmed_debits: {
+        sel_vendor: [
+          { id: "hle_w", kind: "withdrawal", status: "PENDING" },
+          { id: "hle_cc", kind: "CREATOR_COMMISSION leg of order order_2", status: "REVERSED" },
+        ],
+      },
+    })
+    expect(reason).toBe(
+      "vendor sel_vendor's earnings have a debit written since the order was placed that is neither COMPLETED nor SETTLED " +
+        "(withdrawal hle_w PENDING, CREATOR_COMMISSION leg of order order_2 hle_cc REVERSED), " +
+        "so whether that money moved, or stayed moved, cannot be read from the ledger. " +
+        "Correcting would raise what the approve-held job debits from sel_vendor's current earnings for this order from 2 to 250 once commission " +
+        "crediting works. Operator decision, not changed here"
+    )
+    // Not said to be a payout, and not said to be money taken.
+    expect(reason).not.toContain("has been paid out")
+    expect(reason).not.toContain("earnings were drawn on")
+    // Another vendor's are not this vendor's; a vendor the script did not
+    // answer for has none.
+    expect(
+      reviewVendorDebit(planFor(rows), rows, {
+        ...clean,
+        vendor_unconfirmed_debits: { sel_other: [{ id: "hle_w", kind: "withdrawal", status: "PENDING" }] },
+      })
+    ).toBeNull()
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, vendor_unconfirmed_debits: {} })).toBeNull()
+    // More than three are cut short.
+    const many = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      vendor_unconfirmed_debits: { sel_vendor: ["a", "b", "c", "d"].map((id) => ({ id: `hle_${id}`, kind: "TRANSFER leg", status: "PENDING" })) },
+    })
+    expect(many).toContain("(TRANSFER leg hle_a PENDING, TRANSFER leg hle_b PENDING, TRANSFER leg hle_c PENDING, …), so whether")
+  })
+
+  it("lists an order that already has a commission credit in the ledger, as commission already taken for it when the entry moved money off the vendor's earnings", () => {
+    const rows = [row()]
+    const entry = (over: Partial<NonNullable<VendorDebitContext["order_commission_entries"]>[number]> = {}) => ({
+      id: "hle_cc",
+      attribution_id: "oatt_1",
+      status: "COMPLETED",
+      amount: 0.02,
+      moved: true,
+      from_vendor_id: "sel_vendor",
+      ...over,
+    })
+    const handedBack =
+      "and the row is still held with no ledger entry recorded on it, so approve-held would be handed that entry back, " +
+      "move nothing more, and approve the row at whatever its column then says"
+    const closing =
+      ". Correcting would raise what the approve-held job debits from sel_vendor's current earnings for this order from 2 to 250 once commission " +
+      "crediting works. Operator decision, not changed here"
+
+    // The credit landed, the row update did not.
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_commission_entries: [entry()] })).toBe(
+      "commission was already taken from vendor sel_vendor for this order: ledger entry hle_cc (0.02 COMPLETED) " +
+        `is under the key approve-held credits row oatt_1 with, ${handedBack}${closing}`
+    )
+    // An entry that did not move money, or moved it off an account that is
+    // not an attributed vendor's, is not called commission taken; it lists
+    // the order all the same, because approve-held is handed it back.
+    for (const [over, shown] of [
+      [{ status: "PENDING", moved: false }, "hle_cc (0.02 PENDING)"],
+      [{ status: "FAILED", moved: false }, "hle_cc (0.02 FAILED)"],
+      [{ from_vendor_id: null, amount: 20 }, "hle_cc (20 COMPLETED)"],
+      [{ amount: Number.NaN }, null],
+    ] as Array<[Parameters<typeof entry>[0], string | null]>) {
+      const reason = reviewVendorDebit(planFor(rows), rows, { ...clean, order_commission_entries: [entry(over)] })
+      if (shown === null) {
+        expect(reason).toContain("ledger entry hle_cc (an unreadable amount COMPLETED)")
+        continue
+      }
+      expect(reason).toBe(
+        `a commission credit for this order is already in the ledger: ledger entry ${shown} ` +
+          `is under the key approve-held credits row oatt_1 with, ${handedBack}${closing}`
+      )
+    }
+
+    // A pending row is one approve-held will credit too, once it is held.
+    const pending = [row({ commission_status: CommissionStatus.PENDING })]
+    expect(reviewVendorDebit(planFor(pending), pending, { ...clean, order_commission_entries: [entry()] })).toContain(
+      "and the row is still pending with no ledger entry recorded on it, so approve-held would be handed that entry back"
+    )
+
+    // Two levels, the entry under the second row's key, which approve-held
+    // will not credit (reversed): the order is listed for the first row's
+    // sake, and the line does not say the job would approve the second.
+    const chain = [
+      row({ id: "a", level: 1 }),
+      row({ id: "b", level: 2, level_split_percent: 20, commission_amount_cents: 0, commission_status: CommissionStatus.REVERSED }),
+    ]
+    const second = reviewVendorDebit(planFor(chain), chain, { ...clean, order_commission_entries: [entry({ attribution_id: "b" })] })
+    expect(second).toContain(
+      "ledger entry hle_cc (0.02 COMPLETED) is under the key approve-held credits row b with, " +
+        "and the row is reversed with no ledger entry recorded on it. Correcting would raise"
+    )
+    expect(second).not.toContain("handed that entry back")
+    // An entry for a row that is not among the order's rows is listed too.
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_commission_entries: [entry({ attribution_id: "oatt_9" })] })).toContain(
+      "is under the key approve-held credits row oatt_9 with, and the row is not among the rows read with no ledger entry recorded on it"
+    )
+
+    // The entries could not be read; a context built with none is read the same way.
+    const unknown =
+      "whether a commission credit for this order is already in the ledger could not be read, " +
+      "so it cannot be shown that approve-held would move the corrected figure"
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_commission_entries: null })).toContain(unknown)
+    const { order_commission_entries: _none, ...withoutEntries } = clean
+    expect(reviewVendorDebit(planFor(rows), rows, withoutEntries as VendorDebitContext)).toContain(unknown)
+  })
+
   it("lists an order placed inside the payout window that Mercur has not paid yet; one exactly at the window's end passes", () => {
     const rows = [row()]
     const recent = "inside the 48 hours in which the nightly payout sends an order's proceeds to its vendor"
@@ -601,6 +718,10 @@ describe("reviewVendorDebit", () => {
       order_payment_collection_ids: ["pay_col_1", "pay_col_2"],
       vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
       vendor_other_debits: { sel_vendor: [{ id: "hle_pool", kind: "TRANSFER leg for CREATOR_REWARD_POOL", status: "COMPLETED" }] },
+      vendor_unconfirmed_debits: { sel_vendor: [{ id: "hle_w", kind: "withdrawal", status: "PENDING" }] },
+      order_commission_entries: [
+        { id: "hle_cc", attribution_id: "oatt_1", status: "COMPLETED", amount: 0.02, moved: true, from_vendor_id: "sel_vendor" },
+      ],
     }
     for (const rows of [
       [row({ commission_status: CommissionStatus.REVERSED })],
@@ -611,6 +732,7 @@ describe("reviewVendorDebit", () => {
       expect(reviewVendorDebit(planFor(rows), rows, paidOut)).toBeNull()
       expect(reviewVendorDebit(planFor(rows), rows, { ...paidOut, order_payment: null })).toBeNull()
       expect(reviewVendorDebit(planFor(rows), rows, { ...paidOut, order_payment_collection_ids: null })).toBeNull()
+      expect(reviewVendorDebit(planFor(rows), rows, { ...paidOut, order_commission_entries: null })).toBeNull()
     }
   })
 

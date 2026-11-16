@@ -15,20 +15,24 @@ import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../../modules/stripe-connect-
  * the vendor or reversed by a refund, order refunded by the ledger or by its
  * payment records, payment records unreadable or not read from every payment
  * collection of the order's, vendor paid out or their earnings debited by any
- * other leg since, order placed or settled too recently). Its decisions are
- * tested in
+ * other leg since, in any status and under any label, a commission credit
+ * for the order already in the ledger, order placed or settled too
+ * recently). Its decisions are tested in
  * `modules/creator-attribution/__tests__/minor-unit-correction.unit.spec.ts`;
  * the same run on Postgres in `integration-tests/http/creator-commission-minor-units.spec.ts`.
  *
  * The container resolves only the keys the script imports and throws on
  * anything else, so a guessed key fails here instead of reaching a default.
- * The ledger stub answers like the table would: a settlement-leg read gets
- * only the legs whose key and status it asked for, a refund-leg read only
- * the order's REFUND legs in the statuses it asked for, and a read of legs
- * off accounts every leg that debits one of them (the order's refund legs
- * among them) and passes each filter given: entry types in or not in a
- * list, ids not in a list, statuses, written since a time. A read that
- * leaves a filter out gets what the table would give without it.
+ * The ledger stub answers like the table would: a read by idempotency key
+ * gets the entries under the keys it asked for (the order's settlement legs
+ * and any commission credit), in the statuses it asked for or in every
+ * status when it asked for none; a refund-leg read only the order's REFUND
+ * legs in the statuses it asked for; and a read of legs off accounts every
+ * leg that debits one of them (the order's refund legs and commission
+ * credits among them) and passes each filter given: entry types in or not
+ * in a list, ids not in a list, statuses, written since a time. A read that
+ * leaves a filter out gets what the table would give without it, so a read
+ * that asks for no status gets PENDING, FAILED and REVERSED legs too.
  *
  * The order's payment records are read by the real `readCardSettlementOrder`
  * (`lib/card-order-settlement.ts`), not a stand-in: the query stub answers
@@ -118,6 +122,34 @@ type SettlementLeg = {
   created_at?: string | Date | null
 }
 type RefundLeg = { id: string; order_id: string; status: string; amount: number; debit_account_id: string }
+/**
+ * A ledger entry under an attribution row's commission key, as
+ * `creditCreatorCommission` posts one. Defaults (see `commissionCredit`):
+ * this order's row, $0.02 off the vendor's earnings, completed.
+ */
+type CommissionEntry = {
+  id: string
+  idempotency_key: string
+  status: string
+  amount: number
+  debit_account_id: string
+  entry_type: string
+  reference_type: string | null
+  order_id: string | null
+  created_at: string
+}
+const commissionCredit = (over: Partial<CommissionEntry> = {}): CommissionEntry => ({
+  id: "hle_cc_own",
+  idempotency_key: "creator-commission-oatt_1",
+  status: "COMPLETED",
+  amount: 0.02,
+  debit_account_id: "hla_vendor",
+  entry_type: "CREATOR_COMMISSION",
+  reference_type: "CREATOR_ATTRIBUTION",
+  order_id: "order_1",
+  created_at: "2026-10-08T12:00:00.000Z",
+  ...over,
+})
 /** A ledger leg that debits an account. Defaults: off the vendor's earnings, completed, written a day after the order. */
 type DebitLeg = {
   id: string
@@ -164,6 +196,8 @@ function makeContainer(
     settlementLegs?: SettlementLeg[]
     /** Every REFUND entry in the ledger, whatever its order or status. Default: none. */
     refundLegs?: RefundLeg[]
+    /** Every ledger entry under a creator-commission key, whatever its row or status. Default: none. */
+    commissionEntries?: CommissionEntry[]
     /**
      * The order row the payment-side read gets. Default: paid by card on its
      * own collection, nothing refunded. `null`: no such order. "throws": the
@@ -221,18 +255,18 @@ function makeContainer(
   const listPayoutRequests = jest.fn(async (_filters: Record<string, unknown>, _config?: unknown) => opts.payoutRequests ?? [])
   const listLedgerAccounts = jest.fn(async (_filters: Record<string, unknown>) => [{ id: "hla_vendor" }])
   const listLedgerEntries = jest.fn(async (filters: Record<string, unknown>, _config?: unknown) => {
-    const statuses = filters.status as string[]
+    const statuses = filters.status as string[] | undefined
     if ("idempotency_key" in filters) {
       const keys = filters.idempotency_key as string[]
-      return (opts.settlementLegs ?? [settledToVendor]).filter(
-        (leg) => keys.includes(leg.idempotency_key) && statuses.includes(leg.status)
-      )
+      const keyed: Array<SettlementLeg | CommissionEntry> = [...(opts.settlementLegs ?? [settledToVendor]), ...(opts.commissionEntries ?? [])]
+      return keyed.filter((leg) => keys.includes(leg.idempotency_key) && (!statuses || statuses.includes(leg.status)))
     }
     if (filters.entry_type === "REFUND") {
-      return (opts.refundLegs ?? []).filter((leg) => leg.order_id === filters.order_id && statuses.includes(leg.status))
+      return (opts.refundLegs ?? []).filter((leg) => leg.order_id === filters.order_id && (!statuses || statuses.includes(leg.status)))
     }
     // A read of legs off accounts: every leg that debits one of them, the
-    // order's refund legs included, narrowed by each filter that was given.
+    // order's refund legs and commission credits included, narrowed by each
+    // filter that was given.
     const accounts = filters.debit_account_id as string[] | undefined
     const types = filters.entry_type as string[] | { $nin: string[] } | undefined
     const notIds = (filters.id as { $nin?: string[] } | undefined)?.$nin ?? []
@@ -245,6 +279,7 @@ function makeContainer(
         ...leg,
       })),
       ...(opts.refundLegs ?? []).map((leg) => ({ ...leg, entry_type: "REFUND", created_at: "2026-10-02T12:00:00.000Z" })),
+      ...(opts.commissionEntries ?? []),
     ]
     return table.filter(
       (leg) =>
@@ -315,9 +350,13 @@ describe("fix-creator-commission-minor-units", () => {
       "whose payment records could not be read, are not a card payment's, or were not read from every payment collection linked to the order"
     )
     expect(warned).toContain(
-      "whose vendor was paid out after the order or had their earnings debited by any other ledger leg that moved money " +
-        "(whatever its entry type, except another order's creator commission)"
+      "whose vendor was paid out after the order or had their earnings debited by any other ledger leg since " +
+        "(whatever its entry type and whatever its status: a leg labelled as a creator commission and a leg still PENDING count)"
     )
+    expect(warned).toContain("which already have a ledger entry under the key approve-held credits one of their rows with")
+    // Nothing is said to be left out: the read leaves out no entry type and no status.
+    expect(warned).not.toContain("except another order's creator commission")
+    expect(warned).not.toContain("that moved money (whatever its entry type")
     expect(warned).toContain("A refund made in Stripe's dashboard is seen only once Stripe's webhook has recorded it here")
     expect(warned).toContain(
       "a refund that is owed but not yet made (a return received, an order dispute decided for the buyer) is not seen at all"
@@ -377,18 +416,16 @@ describe("fix-creator-commission-minor-units", () => {
       { vendor_id: "sel_vendor", status: ["PROCESSING", "IN_TRANSIT", "COMPLETED"], created_at: { $gte: placed } },
       expect.anything()
     )
-    // One read of every leg off the vendor's earnings: no entry type is
-    // asked for, only another order's creator commission is left out.
+    // One read of every leg off the vendor's earnings since the order: no
+    // entry type and no status is asked for, and with no refund leg and no
+    // commission credit of the order's own there is no id to leave out.
     expect(listLedgerEntries).toHaveBeenCalledWith(
-      {
-        debit_account_id: ["hla_vendor"],
-        entry_type: { $nin: ["CREATOR_COMMISSION"] },
-        // SETTLED too: the settlement batch re-labels a completed leg once it is anchored.
-        status: ["COMPLETED", "SETTLED"],
-        created_at: { $gte: placed },
-      },
+      { debit_account_id: ["hla_vendor"], created_at: { $gte: placed } },
       { take: 10, order: { created_at: "ASC" } }
     )
+    // The order's commission credits are asked for by the key approve-held
+    // credits each row under, and by nothing else: no status, no account.
+    expect(listLedgerEntries).toHaveBeenCalledWith({ idempotency_key: ["creator-commission-oatt_1"] })
   })
 
   it("lists an order whose seller is not the attributed vendor, or whose proceeds Mercur paid out", async () => {
@@ -611,19 +648,38 @@ describe("fix-creator-commission-minor-units", () => {
       },
     ])
 
-    // Refund legs that moved nothing, and another order's off someone
-    // else's account, are not this order refunded.
-    for (const refundLegs of [
-      [refundLeg({ status: "FAILED" })],
-      [refundLeg({ status: "PENDING" })],
-      [refundLeg({ status: "REVERSED" })],
-      [refundLeg({ order_id: "order_10", debit_account_id: "hla_other" })],
-    ]) {
-      const { container } = makeContainer({ refundLegs })
+    // Another order's refund leg off someone else's account is not this
+    // order refunded, and no debit of this vendor's earnings.
+    const elsewhere = makeContainer({ refundLegs: [refundLeg({ order_id: "order_10", debit_account_id: "hla_other" })] })
+    const elsewhereRun = await fixCreatorCommissionMinorUnits(elsewhere.container, { apply: true, now: LATER })
+    expect(elsewhereRun.review).toEqual([])
+    expect(elsewhereRun.corrected.map((c) => c.order_id)).toEqual(["order_1"])
+
+    // A refund leg of the order that is not COMPLETED or SETTLED is not read
+    // as the order refunded. Off the vendor's earnings it is still a debit
+    // of them, and the read of every debit asks for no status: listed, as a
+    // debit the ledger cannot say moved no money.
+    for (const status of ["PENDING", "REVERSED", "FAILED"]) {
+      const { container, correctAttributionAmountsIfUnchanged } = makeContainer({ refundLegs: [refundLeg({ status })] })
       const run = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
-      expect(run.review).toEqual([])
-      expect(run.corrected.map((c) => c.order_id)).toEqual(["order_1"])
+      expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(run.corrected).toEqual([])
+      expect(run.review).toEqual([
+        {
+          order_id: "order_1",
+          reason: expect.stringContaining(
+            "vendor sel_vendor's earnings have a debit written since the order was placed that is neither COMPLETED nor SETTLED " +
+              `(REFUND leg of order order_1 hle_refund_seller ${status}), so whether that money moved, or stayed moved, cannot be read from the ledger`
+          ),
+        },
+      ])
+      expect(run.review[0].reason).not.toContain("the order was refunded")
     }
+    // The same leg off someone else's account debits nothing of the vendor's.
+    const offEscrow = makeContainer({ refundLegs: [refundLeg({ status: "PENDING", debit_account_id: "hla_escrow" })] })
+    const offEscrowRun = await fixCreatorCommissionMinorUnits(offEscrow.container, { apply: true, now: LATER })
+    expect(offEscrowRun.review).toEqual([])
+    expect(offEscrowRun.corrected.map((c) => c.order_id)).toEqual(["order_1"])
 
     // Another order's refund taken from this vendor's earnings is not this
     // order refunded either, but it is money gone from those earnings since
@@ -766,7 +822,7 @@ describe("fix-creator-commission-minor-units", () => {
     }
   })
 
-  it("reads every leg that debited the vendor's earnings since the order, whatever its entry type, and lists the order when there is any", async () => {
+  it("reads every leg that debited the vendor's earnings since the order, whatever its entry type or status, and lists the order when there is any", async () => {
     const drawnOn = (what: string) =>
       `vendor sel_vendor's earnings were drawn on since the order was placed (${what}), ` +
       `and the commission was never carved out of what was taken`
@@ -801,16 +857,70 @@ describe("fix-creator-commission-minor-units", () => {
       expect(summary.review[0].reason).not.toContain("has been paid out")
     }
 
-    // Not counted, each corrected: another order's creator commission (the
-    // debit approve-held makes); a leg that moved no money; a leg written
-    // before the order was placed; a leg off someone else's account.
+    // A leg labelled CREATOR_COMMISSION counts like any other, whoever
+    // posted it: an admin's manual transfer under that label, the same with
+    // the attribution reference on it, another order's commission as
+    // approve-held posts it (named with that order), and one that carries
+    // this order's id without sitting under its commission key.
+    for (const [leg, named] of [
+      [{ id: "hle_cc_admin", entry_type: "CREATOR_COMMISSION" }, "CREATOR_COMMISSION leg hle_cc_admin COMPLETED"],
+      [
+        { id: "hle_cc_ref", entry_type: "CREATOR_COMMISSION", reference_type: "CREATOR_ATTRIBUTION" },
+        "CREATOR_COMMISSION leg for CREATOR_ATTRIBUTION hle_cc_ref COMPLETED",
+      ],
+      [
+        { id: "hle_cc_other", entry_type: "CREATOR_COMMISSION", reference_type: "CREATOR_ATTRIBUTION", order_id: "order_2" },
+        "CREATOR_COMMISSION leg of order order_2 hle_cc_other COMPLETED",
+      ],
+      [
+        { id: "hle_cc_this", entry_type: "CREATOR_COMMISSION", reference_type: "CREATOR_ATTRIBUTION", order_id: "order_1", status: "SETTLED" },
+        "CREATOR_COMMISSION leg of order order_1 hle_cc_this SETTLED",
+      ],
+    ] as Array<[DebitLeg, string]>) {
+      const { container, correctAttributionAmountsIfUnchanged } = makeContainer({ debits: [leg] })
+      const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
+      expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(summary.corrected).toEqual([])
+      expect(summary.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining(drawnOn(named)) }])
+    }
+
+    // A leg that is not COMPLETED or SETTLED counts too, whatever its type:
+    // still PENDING (a transfer in flight, or one cut off before or after
+    // its money moved), REVERSED, FAILED, or a status the model does not
+    // name. Worded as a debit the ledger cannot vouch for, not as money
+    // taken, and not as a payout even when it is a withdrawal.
+    for (const [leg, named] of [
+      [{ id: "hle_pending", entry_type: "TRANSFER", status: "PENDING" }, "TRANSFER leg hle_pending PENDING"],
+      [{ id: "hle_w_pending", entry_type: "WITHDRAWAL", status: "PENDING" }, "withdrawal hle_w_pending PENDING"],
+      [{ id: "hle_reversed", entry_type: "WITHDRAWAL", status: "REVERSED" }, "withdrawal hle_reversed REVERSED"],
+      [{ id: "hle_failed", entry_type: "TRANSFER", status: "FAILED" }, "TRANSFER leg hle_failed FAILED"],
+      [{ id: "hle_cc_pending", entry_type: "CREATOR_COMMISSION", status: "PENDING", order_id: "order_2" }, "CREATOR_COMMISSION leg of order order_2 hle_cc_pending PENDING"],
+      [{ id: "hle_odd", entry_type: "ADJUSTMENT", status: "ON_HOLD" }, "adjustment hle_odd ON_HOLD"],
+    ] as Array<[DebitLeg, string]>) {
+      const { container, correctAttributionAmountsIfUnchanged } = makeContainer({ debits: [leg] })
+      const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
+      expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(summary.corrected).toEqual([])
+      expect(summary.review).toEqual([
+        {
+          order_id: "order_1",
+          reason: expect.stringContaining(
+            "vendor sel_vendor's earnings have a debit written since the order was placed that is neither COMPLETED nor SETTLED " +
+              `(${named}), so whether that money moved, or stayed moved, cannot be read from the ledger`
+          ),
+        },
+      ])
+      expect(summary.review[0].reason).not.toContain("has been paid out")
+      expect(summary.review[0].reason).not.toContain("earnings were drawn on")
+    }
+
+    // Not counted, each corrected: a leg written before the order was
+    // placed; a leg off someone else's account.
     for (const leg of [
-      { id: "hle_cc", entry_type: "CREATOR_COMMISSION", order_id: "order_2" },
-      { id: "hle_pending", entry_type: "TRANSFER", status: "PENDING" },
-      { id: "hle_failed", entry_type: "TRANSFER", status: "FAILED" },
-      { id: "hle_reversed", entry_type: "WITHDRAWAL", status: "REVERSED" },
       { id: "hle_before", entry_type: "TRANSFER", created_at: "2026-10-01T11:59:59.999Z" },
+      { id: "hle_cc_before", entry_type: "CREATOR_COMMISSION", order_id: "order_2", created_at: "2026-10-01T11:59:59.999Z" },
       { id: "hle_elsewhere", entry_type: "TRANSFER", debit_account_id: "hla_other" },
+      { id: "hle_pending_elsewhere", entry_type: "TRANSFER", status: "PENDING", debit_account_id: "hla_other" },
     ] as DebitLeg[]) {
       const { container } = makeContainer({ debits: [leg] })
       const summary = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
@@ -833,6 +943,91 @@ describe("fix-creator-commission-minor-units", () => {
     const mixed = await fixCreatorCommissionMinorUnits(both.container, { apply: true, now: LATER })
     expect(mixed.review[0].reason).toContain("refund leg hle_refund_seller 19.4 COMPLETED")
     expect(mixed.review[0].reason).toContain(drawnOn("TRANSFER leg for CREATOR_REWARD_POOL hle_pool COMPLETED"))
+  })
+
+  it("asks the ledger for an entry under the key approve-held credits each row with, and lists an order that has one: commission already taken for it", async () => {
+    const handedBack =
+      "and the row is still held with no ledger entry recorded on it, so approve-held would be handed that entry back, " +
+      "move nothing more, and approve the row at whatever its column then says"
+    const taken = (entry: string) =>
+      `commission was already taken from vendor sel_vendor for this order: ledger entry ${entry} ` +
+      `is under the key approve-held credits row oatt_1 with, ${handedBack}`
+    const inLedger = (entry: string) =>
+      `a commission credit for this order is already in the ledger: ledger entry ${entry} ` +
+      `is under the key approve-held credits row oatt_1 with, ${handedBack}`
+
+    // approve-held's credit landed at the old figure and its row update did
+    // not: the row is held with no ledger entry on it, the $0.02 is gone.
+    const landed = makeContainer({ commissionEntries: [commissionCredit()] })
+    const summary = await fixCreatorCommissionMinorUnits(landed.container, { apply: true, now: LATER })
+    expect(landed.correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+    expect(summary.corrected).toEqual([])
+    expect(summary.review).toEqual([
+      { order_id: "order_1", reason: expect.stringContaining(`${taken("hle_cc_own (0.02 COMPLETED)")}. Correcting would raise`) },
+    ])
+    // That is the whole of it: the leg debits the vendor's earnings, and the
+    // read of every debit is told to leave it out by id, so it is not named
+    // a second time as earnings drawn on.
+    expect(summary.review[0].reason.startsWith("commission was already taken from vendor sel_vendor for this order")).toBe(true)
+    expect(summary.review[0].reason).not.toContain("earnings were drawn on")
+    expect(summary.never_settled).toEqual([])
+    // Asked for by key alone: any status, any account, written at any time.
+    expect(landed.listLedgerEntries).toHaveBeenCalledWith({ idempotency_key: ["creator-commission-oatt_1"] })
+    expect(landed.listLedgerEntries).toHaveBeenCalledWith(
+      { debit_account_id: ["hla_vendor"], id: { $nin: ["hle_cc_own"] }, created_at: { $gte: new Date("2026-10-01T12:00:00.000Z") } },
+      expect.anything()
+    )
+
+    // Whatever sits under the key is what approve-held is handed back, so
+    // its status, its account and its date do not let the order through: an
+    // entry anchored SETTLED; one still PENDING or FAILED (worded as a
+    // credit in the ledger, not as money taken); one off an account that is
+    // not the vendor's (posted under the key by hand); one written before
+    // the order's recorded placement.
+    for (const [entry, expected] of [
+      [commissionCredit({ status: "SETTLED" }), taken("hle_cc_own (0.02 SETTLED)")],
+      [commissionCredit({ status: "PENDING" }), inLedger("hle_cc_own (0.02 PENDING)")],
+      [commissionCredit({ status: "FAILED" }), inLedger("hle_cc_own (0.02 FAILED)")],
+      [commissionCredit({ status: "REVERSED" }), inLedger("hle_cc_own (0.02 REVERSED)")],
+      [commissionCredit({ debit_account_id: "hla_other", amount: 20 }), inLedger("hle_cc_own (20 COMPLETED)")],
+      [commissionCredit({ created_at: "2026-09-30T12:00:00.000Z" }), taken("hle_cc_own (0.02 COMPLETED)")],
+    ] as Array<[CommissionEntry, string]>) {
+      const { container, correctAttributionAmountsIfUnchanged } = makeContainer({ commissionEntries: [entry] })
+      const run = await fixCreatorCommissionMinorUnits(container, { apply: true, now: LATER })
+      expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+      expect(run.corrected).toEqual([])
+      expect(run.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining(`${expected}. Correcting would raise`) }])
+      // Named once, under this reason, whatever its status.
+      expect(run.review[0].reason).not.toContain("neither COMPLETED nor SETTLED")
+      expect(run.review[0].reason).not.toContain("earnings were drawn on")
+    }
+
+    // Another row's commission credit is not this order's: under another
+    // key it is not asked for here. Off this vendor's earnings since the
+    // order it is a debit of them, and listed as that, naming its order.
+    const other = makeContainer({
+      commissionEntries: [commissionCredit({ id: "hle_cc_2", idempotency_key: "creator-commission-oatt_2", order_id: "order_2", amount: 2.5 })],
+    })
+    const otherRun = await fixCreatorCommissionMinorUnits(other.container, { apply: true, now: LATER })
+    expect(other.correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
+    expect(otherRun.review).toEqual([
+      {
+        order_id: "order_1",
+        reason: expect.stringContaining(
+          "vendor sel_vendor's earnings were drawn on since the order was placed (CREATOR_COMMISSION leg of order order_2 hle_cc_2 COMPLETED)"
+        ),
+      },
+    ])
+    expect(otherRun.review[0].reason).not.toContain("commission was already taken")
+    // Off another vendor's earnings it is nothing of this order's or this vendor's.
+    const elsewhere = makeContainer({
+      commissionEntries: [
+        commissionCredit({ id: "hle_cc_2", idempotency_key: "creator-commission-oatt_2", order_id: "order_2", debit_account_id: "hla_other" }),
+      ],
+    })
+    const elsewhereRun = await fixCreatorCommissionMinorUnits(elsewhere.container, { apply: true, now: LATER })
+    expect(elsewhereRun.review).toEqual([])
+    expect(elsewhereRun.corrected.map((c) => c.order_id)).toEqual(["order_1"])
   })
 
   it("asks which payment collections are linked to the order, and lists an order with one its payment records were not read from", async () => {

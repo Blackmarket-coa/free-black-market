@@ -339,26 +339,67 @@ export type VendorDebitContext = {
    */
   order_payment_collection_ids: readonly string[] | null
   /**
+   * Ledger entries that already exist under the idempotency key approve-held
+   * credits one of the order's rows with (`creator-commission-<row id>`,
+   * `creditCreatorCommission`), in ANY status, or null when they could not be
+   * read. Read by that key because the key is what decides what approve-held
+   * does next: `createTransfer` hands back whatever entry exists under a key,
+   * whatever its status, and the job then approves the row with that entry's
+   * id at whatever the column says. A row that is still `held` with no
+   * `ledger_entry_id` while such an entry exists is a credit that landed and
+   * a row update that did not (approve-held credits first and updates the row
+   * second), or an entry someone posted under that key by hand. Either way
+   * the commission is not waiting to be taken at the corrected figure, and
+   * the order is listed. `moved` says the entry is COMPLETED or SETTLED;
+   * `from_vendor_id` names the attributed vendor whose SELLER_EARNINGS it
+   * debited, or is null. A null, or a context with none, lists the order.
+   */
+  order_commission_entries: ReadonlyArray<{
+    id: string
+    attribution_id: string
+    status: string
+    amount: number
+    moved: boolean
+    from_vendor_id: string | null
+  }> | null
+  /**
    * Per vendor id: money that left that vendor's earnings after the order was
    * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; WITHDRAWAL
-   * or VENDOR_PAYMENT legs off their SELLER_EARNINGS that moved money).
+   * or VENDOR_PAYMENT legs off their SELLER_EARNINGS that are COMPLETED or
+   * SETTLED).
    */
   vendor_withdrawals: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
   /**
    * Per vendor id: every other leg that debited that vendor's
-   * SELLER_EARNINGS after the order was placed and moved money, WHATEVER ITS
-   * ENTRY TYPE. Not a list of types to look for: `createTransfer` takes any
-   * entry type, and the ledger takes money off a vendor's earnings under
-   * many (ADJUSTMENT for its recoveries of what a vendor owes,
+   * SELLER_EARNINGS after the order was placed and is COMPLETED or SETTLED,
+   * WHATEVER ITS ENTRY TYPE. Not a list of types to look for: `createTransfer`
+   * takes any entry type, and the ledger takes money off a vendor's earnings
+   * under many (ADJUSTMENT for its recoveries of what a vendor owes,
    * ADVANCE_REPAYMENT, TRANSFER when a vendor funds a creator reward pool or
    * an admin moves money by hand, COMMISSION, FEE, INVESTMENT, a REFUND of
-   * another order of theirs). The script leaves out two kinds only, both
-   * accounted for elsewhere: CREATOR_COMMISSION legs (another order's
-   * commission, taken by approve-held, which is the debit this is about) and
-   * this order's own REFUND legs (`order_refunds`). `kind` names the leg for
+   * another order of theirs, and CREATOR_COMMISSION: another order's
+   * commission as approve-held posts it, or any leg someone gave that label).
+   * No entry type is left out. The script leaves out, by id, only legs that
+   * are listed under a reason of their own: this order's own REFUND legs
+   * that moved money (`order_refunds`) and the entries under this order's
+   * commission keys (`order_commission_entries`). `kind` names the leg for
    * the line. A vendor missing here has none.
    */
   vendor_other_debits: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
+  /**
+   * Per vendor id: every leg that debits that vendor's SELLER_EARNINGS,
+   * written after the order was placed, whose status is neither COMPLETED
+   * nor SETTLED, whatever its entry type. `createTransfer` writes a leg
+   * PENDING, moves the balances, then marks it COMPLETED in a separate
+   * statement, so a PENDING leg is a transfer in flight, or one cut off
+   * before OR AFTER its money moved. A REVERSED leg moved money before a
+   * refund relabelled it. A FAILED leg is one whose balance move threw: rolled
+   * back whole where the move ran in one database transaction, possibly
+   * one-sided on the ledger's fallback path. None of these says the earnings
+   * were not drawn on, so any of them lists the order. A vendor missing here
+   * has none.
+   */
+  vendor_unconfirmed_debits: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
 }
 
 /**
@@ -519,6 +560,42 @@ function reviewOrderPayment(ctx: VendorDebitContext): string[] {
   return reasons
 }
 
+/**
+ * The reasons to list an order because a commission credit for it is already
+ * in the ledger (`order_commission_entries`), or because that could not be
+ * read. Worded per entry: one that moved money out of an attributed vendor's
+ * earnings is commission already taken for this order; anything else under
+ * the key is named as what it is. For a row approve-held will still credit
+ * the line says what the job would do with the entry.
+ */
+function reviewCommissionAlreadyInLedger(
+  ctx: VendorDebitContext,
+  rows: ReadonlyMap<string, StoredAttributionAmounts>
+): string[] {
+  const entries = ctx.order_commission_entries
+  if (!Array.isArray(entries)) {
+    return [
+      `whether a commission credit for this order is already in the ledger could not be read, ` +
+        `so it cannot be shown that approve-held would move the corrected figure`,
+    ]
+  }
+  return entries.map((e) => {
+    const row = rows.get(e.attribution_id)
+    const status = row?.commission_status ?? "not among the rows read"
+    const head =
+      e.moved === true && e.from_vendor_id
+        ? `commission was already taken from vendor ${e.from_vendor_id} for this order`
+        : `a commission credit for this order is already in the ledger`
+    const entry =
+      `ledger entry ${e.id} (${describeAmount(e.amount)} ${e.status}) is under the key approve-held credits row ` +
+      `${e.attribution_id} with`
+    return row && CREDITABLE_STATUSES.has(row.commission_status)
+      ? `${head}: ${entry}, and the row is still ${status} with no ledger entry recorded on it, ` +
+          `so approve-held would be handed that entry back, move nothing more, and approve the row at whatever its column then says`
+      : `${head}: ${entry}, and the row is ${status} with no ledger entry recorded on it`
+  })
+}
+
 /** The vendors approve-held would debit for these rows: those of rows it will still credit. */
 export function vendorsDebitedOnApproval(rows: readonly StoredAttributionAmounts[]): string[] {
   const ids = rows
@@ -587,13 +664,30 @@ function describeAge(ms: number): string {
  *   vendor off their earnings. The commission was never carved out of that
  *   money, so the debit would come out of later sales' proceeds;
  * - names a vendor whose earnings were debited since the order was placed
- *   by any other ledger leg that moved money, whatever its entry type
+ *   by any other ledger leg, whatever its entry type
  *   (`vendor_other_debits`): the ledger's recovery of what they owed, an
  *   advance repayment, a creator reward pool they funded, a transfer an
- *   admin made by hand, a refund of another order of theirs. The same
- *   reasoning: what was taken had no commission carved out of it. Only
- *   another order's CREATOR_COMMISSION and this order's own refund legs are
- *   left out;
+ *   admin made by hand, a refund of another order of theirs, another
+ *   order's creator commission. The same reasoning: what was taken had no
+ *   commission carved out of it. A leg labelled CREATOR_COMMISSION counts
+ *   like any other. Leaving "another order's commission" out would rest on
+ *   two things the script does not read: that the leg is one (its labels
+ *   are whatever the caller of `createTransfer` gave it, and an admin's
+ *   manual transfer can carry them), and that the other order's own
+ *   proceeds were in the same earnings, without which its commission came
+ *   out of someone else's sale, possibly this one. Where approve-held did
+ *   post it, commission crediting already works for this vendor, which is
+ *   not the state the script is meant to be run in;
+ * - names a vendor whose earnings carry a leg written since the order was
+ *   placed that is PENDING, REVERSED, FAILED or in any status other than
+ *   COMPLETED and SETTLED (`vendor_unconfirmed_debits`): the ledger does
+ *   not say that money did not move;
+ * - already has a commission credit in the ledger: an entry under the key
+ *   approve-held credits one of its rows with, in any status
+ *   (`order_commission_entries`), while the row says no money has moved.
+ *   approve-held would be handed that entry back instead of moving the
+ *   commission and would approve the row at whatever the column says, so a
+ *   corrected column would record more than the ledger moved;
  * - is on an order whose proceeds a Mercur payout already sent;
  * - is on an order placed, or settled to the vendor's earnings, less than
  *   {@link PAYOUT_WINDOW_MS} before the check with no Mercur payout yet: the
@@ -614,9 +708,9 @@ function describeAge(ms: number): string {
  * the next day), or an order refunded in between, is debited the full
  * commission out of whatever the vendor holds by then. What has left a
  * vendor's earnings is read from payout requests and from ledger legs that
- * debit their SELLER_EARNINGS and are COMPLETED or SETTLED: a leg still
- * PENDING, and money that is not in SELLER_EARNINGS at all, are not looked
- * at. And "not refunded" is what the ledger and the payment records show at
+ * debit their SELLER_EARNINGS, in any status: money that is not in
+ * SELLER_EARNINGS at all is not looked at. And "not refunded" is what the
+ * ledger and the payment records show at
  * `checked_at`: a refund made in Stripe's dashboard is in neither until
  * Stripe's webhook has recorded it, and a refund that is owed but not yet
  * made (a return received, an order dispute decided for the buyer, which
@@ -685,7 +779,17 @@ export function reviewVendorDebit(
           `and the commission was never carved out of what was taken`
       )
     }
+    const unconfirmed = ctx.vendor_unconfirmed_debits?.[vendor] ?? []
+    if (unconfirmed.length) {
+      const shown = unconfirmed.slice(0, 3).map((w) => `${w.kind} ${w.id} ${w.status}`)
+      reasons.push(
+        `vendor ${vendor}'s earnings have a debit written since the order was placed that is neither COMPLETED nor SETTLED ` +
+          `(${shown.join(", ")}${unconfirmed.length > 3 ? ", …" : ""}), ` +
+          `so whether that money moved, or stayed moved, cannot be read from the ledger`
+      )
+    }
   }
+  reasons.push(...reviewCommissionAlreadyInLedger(ctx, byId))
   if (ctx.order_refunds.length && !ctx.order_refunds.some((r) => r.from_vendor_id !== null && vendors.includes(r.from_vendor_id))) {
     // Refunded, but not out of the attributed vendor's earnings: they held
     // nothing to take (the ledger records the refund as owed by the vendor),
