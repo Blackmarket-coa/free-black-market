@@ -466,22 +466,24 @@ function pick(row: unknown, fields: readonly string[]): unknown {
  * Keep only `fields` of every object found under a `seller` key. For the one
  * store route whose field list is fixed in its handler and asks for
  * `orders.seller.*` (Mercur's order sets), where there is no request to
- * narrow. Mutates and returns `body`.
+ * narrow. Returns a copy: the rows a handler passes to `res.json` may be
+ * shared with a cache.
  */
 export function projectSellersInBody<T>(body: T, fields: readonly string[] = BUYER_SELLER_FIELDS): T {
-  const visit = (value: unknown) => {
-    if (Array.isArray(value)) return value.forEach(visit)
-    if (!isPlainObject(value)) return
+  const visit = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(visit)
+    if (!isPlainObject(value)) return value
+    const out: Record<string, unknown> = {}
     for (const [key, child] of Object.entries(value)) {
       if (SELLER_NAMES.has(key) && child && typeof child === "object") {
-        value[key] = Array.isArray(child) ? child.map((row) => pick(row, fields)) : pick(child, fields)
+        out[key] = Array.isArray(child) ? child.map((row) => pick(row, fields)) : pick(child, fields)
       } else {
-        visit(child)
+        out[key] = visit(child)
       }
     }
+    return out
   }
-  visit(body)
-  return body
+  return visit(body) as T
 }
 
 /** The ids of every product row found in a `products` list below the top level of a response. */
@@ -505,25 +507,24 @@ export function nestedProductIds(body: unknown): string[] {
 }
 
 /**
- * Remove from every nested `products` list the rows that are not in
- * `visible`. A row with no id cannot be checked and is removed. The
- * top-level list of a product route is the route's own and is left alone.
- * Mutates and returns `body`.
+ * A copy of `body` in which every nested `products` list holds only the rows
+ * in `visible`. A row with no id cannot be checked and is left out. The
+ * top-level list of a product route is the route's own and is kept as it is.
  */
 export function keepVisibleNestedProducts<T>(body: T, visible: ReadonlySet<string>): T {
-  const visit = (value: unknown, top: boolean) => {
-    if (Array.isArray(value)) return value.forEach((item) => visit(item, false))
-    if (!isPlainObject(value)) return
-    for (const [key, child] of Object.entries(value)) {
-      if (key === "products" && Array.isArray(child) && !top) {
-        value[key] = child.filter((row) => {
-          const id = (row as { id?: unknown } | null)?.id
-          return typeof id === "string" && visible.has(id)
-        })
-      }
-      visit(value[key], false)
-    }
+  const isVisible = (row: unknown) => {
+    const id = (row as { id?: unknown } | null)?.id
+    return typeof id === "string" && visible.has(id)
   }
-  visit(body, true)
-  return body
+  const visit = (value: unknown, top: boolean): unknown => {
+    if (Array.isArray(value)) return value.map((item) => visit(item, false))
+    if (!isPlainObject(value)) return value
+    const out: Record<string, unknown> = {}
+    for (const [key, child] of Object.entries(value)) {
+      const list = key === "products" && Array.isArray(child) && !top ? child.filter(isVisible) : child
+      out[key] = visit(list, false)
+    }
+    return out
+  }
+  return visit(body, true) as T
 }

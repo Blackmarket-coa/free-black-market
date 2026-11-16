@@ -336,10 +336,12 @@ describe("store field policy", () => {
           ],
         },
       }
-      projectSellersInBody(body)
-      expect(body.order_set.orders[0].seller).toEqual({ id: "sel_1", name: "Farm", email: "grower@example.com" })
+      const cut = projectSellersInBody(body)
+      expect(cut.order_set.orders[0].seller).toEqual({ id: "sel_1", name: "Farm", email: "grower@example.com" })
       // A value that serialises itself is left whole.
-      expect(body.order_set.total).toBe(total)
+      expect(cut.order_set.total).toBe(total)
+      // A copy: the rows a handler holds (or a cache does) are not edited.
+      expect(body.order_set.orders[0].seller).toHaveProperty("tax_id", "12-3456789")
     })
 
     it("finds and filters product lists below the top level, and leaves the route's own list alone", async () => {
@@ -353,10 +355,11 @@ describe("store field policy", () => {
         ],
       }
       expect(nestedProductIds(body).sort()).toEqual(["prod_a", "prod_b", "prod_draft", "prod_other_channel"])
-      keepVisibleNestedProducts(body, new Set(["prod_a", "prod_b"]))
-      expect(body.products).toHaveLength(1)
-      expect(body.products[0].seller.products).toEqual([{ id: "prod_a" }])
-      expect(body.products[0].collection.products).toEqual([{ id: "prod_b" }])
+      const kept = keepVisibleNestedProducts(body, new Set(["prod_a", "prod_b"]))
+      expect(kept.products).toHaveLength(1)
+      expect(kept.products[0].seller.products).toEqual([{ id: "prod_a" }])
+      expect(kept.products[0].collection.products).toEqual([{ id: "prod_b" }])
+      expect(body.products[0].seller.products).toHaveLength(3)
     })
   })
 })
