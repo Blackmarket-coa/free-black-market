@@ -608,6 +608,36 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("Medusa's POST /store/carts/:id/taxes (SD-115 review)", () => {
+      afterEach(settleBeforeTeardown)
+
+      it("taxes a cart in a region that does not tax automatically: the collection follows the taxed total and the untaxed session is gone", async () => {
+        const w = await world()
+        // Only a region with automatic taxes off leaves taxing to this route.
+        await container().resolve(Modules.REGION).updateRegions(w.region.id, { automatic_taxes: false })
+        await container().resolve(Modules.TAX).createTaxRegions([
+          { country_code: "us", provider_id: "tp_system", default_tax_rate: { rate: 10, name: "Sales tax", code: "US-SALES" } },
+        ])
+        const cart = await w.makeCart([w.productA])
+        await pickShipping(w, cart.id, w.optionA.id)
+        await openCardSession(w, cart.id)
+        expectInStep(await stateOf(cart.id), 15)
+        expect(lastIntent()).toMatchObject({ amount: 1500 })
+
+        expectStatus(await api.post(`/store/carts/${cart.id}/taxes`, {}, w.pak).catch(answerOf), 200)
+
+        // 10% on the 10.00 line and on the 5.00 delivery.
+        const taxed = await stateOf(cart.id)
+        expectInStep(taxed, 16.5)
+        expect(taxed.sessions).toEqual([])
+        expect(stripe.cancel).toHaveBeenCalledWith("pi_test_cpr_1", expect.anything())
+
+        await openCardSession(w, cart.id)
+        expectInStep(await stateOf(cart.id), 16.5)
+        expect(lastIntent()).toMatchObject({ amount: 1650 })
+      })
+    })
+
     describe("FBM's tier and wholesale routes (SD-115)", () => {
       afterEach(settleBeforeTeardown)
 

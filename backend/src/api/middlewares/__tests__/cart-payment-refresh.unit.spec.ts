@@ -118,11 +118,12 @@ beforeEach(() => {
 })
 
 describe("the routes it sits in front of", () => {
-  it("are Mercur's two shipping-method routes, its line-item delete, its completion, and FBM's four completions through Medusa's workflow", () => {
+  it("are Mercur's two shipping-method routes, its line-item delete, Medusa's taxes route, Mercur's completion, and FBM's four completions through Medusa's workflow", () => {
     expect(cartPaymentMiddlewareRoutes.map((r) => `${r.method} ${r.matcher}`)).toEqual([
       "POST /store/carts/:id/shipping-methods",
       "DELETE /store/carts/:id/shipping-methods",
       "DELETE /store/carts/:id/line-items/:line_id",
+      "POST /store/carts/:id/taxes",
       "POST /store/carts/:id/complete",
       "POST /store/carts/:id/complete-tickets",
       "POST /store/carts/:id/complete-digital",

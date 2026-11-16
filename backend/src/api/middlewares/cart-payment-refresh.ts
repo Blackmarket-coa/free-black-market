@@ -65,7 +65,7 @@ async function shippingMethodIds(scope: MedusaRequest["scope"], cartIds: string[
 /** The carts a request is about to write, read before the handler runs. */
 type CartsOf = (req: MedusaRequest) => Promise<string[]>
 
-/** `POST /store/carts/:id/shipping-methods` and `DELETE /store/carts/:id/line-items/:line_id`: the cart in the path. */
+/** `POST /store/carts/:id/shipping-methods`, `DELETE /store/carts/:id/line-items/:line_id` and `POST /store/carts/:id/taxes`: the cart in the path. */
 const cartInPath: CartsOf = async (req) => {
   const id = String(req.params.id ?? "")
   return id ? [id] : []
@@ -402,10 +402,17 @@ export function settleCartPaymentAfterRefusedCompletion(cartOf: CartOf) {
  *    `@medusajs/core-flows` 2.14.2: add, update and (under Mercur's) delete a
  *    line item, update the cart (addresses, region, promo codes: what the
  *    storefront applies a code with), `DELETE .../promotions` (what it
- *    removes one with), transfer the cart. One does not: `POST
- *    /store/carts/:id/taxes` (`updateTaxLinesWorkflow`). Nothing of FBM's
- *    calls it and it is Medusa's own, so it is left as it is; a completion on
- *    what it leaves is refused below.
+ *    removes one with), transfer the cart.
+ *  - One of Medusa's does not: `POST /store/carts/:id/taxes`
+ *    (`updateTaxLinesWorkflow` with `force_tax_calculation`), which writes
+ *    the cart's tax lines and answers. In a region with `automatic_taxes` off
+ *    that is the only thing that taxes a cart, so it raises the total after
+ *    the session was opened (measured: a 15.00 cart with a 15.00 session,
+ *    taxed to 16.50, collection and session left at 15.00). Nothing of FBM's
+ *    calls it, but any client may, so it is here. Its write does not change
+ *    the cart's shipping methods, so an error answer after a write that went
+ *    through is not noticed here and is left to the completion check below;
+ *    on this tree the route answers 200 after its write (SD-117).
  *  - FBM's tier and wholesale routes refresh in their handlers
  *    (`lib/cart-payment-refresh.ts`). Its other cart routes (attribution,
  *    channel, group, booking, credits) write metadata only, and its
@@ -435,6 +442,11 @@ export const cartPaymentMiddlewareRoutes: MiddlewareRoute[] = [
   {
     matcher: "/store/carts/:id/line-items/:line_id",
     method: "DELETE",
+    middlewares: [refreshCartPaymentAfter(cartInPath)],
+  },
+  {
+    matcher: "/store/carts/:id/taxes",
+    method: "POST",
     middlewares: [refreshCartPaymentAfter(cartInPath)],
   },
   {
