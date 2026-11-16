@@ -50,8 +50,12 @@ const OPERATOR_CHECK_2 = `SELECT id, status FROM garden_proposal
  */
 const OPERATOR_CHECK_3 = `SELECT p.id, p.status, p.approval_percentage, p.quorum_met, p.result_calculated_at, max(v.deleted_at) AS duplicates_removed_at, p.votes_for, p.votes_against, p.votes_abstain, p.total_voting_power, p.unique_voters FROM garden_proposal p JOIN garden_vote v ON v.proposal_id = p.id WHERE v.metadata->>'soft_deleted_by' = 'Migration20261115210000AddUniqueBallotIndex' AND p.status <> 'active' AND p.deleted_at IS NULL GROUP BY p.id ORDER BY p.id;`
 
-/** Check 3, by the mark the repair left: the set as it was when the repair ran. */
-const OPERATOR_CHECK_3_MARKED = `SELECT id, status, metadata->>'tally_rewritten_at' AS tally_rewritten_at FROM garden_proposal WHERE metadata->>'tally_rewritten_by' = 'Migration20261115210000AddUniqueBallotIndex' ORDER BY id;`
+/**
+ * Check 3, by the mark the repair left: the set as it was when the repair
+ * ran. The mark is on every listed proposal, decided before the rewrite or
+ * after it, so the query returns `result_calculated_at` to tell them apart.
+ */
+const OPERATOR_CHECK_3_MARKED = `SELECT id, status, result_calculated_at, metadata->>'tally_rewritten_at' AS tally_rewritten_at FROM garden_proposal WHERE metadata->>'tally_rewritten_by' = 'Migration20261115210000AddUniqueBallotIndex' ORDER BY id;`
 
 /**
  * Before the index migration runs: decided proposals that hold duplicate
@@ -442,10 +446,15 @@ medusaIntegrationTestRunner({
       const untouched = await proposal(`untouched ${uid()}`)
       await cast(untouched.id, "cus_a", "for", 2)
       // J. Had its duplicate removed while it was open, and was decided
-      // afterwards, on the recomputed tally.
+      // afterwards, on the recomputed tally. A third member abstains: the
+      // approval the report works out from the tally must leave abstentions
+      // out, as finalize does (`decideProposalOutcome`: for / (for +
+      // against)). 1 for and 3 against is 25 with or without the 1.5
+      // abstaining; over the total voting power it would be 18.18.
       const decidedAfter = await proposal(`decided after ${uid()}`)
       await cast(decidedAfter.id, "cus_a", "for", 1)
       await cast(decidedAfter.id, "cus_b", "against", 3)
+      await cast(decidedAfter.id, "cus_c", "abstain", 1.5)
       // K. Decided on a tally that counted a duplicate, then deleted.
       const deleted = await proposal(`deleted ${uid()}`)
       await cast(deleted.id, "cus_a", "for", 1)
@@ -564,11 +573,14 @@ medusaIntegrationTestRunner({
             `abstain 0, total 3, unique_voters 2, which gives approval 33\\.33\\)`
         )
       )
-      // J was decided after its duplicate went, so on the tally it has.
+      // J was decided after its duplicate went, so on the tally it has: the
+      // approval worked out from that tally is the one it was decided at,
+      // the abstention counted in the total and in the voters and left out
+      // of the approval.
       expect(warned).toContain(
         `${decidedAfter.id} (rejected; approval_percentage 25, quorum_met true, result calculated ` +
           `2026-11-12T09:30:00.000Z, after the rewrite; 1 duplicate ballot(s) removed 2026-11-10T08:00:00.000Z; ` +
-          `tally now for 1, against 3, abstain 0, total 4, unique_voters 2, which gives approval 25)`
+          `tally now for 1, against 3, abstain 1.5, total 5.5, unique_voters 3, which gives approval 25)`
       )
       expect(warned).toMatch(
         new RegExp(
@@ -639,8 +651,8 @@ medusaIntegrationTestRunner({
             id: decidedAfter.id,
             status: "rejected",
             approval_percentage: 25,
-            tally: [1, 3, 0, 4],
-            unique_voters: 2,
+            tally: [1, 3, 1.5, 5.5],
+            unique_voters: 3,
             decided_before_removal: false,
           },
           {
@@ -653,7 +665,25 @@ medusaIntegrationTestRunner({
           },
         ])
       )
+      // By the mark alone the two kinds can still be told apart: the mark
+      // is on J as well, which was decided on the tally it has.
       const { rows: marked } = await pg.raw(OPERATOR_CHECK_3_MARKED)
+      expect(
+        marked.map((row: Record<string, unknown>) => ({
+          id: row.id,
+          status: row.status,
+          decided_before_rewrite:
+            row.result_calculated_at === null
+              ? null
+              : new Date(row.result_calculated_at as string) < new Date(row.tally_rewritten_at as string),
+        }))
+      ).toEqual(
+        byId([
+          { id: rewritten.id, status: "rejected", decided_before_rewrite: true },
+          { id: decidedAfter.id, status: "rejected", decided_before_rewrite: false },
+          { id: withdrawn.id, status: "withdrawn", decided_before_rewrite: null },
+        ])
+      )
       expect(marked.map((row: { id: string }) => row.id)).toEqual(check3.map((row: { id: string }) => row.id))
       // Nothing is left for the snapshot to read: it has to be taken first.
       expect((await pg.raw(PRE_DEPLOY_SNAPSHOT)).rows).toEqual([])
