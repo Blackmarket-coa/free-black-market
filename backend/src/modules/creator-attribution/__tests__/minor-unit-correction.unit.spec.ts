@@ -2,7 +2,11 @@ import { CommissionStatus } from "../models/order-attribution"
 import {
   CORRECTED_METADATA_KEY,
   planCommissionMinorUnitCorrection,
+  reviewVendorDebit,
+  vendorsDebitedOnApproval,
+  type CommissionMinorUnitCorrection,
   type StoredAttributionAmounts,
+  type VendorDebitContext,
 } from "../minor-unit-correction"
 import { AMOUNT_UNIT_METADATA_KEY, AMOUNT_UNIT_MINOR } from "../../../shared/minor-units"
 
@@ -155,5 +159,78 @@ describe("planCommissionMinorUnitCorrection", () => {
 
   it("sends a currency mismatch to review", () => {
     expect(planCommissionMinorUnitCorrection([legacyRow()], { subtotal: 25, currency_code: "eur" }).action).toBe("review")
+  })
+})
+
+/**
+ * Correcting a held row raises what approve-held later debits from the
+ * vendor (settlement never carved the commission out). These orders are
+ * listed instead of corrected, so a debit nobody decided on is never set up.
+ */
+describe("reviewVendorDebit", () => {
+  const row = (over: Partial<StoredAttributionAmounts> = {}) => legacyRow({ vendor_id: "sel_vendor", ...over })
+  const clean: VendorDebitContext = {
+    order_seller_id: "sel_vendor",
+    order_placed_at: "2026-10-01T12:00:00.000Z",
+    order_payout_ids: [],
+    vendor_withdrawals: { sel_vendor: [] },
+  }
+  const planFor = (rows: StoredAttributionAmounts[]) => {
+    const plan = planCommissionMinorUnitCorrection(rows, usd25) as CommissionMinorUnitCorrection
+    if (plan.action !== "correct") throw new Error(`expected a correction, got ${JSON.stringify(plan)}`)
+    return plan
+  }
+
+  it("lets the correction go ahead when the vendor sold the order and has not been paid out since", () => {
+    const rows = [row()]
+    expect(vendorsDebitedOnApproval(rows)).toEqual(["sel_vendor"])
+    expect(reviewVendorDebit(planFor(rows), rows, clean)).toBeNull()
+  })
+
+  it("lists an order whose vendor was paid out after it was placed, naming the payout and the raised debit", () => {
+    const rows = [row()]
+    const reason = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
+    })
+    expect(reason).toContain("vendor sel_vendor has been paid out since the order was placed (payout request pr_1 COMPLETED")
+    expect(reason).toContain("from 2 to 250")
+    expect(reason).toContain("Operator decision")
+  })
+
+  it("lists an order whose attributed vendor is not its seller, or which has no seller", () => {
+    const rows = [row()]
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_seller_id: "sel_other" })).toContain(
+      "the attributed vendor sel_vendor is not the order's seller sel_other"
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_seller_id: null })).toContain("the order has no seller")
+  })
+
+  it("lists an order whose proceeds Mercur already paid out, or whose placement time is unknown", () => {
+    const rows = [row()]
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_payout_ids: ["pout_1"] })).toContain("Mercur payout pout_1")
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_placed_at: null })).toContain("placement time is unknown")
+  })
+
+  it("passes rows approve-held will never credit (reversed, disqualified, no vendor) whatever the vendor's payouts", () => {
+    const paidOut: VendorDebitContext = {
+      ...clean,
+      order_seller_id: "sel_other",
+      vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
+    }
+    for (const rows of [
+      [row({ commission_status: CommissionStatus.REVERSED })],
+      [row({ commission_status: CommissionStatus.DISQUALIFIED })],
+      [row({ vendor_id: null })],
+    ]) {
+      expect(vendorsDebitedOnApproval(rows)).toEqual([])
+      expect(reviewVendorDebit(planFor(rows), rows, paidOut)).toBeNull()
+    }
+  })
+
+  it("counts a pending row as one approve-held will credit", () => {
+    const rows = [row({ commission_status: CommissionStatus.PENDING })]
+    expect(vendorsDebitedOnApproval(rows)).toEqual(["sel_vendor"])
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_seller_id: "sel_other" })).not.toBeNull()
   })
 })

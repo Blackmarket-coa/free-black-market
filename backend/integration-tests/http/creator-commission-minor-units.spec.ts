@@ -253,8 +253,16 @@ medusaIntegrationTestRunner({
         expect(stored.rows[0]).toEqual({ commission: "250", subtotal: "2500", raw_commission: "250" })
 
         // Settlement on capture (card orders, FF_CARD_ORDER_LEDGER_V1), which
-        // stores the payout breakdown. Run with the attribution already
-        // written, as the hold window guarantees in production.
+        // stores the payout breakdown. Run here after the attribution is
+        // written, which production does NOT guarantee: the hold window
+        // governs approve-held, not settlement. A payment captured at
+        // authorisation settles inside hawala-order-payment's own
+        // `order.placed` handler, which runs concurrently with
+        // attribute-order-on-placed (the Redis event bus runs an event's
+        // subscribers with Promise.all), and if it reads the attribution
+        // first the stored breakdown has no creator line. A pre-existing
+        // race, recorded in the SD-95 follow-up; the creator's credit is
+        // unaffected, because approve-held reads the attribution row.
         process.env[CARD] = "true"
         const payments = container().resolve(Modules.PAYMENT)
         const collection = await payments.retrievePaymentCollection(collectionId, { relations: ["payments"] })
@@ -326,10 +334,11 @@ medusaIntegrationTestRunner({
 
     /**
      * The corrective script against rows as the old subscriber wrote them,
-     * for real $25.00 orders whose subtotal the order module computes.
+     * for real $25.00 orders whose subtotal the order module computes, each
+     * linked to its seller the way Mercur's split links a placed order.
      */
     describe("scripts/fix-creator-commission-minor-units.ts", () => {
-      async function order25() {
+      async function order25(sellerId: string) {
         const [order] = await container().resolve(Modules.ORDER).createOrders([
           {
             currency_code: "usd",
@@ -338,14 +347,17 @@ medusaIntegrationTestRunner({
             items: [{ title: "Tomatoes", quantity: 1, unit_price: 25 }],
           },
         ])
+        await container()
+          .resolve(ContainerRegistrationKeys.LINK)
+          .create({ [SELLER_MODULE]: { seller_id: sellerId }, [Modules.ORDER]: { order_id: order.id } })
         return order as { id: string }
       }
 
-      async function attributionRow(orderId: string, over: Record<string, unknown>) {
+      async function attributionRow(orderId: string, vendorId: string, over: Record<string, unknown> = {}) {
         const created = await attribution().createOrderAttributions({
           order_id: orderId,
           creator_seller_id: "sel_creator",
-          vendor_id: "sel_vendor",
+          vendor_id: vendorId,
           source: "link_click",
           attribution_decided_at: new Date(),
           attributed_subtotal_cents: 25, // the old subscriber: major units as cents
@@ -372,14 +384,45 @@ medusaIntegrationTestRunner({
         }
       }
 
-      it("dry run writes nothing; apply corrects the held row to 2500 / 250, leaves the credited and the new rows alone; a second run skips it", async () => {
-        const [held, credited, fresh] = [await order25(), await order25(), await order25()]
-        const heldRow = await attributionRow(held.id, {})
-        const creditedRow = await attributionRow(credited.id, {
+      async function payoutRequest(vendorId: string, status: string) {
+        const account = await hawala().getOrCreateSellerEarnings(vendorId, "USD")
+        const [request] = await hawala().createPayoutRequests([
+          {
+            vendor_id: vendorId,
+            ledger_account_id: account.id,
+            payout_tier: "WEEKLY",
+            payout_method: "ACH_BATCH",
+            gross_amount: 100,
+            fee_amount: 0,
+            net_amount: 100,
+            fee_rate: 0,
+            requested_at: new Date(),
+            status,
+          },
+        ])
+        return request as { id: string }
+      }
+
+      // The ledger row's operator SQL, verbatim (trailing semicolon dropped),
+      // run here so a typo or a wrong column fails a test, not an operator.
+      const OPERATOR_SQL_1 =
+        "SELECT oa.id, oa.order_id, oa.creator_seller_id, oa.vendor_id, oa.commission_status, oa.commission_amount_cents, oa.ledger_entry_id, le.amount, le.created_at FROM order_attribution oa LEFT JOIN hawala_ledger_entry le ON le.id = oa.ledger_entry_id WHERE oa.deleted_at IS NULL AND oa.commission_status IN ('approved','paid') AND COALESCE(oa.metadata->>'amount_unit','') <> 'minor' AND (oa.metadata -> 'amount_units_corrected') IS NULL"
+      const OPERATOR_SQL_2 =
+        "SELECT * FROM hawala_ledger_entry WHERE reference_type = 'CREATOR_ATTRIBUTION' AND entry_type IN ('CREATOR_COMMISSION','REFUND') ORDER BY created_at"
+      const OPERATOR_SQL_3 =
+        "SELECT pr.id, pr.vendor_id, pr.net_amount, pr.status, pr.completed_at FROM hawala_payout_request pr WHERE pr.status IN ('PROCESSING','IN_TRANSIT','COMPLETED') AND pr.vendor_id IN (SELECT DISTINCT vendor_id FROM order_attribution WHERE deleted_at IS NULL AND vendor_id IS NOT NULL AND commission_status NOT IN ('reversed','disqualified'))"
+      const OPERATOR_SQL_4 =
+        "SELECT b.order_id, b.total_creator_commission, b.total_to_producers FROM order_payout_breakdown b JOIN order_attribution oa ON oa.order_id = b.order_id AND oa.level = 1 WHERE COALESCE(oa.metadata->>'amount_unit','') <> 'minor' OR (oa.metadata -> 'amount_units_corrected') IS NOT NULL"
+
+      it("dry run writes nothing; apply corrects the held row to 2500 / 250 and marks it, leaves the credited and the new rows alone; a second run skips it; the operator's SQL lists only the old-figure credit", async () => {
+        const vendor = await makeSeller("Vendor")
+        const [held, credited, fresh] = [await order25(vendor.id), await order25(vendor.id), await order25(vendor.id)]
+        const heldRow = await attributionRow(held.id, vendor.id)
+        const creditedRow = await attributionRow(credited.id, vendor.id, {
           commission_status: CommissionStatus.APPROVED,
           ledger_entry_id: "hle_already_credited",
         })
-        const freshRow = await attributionRow(fresh.id, {
+        const freshRow = await attributionRow(fresh.id, vendor.id, {
           attributed_subtotal_cents: 2500,
           commission_basis_cents: 2500,
           commission_amount_cents: 250,
@@ -399,16 +442,28 @@ medusaIntegrationTestRunner({
         expect(applied.corrected.map((c) => c.order_id)).toEqual([held.id])
         const after = await read(heldRow.id)
         expect(after).toMatchObject({ subtotal: 2500, basis: 2500, commission: 250, status: CommissionStatus.HELD })
-        expect((after.metadata as any).amount_units_corrected).toMatchObject({
-          by: "script:fix-creator-commission-minor-units",
-          commission_amount_cents: { from: 2, to: 250 },
+        expect(after.metadata).toMatchObject({
+          [AMOUNT_UNIT_METADATA_KEY]: AMOUNT_UNIT_MINOR,
+          amount_units_corrected: {
+            by: "script:fix-creator-commission-minor-units",
+            commission_amount_cents: { from: 2, to: 250 },
+          },
         })
+        // The raw SQL write leaves the bigNumber columns' JSONB companions
+        // exactly as Medusa writes them for the same figures (the fresh row
+        // was written through the ORM), so the ORM reads back the column.
         const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
         const raw = await pg.raw(
-          `SELECT commission_amount_cents::text AS c, raw_commission_amount_cents->>'value' AS rc FROM order_attribution WHERE id = ?`,
-          [heldRow.id]
+          `SELECT id, commission_amount_cents::text AS c, raw_commission_amount_cents AS rc,
+                  raw_attributed_subtotal_cents AS rs, raw_commission_basis_cents AS rb
+             FROM order_attribution WHERE id IN (?, ?)`,
+          [heldRow.id, freshRow.id]
         )
-        expect(raw.rows[0]).toEqual({ c: "250", rc: "250" })
+        const byId = Object.fromEntries(raw.rows.map((r: any) => [r.id, r]))
+        expect(byId[heldRow.id].c).toBe("250")
+        expect(byId[heldRow.id].rc).toEqual(byId[freshRow.id].rc)
+        expect(byId[heldRow.id].rs).toEqual(byId[freshRow.id].rs)
+        expect(byId[heldRow.id].rb).toEqual(byId[freshRow.id].rb)
         expect(await read(creditedRow.id)).toMatchObject({ subtotal: 25, commission: 2, status: CommissionStatus.APPROVED })
         expect(await read(freshRow.id)).toMatchObject({ subtotal: 2500, commission: 250 })
 
@@ -420,6 +475,139 @@ medusaIntegrationTestRunner({
             { order_id: fresh.id, reason: "marked_minor_units" },
           ])
         )
+
+        // approve-held later credits the corrected row at the right 250. The
+        // operator's list of commission approved at the old figure must not
+        // name it (that would invite topping the creator up twice), only the
+        // row credited at 2.
+        await attribution().updateOrderAttributions({
+          id: heldRow.id,
+          commission_status: CommissionStatus.APPROVED,
+          ledger_entry_id: "hle_credited_at_250",
+        })
+        const ours = [heldRow.id, creditedRow.id, freshRow.id]
+        const sql1 = await pg.raw(`SELECT q.id FROM (${OPERATOR_SQL_1}) q WHERE q.id = ANY(?)`, [ours])
+        expect(sql1.rows.map((r: any) => r.id)).toEqual([creditedRow.id])
+
+        // A stored breakdown for the corrected order still carries the old
+        // creator line (breakdowns are not recomputed): SQL (4) names it, and
+        // not the new order's.
+        const breakdowns = container().resolve(PAYOUT_BREAKDOWN_MODULE)
+        for (const [orderId, creatorLine] of [
+          [held.id, 2],
+          [fresh.id, 250],
+        ] as const) {
+          await breakdowns.createOrderPayoutBreakdowns({
+            order_id: orderId,
+            customer_id: "cus_breakdown",
+            customer_paid: 2500,
+            breakdown_items: [],
+            seller_breakdown: [],
+            total_to_producers: 2500 - 75 - creatorLine,
+            total_platform_fees: 75,
+            total_payment_processing: 0,
+            total_creator_commission: creatorLine,
+          })
+        }
+        const sql4 = await pg.raw(`SELECT q.order_id FROM (${OPERATOR_SQL_4}) q WHERE q.order_id = ANY(?)`, [
+          [held.id, credited.id, fresh.id],
+        ])
+        expect(sql4.rows.map((r: any) => r.order_id)).toEqual([held.id])
+        // (2) and (3) are read-only listings; they run.
+        await pg.raw(OPERATOR_SQL_2)
+        await pg.raw(OPERATOR_SQL_3)
+      })
+
+      it("lists instead of correcting a held row whose vendor was paid out after the order or did not sell it; corrects one whose vendor was paid only before it or not at all", async () => {
+        // Paid out after the order: a payout request whose legs took money
+        // off the vendor's earnings, and a completed withdrawal leg.
+        const paidVendor = await makeSeller("Paid")
+        const paidOrder = await order25(paidVendor.id)
+        const paidRow = await attributionRow(paidOrder.id, paidVendor.id)
+        const request = await payoutRequest(paidVendor.id, "COMPLETED")
+
+        const withdrawnVendor = await makeSeller("Withdrawn")
+        const withdrawnOrder = await order25(withdrawnVendor.id)
+        const withdrawnRow = await attributionRow(withdrawnOrder.id, withdrawnVendor.id)
+        const earnings = await hawala().getOrCreateSellerEarnings(withdrawnVendor.id, "USD")
+        const settlement = await hawala().getOrCreateSystemAccount("SETTLEMENT")
+        const [withdrawal] = await hawala().createLedgerEntries([
+          {
+            debit_account_id: earnings.id,
+            credit_account_id: settlement.id,
+            amount: 10,
+            entry_type: "WITHDRAWAL",
+            status: "COMPLETED",
+            reference_type: "PAYOUT_REQUEST",
+            reference_id: "pr_elsewhere",
+          },
+        ])
+
+        // The creator's link named a vendor that did not sell this order.
+        const seller = await makeSeller("Seller")
+        const linkVendor = await makeSeller("LinkVendor")
+        const splitOrder = await order25(seller.id)
+        const splitRow = await attributionRow(splitOrder.id, linkVendor.id)
+
+        // Paid out only BEFORE the order, and a payout after it that failed
+        // (moved nothing): neither counts, so this one is corrected.
+        const earlyVendor = await makeSeller("Early")
+        await payoutRequest(earlyVendor.id, "COMPLETED")
+        await new Promise((r) => setTimeout(r, 20))
+        const earlyOrder = await order25(earlyVendor.id)
+        const earlyRow = await attributionRow(earlyOrder.id, earlyVendor.id)
+        await payoutRequest(earlyVendor.id, "FAILED")
+
+        const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+        expect(reasons[paidOrder.id]).toContain(`payout request ${request.id} COMPLETED`)
+        expect(reasons[paidOrder.id]).toContain("from 2 to 250")
+        expect(reasons[withdrawnOrder.id]).toContain(`withdrawal ${withdrawal.id} COMPLETED`)
+        expect(reasons[splitOrder.id]).toContain(`the attributed vendor ${linkVendor.id} is not the order's seller ${seller.id}`)
+        expect(summary.corrected.map((c) => c.order_id)).toEqual([earlyOrder.id])
+
+        for (const id of [paidRow.id, withdrawnRow.id, splitRow.id]) {
+          expect(await read(id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+        }
+        expect(await read(earlyRow.id)).toMatchObject({ subtotal: 2500, commission: 250 })
+      })
+
+      it("writes an order's chain in one transaction: a row that changed since it was planned rolls back the rows before it", async () => {
+        const vendor = await makeSeller("Chain")
+        const order = await order25(vendor.id)
+        const l1 = await attributionRow(order.id, vendor.id)
+        const l2 = await attributionRow(order.id, vendor.id, { level: 2, level_split_percent: 20, commission_amount_cents: 0 })
+        const fix = (id: string, status: string, commission: { from: number; to: number }) => ({
+          id,
+          status,
+          from: { subtotal_cents: 25, commission_cents: commission.from },
+          to: { subtotal_cents: 2500, commission_cents: commission.to },
+          record: { by: "spec" },
+        })
+
+        // L2 is held; planned from pending, as if approve-held or a refund
+        // had moved it after the read.
+        const stale = await attribution().correctAttributionAmountsIfUnchanged([
+          fix(l1.id, CommissionStatus.HELD, { from: 2, to: 200 }),
+          fix(l2.id, CommissionStatus.PENDING, { from: 0, to: 50 }),
+        ])
+        expect(stale).toEqual({ written: false, stale_id: l2.id })
+        expect(await read(l1.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+        expect(await read(l2.id)).toMatchObject({ subtotal: 25, commission: 0, metadata: null })
+
+        const ok = await attribution().correctAttributionAmountsIfUnchanged([
+          fix(l1.id, CommissionStatus.HELD, { from: 2, to: 200 }),
+          fix(l2.id, CommissionStatus.HELD, { from: 0, to: 50 }),
+        ])
+        expect(ok).toEqual({ written: true })
+        expect(await read(l1.id)).toMatchObject({ subtotal: 2500, commission: 200 })
+        expect(await read(l2.id)).toMatchObject({ subtotal: 2500, commission: 50 })
+
+        // A second write of the same plan finds nothing to match (figures
+        // moved, row marked) and changes nothing.
+        const twice = await attribution().correctAttributionAmountsIfUnchanged([fix(l1.id, CommissionStatus.HELD, { from: 2, to: 200 })])
+        expect(twice).toEqual({ written: false, stale_id: l1.id })
+        expect(await read(l1.id)).toMatchObject({ subtotal: 2500, commission: 200 })
       })
     })
   },

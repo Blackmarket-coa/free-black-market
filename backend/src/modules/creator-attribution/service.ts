@@ -1,4 +1,10 @@
-import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import type { Context } from "@medusajs/framework/types"
+import {
+  ContainerRegistrationKeys,
+  InjectTransactionManager,
+  MedusaContext,
+  MedusaService,
+} from "@medusajs/framework/utils"
 import { randomBytes, createHmac } from "crypto"
 import AffiliateLink, {
   AffiliateLinkStatus,
@@ -19,6 +25,7 @@ import {
   parseLevelSplitsEnv,
   walkReferrerChain,
 } from "./utils/referral-chain"
+import { AMOUNT_UNIT_MINOR } from "../../shared/minor-units"
 
 const DEFAULT_COOKIE_WINDOW_DAYS = (() => {
   const v = process.env.CREATOR_ATTRIBUTION_DEFAULT_COOKIE_DAYS
@@ -93,6 +100,41 @@ export interface AttributeOrderInput {
   source?: AttributionSource
   metadata?: Record<string, unknown> | null
 }
+
+/**
+ * One row of the corrective script's write (SD-95,
+ * `scripts/fix-creator-commission-minor-units.ts`): the figures the
+ * correction was planned from and the ones it writes.
+ */
+export type AttributionAmountCorrection = {
+  id: string
+  /** The `commission_status` the correction was planned from. */
+  status: string
+  from: { subtotal_cents: number; commission_cents: number }
+  to: { subtotal_cents: number; commission_cents: number }
+  /** Stored under `metadata.amount_units_corrected`. */
+  record: Record<string, unknown>
+}
+
+/** A row no longer matched what its correction was planned from. */
+class StaleAttributionError extends Error {
+  constructor(readonly attributionId: string) {
+    super(`order_attribution ${attributionId} changed since it was read`)
+  }
+}
+
+type SqlManager = {
+  execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
+}
+
+/**
+ * A bigNumber column's `raw_*` JSONB companion, written from the same bound
+ * value as the NUMERIC column (the governance tally's expression), so the ORM
+ * reads back what the column holds.
+ */
+const rawBigNumber = (col: string) =>
+  `jsonb_build_object('value', trim_scale(CAST(? AS numeric))::text, ` +
+  `'precision', COALESCE(("raw_${col}" ->> 'precision')::int, 20))`
 
 class CreatorAttributionService extends MedusaService({
   AffiliateLink,
@@ -687,6 +729,97 @@ class CreatorAttributionService extends MedusaService({
       commission_status: CommissionStatus.DISQUALIFIED,
       disqualified_reason: reason,
     })
+  }
+
+  /**
+   * The corrective script's one write (SD-95): put an order's attribution
+   * rows into minor units, all of them or none.
+   *
+   * One transaction for the whole chain. Each row is one
+   * `UPDATE … WHERE id = ? AND commission_status = ? AND <the three amounts
+   * are still the planned "from"> AND <not marked minor, not corrected>`,
+   * so the condition and the write are one statement in Postgres: a row the
+   * approve-held job approved, or a refund reversed, after the script read it
+   * matches nothing. Then the whole chain rolls back and the method returns
+   * the row that changed, for the script to list. It used to be one
+   * list-then-update per row, which could leave L1 corrected and L2 not when
+   * L2 changed in between, and checked the status in a read before the write.
+   *
+   * Each written row is marked `metadata.amount_unit = "minor"` (as rows the
+   * subscriber writes are) and keeps the old and new figures under
+   * `metadata.amount_units_corrected`.
+   *
+   * What this does not close: the approve-held job takes its list of due
+   * rows, amounts included, when it starts, so a row corrected while that
+   * run is iterating can still be credited the old figure. See the script.
+   *
+   * Raw SQL because the generated update can only write by id or by a
+   * selector it lists first; the column names are this module's own.
+   */
+  async correctAttributionAmountsIfUnchanged(
+    rows: AttributionAmountCorrection[]
+  ): Promise<{ written: true } | { written: false; stale_id: string }> {
+    try {
+      await this.correctAttributionAmountsInTransaction_(rows)
+      return { written: true }
+    } catch (error) {
+      if (error instanceof StaleAttributionError) {
+        return { written: false, stale_id: error.attributionId }
+      }
+      throw error
+    }
+  }
+
+  @InjectTransactionManager()
+  protected async correctAttributionAmountsInTransaction_(
+    rows: AttributionAmountCorrection[],
+    @MedusaContext() sharedContext: Context = {}
+  ): Promise<void> {
+    const manager = sharedContext.transactionManager as SqlManager
+    for (const row of rows) {
+      const written = await manager.execute(
+        `UPDATE "order_attribution"
+            SET "attributed_subtotal_cents" = CAST(? AS numeric),
+                "raw_attributed_subtotal_cents" = ${rawBigNumber("attributed_subtotal_cents")},
+                "commission_basis_cents" = CAST(? AS numeric),
+                "raw_commission_basis_cents" = ${rawBigNumber("commission_basis_cents")},
+                "commission_amount_cents" = CAST(? AS numeric),
+                "raw_commission_amount_cents" = ${rawBigNumber("commission_amount_cents")},
+                "metadata" = COALESCE("metadata", CAST('{}' AS jsonb))
+                  || jsonb_build_object('amount_unit', CAST(? AS text), 'amount_units_corrected', CAST(? AS jsonb)),
+                "updated_at" = now()
+          WHERE "id" = ?
+            AND "commission_status" = ?
+            AND "deleted_at" IS NULL
+            AND "attributed_subtotal_cents" = CAST(? AS numeric)
+            AND "commission_basis_cents" = CAST(? AS numeric)
+            AND "commission_amount_cents" = CAST(? AS numeric)
+            AND ("metadata" ->> 'amount_unit') IS DISTINCT FROM CAST(? AS text)
+            AND ("metadata" -> 'amount_units_corrected') IS NULL
+      RETURNING "id"`,
+        [
+          row.to.subtotal_cents,
+          row.to.subtotal_cents,
+          row.to.subtotal_cents,
+          row.to.subtotal_cents,
+          row.to.commission_cents,
+          row.to.commission_cents,
+          AMOUNT_UNIT_MINOR,
+          JSON.stringify(row.record),
+          row.id,
+          row.status,
+          row.from.subtotal_cents,
+          row.from.subtotal_cents,
+          row.from.commission_cents,
+          AMOUNT_UNIT_MINOR,
+        ],
+        "all"
+      )
+      if (!Array.isArray(written) || written.length !== 1) {
+        // Rolls back the rows of this chain already written.
+        throw new StaleAttributionError(row.id)
+      }
+    }
   }
 
   async listHeldAttributionsDue(now: Date = new Date()): Promise<any[]> {

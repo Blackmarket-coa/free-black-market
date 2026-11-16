@@ -37,6 +37,16 @@ import { isMarkedMinorUnits, toMinorUnits } from "../../shared/minor-units"
  * Anything else — the order edited since (its subtotal no longer matches),
  * figures that fit neither unit, a broken level chain — is reported for
  * review and left alone: guessing at a money figure is how this went wrong.
+ *
+ * "Has not moved money" is about the creator's side only. A `pending` or
+ * `held` row's commission never left the vendor: settlement credits the
+ * vendor's SELLER_EARNINGS the sale less the platform fee and processing,
+ * with no commission carved out, and it is the approve-held job that later
+ * debits the vendor (`vendor_id`) for the commission, at whatever the column
+ * says when it runs. So correcting such a row raises that future debit 100×,
+ * out of the vendor's balance at the time. {@link reviewVendorDebit} decides
+ * whether that debit can be justified without a person; the script asks it
+ * for every order this planner would correct.
  */
 
 export type StoredAttributionAmounts = {
@@ -52,6 +62,8 @@ export type StoredAttributionAmounts = {
   commission_percent?: number | string | null
   level_split_percent?: number | string | null
   currency_code?: string | null
+  /** The vendor the approve-held job debits for this row's commission. */
+  vendor_id?: string | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -71,6 +83,12 @@ const UNMOVED_STATUSES: ReadonlySet<string> = new Set([
   CommissionStatus.REVERSED,
   CommissionStatus.DISQUALIFIED,
 ])
+
+/**
+ * Statuses the approve-held job will still credit, debiting `vendor_id`:
+ * `held`, and `pending` (held once the order is paid).
+ */
+const CREDITABLE_STATUSES: ReadonlySet<string> = new Set([CommissionStatus.PENDING, CommissionStatus.HELD])
 
 export type CommissionMinorUnitCorrection =
   | {
@@ -229,4 +247,100 @@ export function planCommissionMinorUnitCorrection(
       commission: { from: oldLevels[i] ?? 0, to: newLevels[i] ?? 0 },
     })),
   }
+}
+
+/** What the script reads about who approve-held would debit for an order, and whether they were paid since. */
+export type VendorDebitContext = {
+  /** The order's seller (Mercur's seller link), or null when it has none. */
+  order_seller_id: string | null
+  /** When the order was placed (ISO), or null when unknown. */
+  order_placed_at: string | null
+  /** Mercur payouts that paid this order's proceeds to the vendor (`order.payouts`). */
+  order_payout_ids: readonly string[]
+  /**
+   * Per vendor id: money that left that vendor's earnings after the order was
+   * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; completed
+   * WITHDRAWAL legs off their SELLER_EARNINGS).
+   */
+  vendor_withdrawals: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
+}
+
+/** The vendors approve-held would debit for these rows: those of rows it will still credit. */
+export function vendorsDebitedOnApproval(rows: readonly StoredAttributionAmounts[]): string[] {
+  const ids = rows
+    .filter((r) => CREDITABLE_STATUSES.has(r.commission_status) && typeof r.vendor_id === "string" && r.vendor_id)
+    .map((r) => r.vendor_id as string)
+  return [...new Set(ids)]
+}
+
+/**
+ * Whether correcting this order would set up a vendor debit nobody can
+ * justify without a person. Returns the reason to list it for review, or
+ * null when the correction can go ahead.
+ *
+ * The correction raises what approve-held will debit from `vendor_id`'s
+ * SELLER_EARNINGS to the full commission (today every credit is refused, a
+ * separate defect, so this lands when that is fixed). That is right only if
+ * the vendor debited is the one who sold the order and the order's proceeds
+ * are still in their balance. So an order is listed when any row
+ * approve-held will still credit:
+ *
+ * - names a vendor that is not the order's seller (the vendor comes from the
+ *   creator's link or promo code, never from the order; under Mercur's split
+ *   a cart's other sellers' orders carry the link's vendor too), or the order
+ *   has no seller to compare with;
+ * - names a vendor who has been paid out since the order was placed: a
+ *   payout request that moved money, or a withdrawal off their earnings. The
+ *   commission was never carved out of that money, so the debit would come
+ *   out of later sales' proceeds;
+ * - is on an order whose proceeds a Mercur payout already sent; or
+ * - the order's placement time is unknown, so the above cannot be checked.
+ *
+ * Rows approve-held will not credit (reversed, disqualified) and rows with no
+ * vendor (approve-held disqualifies those) set up no debit and pass.
+ */
+export function reviewVendorDebit(
+  plan: Extract<CommissionMinorUnitCorrection, { action: "correct" }>,
+  rows: readonly StoredAttributionAmounts[],
+  ctx: VendorDebitContext
+): string | null {
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const creditable = plan.rows.filter((r) => CREDITABLE_STATUSES.has(r.status) && byId.get(r.id)?.vendor_id)
+  if (!creditable.length) return null
+
+  const vendors = vendorsDebitedOnApproval(creditable.map((r) => byId.get(r.id) as StoredAttributionAmounts))
+  const reasons: string[] = []
+  if (!ctx.order_placed_at) {
+    reasons.push("the order's placement time is unknown, so payouts since it cannot be checked")
+  }
+  for (const vendor of vendors) {
+    if (!ctx.order_seller_id) {
+      reasons.push(`the order has no seller, so it cannot be confirmed that vendor ${vendor} sold it`)
+    } else if (vendor !== ctx.order_seller_id) {
+      reasons.push(
+        `the attributed vendor ${vendor} is not the order's seller ${ctx.order_seller_id} ` +
+          `(the vendor comes from the creator's link or promo code, not the order)`
+      )
+    }
+    const paid = ctx.vendor_withdrawals[vendor] ?? []
+    if (paid.length) {
+      const shown = paid.slice(0, 3).map((w) => `${w.kind} ${w.id} ${w.status}`)
+      reasons.push(
+        `vendor ${vendor} has been paid out since the order was placed (${shown.join(", ")}${paid.length > 3 ? ", …" : ""}), ` +
+          `and the commission was never carved out of what they were paid`
+      )
+    }
+  }
+  if (ctx.order_payout_ids.length) {
+    reasons.push(`the order's proceeds were already sent to the vendor by Mercur payout ${ctx.order_payout_ids.join(", ")}`)
+  }
+  if (!reasons.length) return null
+
+  const from = creditable.reduce((sum, r) => sum + r.commission.from, 0)
+  const to = creditable.reduce((sum, r) => sum + r.commission.to, 0)
+  return (
+    `${reasons.join("; ")}. Correcting would raise what the approve-held job debits from ` +
+    `${vendors.join(", ")}'s current earnings for this order from ${from} to ${to} once commission ` +
+    `crediting works. Operator decision, not changed here`
+  )
 }
