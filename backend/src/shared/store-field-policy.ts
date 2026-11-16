@@ -20,8 +20,9 @@
  * "orders") and a route's `allowed` list. In 2.14.2 both are computed and
  * then applied only when the `rbac_filter_fields` feature flag is on
  * (`framework/dist/http/utils/get-query-config.js`): with the flag off, which
- * is the default and what this deployment runs, neither refuses nor drops
- * anything. So the rule is written here and applied by
+ * is the default and which nothing in this repository turns on, neither
+ * refuses nor drops anything (`seller.orders.id` was answered on Postgres).
+ * So the rule is written here and applied by
  * `api/middlewares/store-public-fields.ts` to the field list every store
  * route ends up with, defaults included.
  *
@@ -40,18 +41,19 @@
  *   and with them every link's own join rows (`*_link`).
  * - **The caller's own record is the exception**, by route: a cart, an order
  *   or `customers/me` may be read through the relations of that record
- *   (`OWN`), and no further. `region.orders` on a cart is still refused.
+ *   (a profile's `own`), and no further. `region.orders` on a cart is still
+ *   refused.
  * - **Nested products are flagged**, and the middleware then serves only
  *   those `GET /store/products` itself would: published, in the key's sales
  *   channel.
  *
  * A field that is not allowed is dropped, not refused with a 400. `*seller`
- * is how every Medusa client asks for a relation, the storefront's cart,
- * order and review queries among them, and so do app builds already in
- * people's hands: refusing would turn a privacy fix into an outage for
- * clients that cannot be redeployed with it, and a star has no single field
- * to refuse. One behaviour for every spelling: the answer simply does not
- * contain what the caller may not see.
+ * is how a Medusa client asks for a relation: the storefront's order and
+ * review queries do, its cart query did until this change, and a client that
+ * cannot be redeployed with the backend may. Refusing would turn a privacy
+ * fix into an outage for them, and a star has no single field to refuse. One
+ * behaviour for every spelling: the answer simply does not contain what the
+ * caller may not see.
  *
  * Names, not types, decide at run time (a path segment called `orders` is
  * refused whatever it hangs off). `integration-tests/http/

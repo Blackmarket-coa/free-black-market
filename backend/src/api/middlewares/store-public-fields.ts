@@ -33,8 +33,8 @@ import {
  * - routes that do not exist yet: a store route added tomorrow with
  *   `validateAndTransformQuery` is covered without being listed here, which a
  *   middleware registered per matcher would not be. Medusa sorts middleware
- *   by matcher, so one registered on `/store/*` could not run after a
- *   route's own validator either.
+ *   by matcher (`framework/dist/http/routes-sorter.js`), so one registered
+ *   on `/store/*` could not run after a route's own validator either.
  *
  * It does not cover a handler that writes its own field list. Mercur's order
  * set routes do (`orders.seller.*`), so their responses have the seller
