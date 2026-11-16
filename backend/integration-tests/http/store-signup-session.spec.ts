@@ -19,15 +19,16 @@ jest.setTimeout(240 * 1000)
  * "Identity with email already exists". Each case below is a step the
  * storefront now takes, or a refusal it now plans around.
  *
- * The last three cases are the other half: once the storefront can attach a
- * shopper profile to an existing login, the storefront's own "Delete my
- * account" must not take that login away from a vendor, a staff member or a
- * vendor applicant who signs in with the same email and password.
+ * The deletion cases are the other half: once the storefront can attach a
+ * shopper profile to an existing login, its own "Delete my account" must not
+ * take that login away from a vendor or a staff member who signs in with the
+ * same email and password, and must not let a stranger keep a shopper's login
+ * alive by filing a vendor application in their name (lib/login-shared.ts).
  *
  * Budget: every POST under /auth and POST /store/customers spends the auth
  * limiter's 20 a minute per address (rate-limiter.ts), and a reset also the
- * strict limiter's 5 per five minutes. This file spends 16 and 2; the deletion
- * cases build their profiles through the modules to stay inside it.
+ * strict limiter's 5 per five minutes. This file spends 13 and 2; the deletion
+ * cases build their logins and profiles through the modules to stay inside it.
  */
 
 medusaIntegrationTestRunner({
@@ -211,8 +212,11 @@ medusaIntegrationTestRunner({
     async function shopperOnLogin(extraAppMetadata: Record<string, unknown> = {}) {
       const email = `deletion-${uid()}@example.com`
       const password = `Pw-${uid()}!`
-      await api.post("/auth/customer/emailpass/register", { email, password })
       const auth = container().resolve(Modules.AUTH)
+      // The provider the register route calls, without spending the route's
+      // limiter: the password is hashed the same way, so it signs in later.
+      const registered = await auth.register("emailpass", { body: { email, password } } as any)
+      expect(registered.success).toBe(true)
       const [provider] = await auth.listProviderIdentities({ entity_id: email, provider: "emailpass" })
       const authIdentityId = provider.auth_identity_id as string
       const [customer] = await container()
@@ -258,22 +262,76 @@ medusaIntegrationTestRunner({
       expect(customer.email).toBe(`deleted-${shopper.customer.id}@deleted.invalid`)
     })
 
-    it("deleting the shopper account of a pending vendor applicant keeps the login", async () => {
+    it("a vendor application filed in a shopper's name does not keep their login, and goes with it", async () => {
+      const shopper = await shopperOnLogin()
+      // What POST /auth/seller/register-request files for whatever login the
+      // email in its body names, with no token.
+      const requests = container().resolve(REQUEST_MODULE)
+      const [filed] = await requests.createRequests([
+        {
+          type: "seller",
+          submitter_id: shopper.authIdentityId,
+          data: { member: { name: "Mallory", email: shopper.email } },
+          status: "pending",
+        },
+      ])
+
+      const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
+      expect(deleted.data).toMatchObject({
+        login_revoked: true,
+        login_kept: false,
+        seller_requests_removed: 1,
+      })
+      expect(await identityOf(shopper.authIdentityId)).toBeNull()
+      expect(await requests.listRequests({ id: [filed.id] })).toHaveLength(0)
+    })
+
+    it("deleting the shopper account of a vendor approved before its login got seller_id keeps the login", async () => {
       const shopper = await shopperOnLogin()
       await container()
         .resolve(REQUEST_MODULE)
-        .createRequests([{ type: "seller", submitter_id: shopper.authIdentityId, data: {}, status: "pending" }])
+        .createRequests([{ type: "seller", submitter_id: shopper.authIdentityId, data: {}, status: "accepted" }])
 
       const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
       expect(deleted.data).toMatchObject({ login_revoked: false, login_kept: true, profile_unlinked: true })
-      expect(await identityOf(shopper.authIdentityId)).not.toBeNull()
+      const identity = await identityOf(shopper.authIdentityId)
+      expect(identity.app_metadata).toMatchObject({ customer_id: null })
+    })
+
+    it("when the check cannot be made, nothing changes and the person is asked to retry", async () => {
+      const shopper = await shopperOnLogin()
+      const requests = container().resolve(REQUEST_MODULE)
+      const failing = jest.spyOn(requests, "listRequests").mockRejectedValueOnce(new Error("db down"))
+      try {
+        const refused = await call(api.post("/store/customers/me/deletion", {}, headers(shopper.token)))
+        expect(refused.status).toBe(503)
+        expect(refused.data.message).toMatch(/Nothing was changed/)
+      } finally {
+        failing.mockRestore()
+      }
+
+      const [customer] = await container()
+        .resolve(Modules.CUSTOMER)
+        .listCustomers({ id: [shopper.customer.id] })
+      expect(customer.email).toBe(shopper.email)
+      const identity = await identityOf(shopper.authIdentityId)
+      expect(identity.app_metadata).toMatchObject({ customer_id: shopper.customer.id })
+
+      // And the retry goes through.
+      const retried = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
+      expect(retried.data).toMatchObject({ deleted: true, login_revoked: true })
     })
 
     it("deleting a shopper-only account still revokes the login", async () => {
       const shopper = await shopperOnLogin()
 
       const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
-      expect(deleted.data).toMatchObject({ login_revoked: true, login_kept: false, profile_unlinked: false })
+      expect(deleted.data).toMatchObject({
+        login_revoked: true,
+        login_kept: false,
+        profile_unlinked: false,
+        seller_requests_removed: 0,
+      })
       expect(await identityOf(shopper.authIdentityId)).toBeNull()
     })
   },
