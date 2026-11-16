@@ -1,4 +1,9 @@
-import { RESEND_TESTING_SENDER, isResendTestingDomain, resendSender } from "../resend-sender"
+import {
+  RESEND_TESTING_SENDER,
+  bareEmailAddress,
+  isResendTestingDomain,
+  resendSender,
+} from "../resend-sender"
 
 describe("resendSender", () => {
   it("reads RESEND_FROM_EMAIL", () => {
@@ -39,5 +44,16 @@ describe("isResendTestingDomain", () => {
     ["resend.dev@fbm.example", false],
   ])("%s -> %s", (from, expected) => {
     expect(isResendTestingDomain(from)).toBe(expected)
+  })
+})
+
+describe("bareEmailAddress", () => {
+  it.each([
+    ["Free Black Market <noreply@fbm.example>", "noreply@fbm.example"],
+    ["noreply@fbm.example", "noreply@fbm.example"],
+    ["  Name < noreply@fbm.example >  ", "noreply@fbm.example"],
+    ["onboarding@resend.dev", "onboarding@resend.dev"],
+  ])("%s -> %s", (from, expected) => {
+    expect(bareEmailAddress(from)).toBe(expected)
   })
 })

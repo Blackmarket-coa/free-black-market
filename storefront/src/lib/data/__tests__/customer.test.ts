@@ -266,6 +266,55 @@ describe("signup", () => {
     expect(h.setAuthToken).not.toHaveBeenCalled()
   })
 
+  it.each([
+    [{ seller_id: "sel_1" }, /vendor account/i],
+    [{ user_id: "user_1" }, /staff or partner/i],
+    [{ driver_id: "drv_1" }, /staff or partner/i],
+    [{ customer_id: null }, /was closed/i],
+  ])(
+    "gives no shopper profile to a taken email whose login is %o",
+    async (appMetadata, message) => {
+      h.authRegister.mockRejectedValue(new Error("Identity with email already exists"))
+      h.authLogin.mockResolvedValue(makeToken({ actor_id: "", app_metadata: appMetadata }))
+
+      const res = await signup(form())
+
+      expect(res).toMatch(message)
+      expect(h.custCreate).not.toHaveBeenCalled()
+      expect(h.authRefresh).not.toHaveBeenCalled()
+      expect(h.setAuthToken).not.toHaveBeenCalled()
+    }
+  )
+
+  it("says the email is someone else's when the profile cannot be created for that reason", async () => {
+    h.authRegister.mockResolvedValue(regToken)
+    h.custCreate.mockRejectedValue(new Error("Customer with this email already has an account"))
+
+    const res = await signup(form())
+
+    expect(res).toMatch(/another shopper account/i)
+    expect(h.setAuthToken).not.toHaveBeenCalled()
+  })
+
+  it("asks the buyer to try again when the profile cannot be created for another reason", async () => {
+    h.authRegister.mockResolvedValue(regToken)
+    h.custCreate.mockRejectedValue(new Error("socket hang up"))
+
+    await expect(signup(form())).resolves.toMatch(/try again/i)
+    expect(h.setAuthToken).not.toHaveBeenCalled()
+  })
+
+  it("does not keep a session when the refreshed token still names no customer", async () => {
+    h.authRegister.mockResolvedValue(regToken)
+    h.custCreate.mockResolvedValue({ customer: { id: "cus_new" } })
+    h.authRefresh.mockResolvedValue(makeToken({ actor_id: "", app_metadata: {} }))
+
+    const res = await signup(form())
+
+    expect(typeof res).toBe("string")
+    expect(h.setAuthToken).not.toHaveBeenCalled()
+  })
+
   it("returns an error message when registration fails for another reason", async () => {
     h.authRegister.mockRejectedValue(new Error("dupe"))
     await expect(signup(fd({ email: "a@x.com", password: "pw" }))).resolves.toBe(
@@ -330,6 +379,8 @@ describe("login", () => {
     expect(res).toMatchObject({ code: "vendor_account" })
     expect(res?.vendorUrl).toBeTruthy()
     expect(res?.error).toMatch(/vendor/i)
+    expect(h.custCreate).not.toHaveBeenCalled()
+    expect(h.setAuthToken).not.toHaveBeenCalled()
     expect(h.removeAuthToken).toHaveBeenCalled()
   })
 
@@ -349,8 +400,11 @@ describe("login", () => {
       { Authorization: `Bearer ${loginToken}` }
     )
     expect(h.authRefresh).toHaveBeenCalledWith({ Authorization: `Bearer ${loginToken}` })
-    expect(h.setAuthToken).toHaveBeenLastCalledWith(customerToken)
-    expect(h.removeAuthToken).not.toHaveBeenCalled()
+    // Decided from the token, before any session is stored: the only session
+    // ever stored is the refreshed token, and /me is not asked first.
+    expect(h.setAuthToken).toHaveBeenCalledTimes(1)
+    expect(h.setAuthToken).toHaveBeenCalledWith(customerToken)
+    expect(h.medusaFetch).not.toHaveBeenCalled()
   })
 
   it("does not keep a session when the unfinished sign-up cannot be finished", async () => {
@@ -364,16 +418,27 @@ describe("login", () => {
     expect(h.removeAuthToken).toHaveBeenCalled()
   })
 
-  it("leaves a login linked to another actor alone and points at sign-up", async () => {
+  it("leaves a staff login alone and does not send it to sign-up with the same email", async () => {
     h.authLogin.mockResolvedValue(makeToken({ actor_id: "", app_metadata: { user_id: "user_1" } }))
-    h.medusaFetch.mockRejectedValue({ status: 401 })
 
     const res = await login(fd({ email: "staff@x.com", password: "pw" }))
 
-    expect(res?.error).toMatch(/shopper profile/i)
+    expect(res?.error).toMatch(/staff or partner/i)
+    expect(res?.error).toMatch(/different email/i)
     expect(res?.code).toBeUndefined()
     expect(h.custCreate).not.toHaveBeenCalled()
+    expect(h.setAuthToken).not.toHaveBeenCalled()
     expect(h.removeAuthToken).toHaveBeenCalled()
+  })
+
+  it("tells the owner of a closed shopper account so, instead of retrying forever", async () => {
+    h.authLogin.mockResolvedValue(makeToken({ actor_id: "", app_metadata: { customer_id: null } }))
+
+    const res = await login(fd({ email: "gone@x.com", password: "pw" }))
+
+    expect(res?.error).toMatch(/was closed/i)
+    expect(h.custCreate).not.toHaveBeenCalled()
+    expect(h.setAuthToken).not.toHaveBeenCalled()
   })
 
   it("keeps the session on a transient customers/me failure", async () => {

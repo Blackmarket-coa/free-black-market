@@ -26,6 +26,16 @@ export function resendSender(
 }
 
 /**
+ * The bare address of a sender written as `Name <address>`, for callers that
+ * add a display name of their own (services/apprise/resend.service.ts builds
+ * `${fromName} <${fromEmail}>`).
+ */
+export function bareEmailAddress(from: string): string {
+  const match = from.match(/<\s*([^<>\s]+@[^<>\s]+)\s*>\s*$/)
+  return (match ? match[1] : from).trim()
+}
+
+/**
  * True for an address on resend.dev, Resend's shared testing domain, written
  * bare or as `Name <address>`. Resend's documentation requires a domain you own
  * and have verified (resend.com/domains) to send email, so customers are not

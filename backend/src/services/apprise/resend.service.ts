@@ -1,5 +1,5 @@
 import { createLogger } from "../../shared/logger"
-import { resendSender } from "../../lib/resend-sender"
+import { bareEmailAddress, resendSender } from "../../lib/resend-sender"
 const log = createLogger("services/apprise/resend.service")
 /**
  * Resend Email Service
@@ -59,7 +59,9 @@ export class ResendService {
 
   constructor(options: ResendEmailOptions) {
     this.apiKey = options.apiKey || process.env.RESEND_API_KEY || ""
-    this.fromEmail = options.fromEmail || resendSender()
+    // This service writes its own display name around the address, so a
+    // sender configured as "Name <address>" is reduced to the address.
+    this.fromEmail = bareEmailAddress(options.fromEmail || resendSender())
     this.fromName = options.fromName || process.env.RESEND_FROM_NAME || "Ground Up Liberation"
   }
 
