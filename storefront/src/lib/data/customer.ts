@@ -147,9 +147,67 @@ function getErrorMessage(error: unknown): string {
 }
 
 /* ---------------------------------------------
- * SIGNUP (FIXED — NO TOKEN CHURN)
+ * SIGNUP
+ *
+ * Medusa's sign-up is two calls. Registering the email and password returns a
+ * token minted before any shopper profile exists, so it carries no customer
+ * id. Creating the profile with it works (that route accepts such a token),
+ * but every other customer route refuses it, `/store/customers/me` and the
+ * cart transfer included. So once the profile exists the token is traded for
+ * a fresh one, which Medusa mints with the new customer id
+ * (`POST /auth/token/refresh`).
+ *
+ * Until 2026-11-16 this kept the registration token as the session: the
+ * account was created but the buyer was not signed in, the form showed
+ * nothing (or "Unauthorized" when a cart had to be moved onto the account),
+ * and pressing it again answered "Identity with email already exists".
  * -------------------------------------------- */
-export async function signup(formData: FormData) {
+const IDENTITY_EXISTS = "Identity with email already exists"
+
+const EXISTING_ACCOUNT_MESSAGE =
+  'An account with this email already exists. Sign in with your password, or use "Forgot password?" to set a new one.'
+
+const bearer = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+/** `sdk.auth.*` answers a token string; some versions answer `{ token }`. */
+const tokenFrom = (response: unknown): string | null => {
+  if (typeof response === "string") return response || null
+  const token = (response as { token?: unknown } | null)?.token
+  return typeof token === "string" && token ? token : null
+}
+
+const isIdentityExists = (error: unknown) =>
+  (error as { message?: string } | null)?.message === IDENTITY_EXISTS
+
+/** True when the login is already linked to an actor of some type. */
+const hasActorLink = (appMetadata: Record<string, unknown>) =>
+  Object.entries(appMetadata).some(
+    ([key, value]) => key.endsWith("_id") && Boolean(value)
+  )
+
+/**
+ * Create the shopper profile for a login that has none, and return a token
+ * that carries the new customer id.
+ */
+async function createProfileAndRefresh(
+  token: string,
+  profile: HttpTypes.StoreCreateCustomer
+): Promise<{ customer: HttpTypes.StoreCustomer; token: string }> {
+  const { customer } = await sdk.store.customer.create(profile, {}, bearer(token))
+  const refreshed = tokenFrom(await sdk.auth.refresh(bearer(token)))
+  if (!refreshed) {
+    throw new Error("Sign-up failed: invalid authentication response")
+  }
+  return { customer, token: refreshed }
+}
+
+/**
+ * Returns the new customer, `null` when the email already had a shopper
+ * profile and the password signed the buyer into it, or an error message.
+ */
+export async function signup(
+  formData: FormData
+): Promise<HttpTypes.StoreCustomer | null | string> {
   const email = String(formData.get("email") || "")
     .toLowerCase()
     .trim()
@@ -163,31 +221,45 @@ export async function signup(formData: FormData) {
   }
 
   try {
-    // 1️⃣ Register (this already authenticates)
-    const token = await sdk.auth.register("customer", "emailpass", {
-      email,
-      password,
-    })
-
-    await setAuthToken(token as string)
-
-    // 2️⃣ Create customer using SAME token
-    const authHeaders = await getAuthHeaders()
-    if (!authHeaders) {
-      throw new Error("Authentication failed after signup")
+    let token: string | null
+    try {
+      token = tokenFrom(
+        await sdk.auth.register("customer", "emailpass", { email, password })
+      )
+    } catch (error) {
+      if (!isIdentityExists(error)) throw error
+      // The email already has a login: an earlier sign-up made it (the old
+      // flow never signed the buyer in, so they could not tell it had worked)
+      // or one stopped after making it. Only the right password goes further.
+      try {
+        token = tokenFrom(
+          await sdk.auth.login("customer", "emailpass", { email, password })
+        )
+      } catch {
+        return EXISTING_ACCOUNT_MESSAGE
+      }
+    }
+    if (!token) {
+      throw new Error("Sign-up failed: invalid authentication response")
     }
 
-    const { customer } = await sdk.store.customer.create(
-      customerForm,
-      {},
-      authHeaders
-    )
+    let customer: HttpTypes.StoreCustomer | null = null
+    if (!decodeTokenPayload(token)?.actor_id) {
+      ;({ customer, token } = await createProfileAndRefresh(token, customerForm))
+    }
 
-    // 3️⃣ Cache + cart
+    await setAuthToken(token)
+
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
 
-    await transferCart()
+    // The buyer is signed in from here on; a cart that cannot be moved onto
+    // the account is not a failed sign-up.
+    try {
+      await transferCart()
+    } catch (error) {
+      logger.warn("Cart transfer failed after signup — continuing", error)
+    }
 
     return customer
   } catch (error) {
@@ -284,13 +356,40 @@ export async function login(formData: FormData): Promise<LoginResult> {
       }
     } catch (probeError) {
       if (getErrorStatus(probeError) === 401) {
-        await removeAuthToken()
-
         const payload = decodeTokenPayload(token)
         const appMetadata = (payload?.app_metadata ?? {}) as Record<
           string,
           unknown
         >
+
+        if (!payload?.actor_id && !hasActorLink(appMetadata)) {
+          // A login with no profile of any kind is a storefront sign-up that
+          // stopped after registering the email. Finish it here instead of
+          // sending the buyer to a sign-up form that answers "already exists".
+          try {
+            const { token: refreshed } = await createProfileAndRefresh(token, {
+              email,
+            })
+            await setAuthToken(refreshed)
+            const customerCacheTag = await getCacheTag("customers")
+            revalidateTag(customerCacheTag)
+          } catch (createError) {
+            logger.error("[login] Could not finish an unfinished sign-up:", createError)
+            await removeAuthToken()
+            return {
+              error:
+                "We couldn't finish setting up your account. Please try again in a moment.",
+            }
+          }
+          try {
+            await transferCart()
+          } catch {
+            logger.warn("Cart transfer failed — continuing login")
+          }
+          return
+        }
+
+        await removeAuthToken()
 
         if (appMetadata.seller_id) {
           return {
@@ -303,7 +402,7 @@ export async function login(formData: FormData): Promise<LoginResult> {
 
         return {
           error:
-            "We couldn't find a shopper profile for this login. Please register a shopper account to start buying.",
+            "We couldn't find a shopper profile for this login. Create one on the sign-up page with the same email and password.",
         }
       }
       // Transient failure: keep the session — the account page degrades
