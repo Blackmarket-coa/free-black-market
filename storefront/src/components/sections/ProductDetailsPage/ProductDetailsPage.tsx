@@ -1,5 +1,5 @@
 import { ProductDetails, ProductGallery } from "@/components/organisms"
-import { getProductListingType, listProducts } from "@/lib/data/products"
+import { getProductListingType, retrieveProductByHandle } from "@/lib/data/products"
 import { HomeProductSection } from "../HomeProductSection/HomeProductSection"
 import NotFound from "@/app/not-found"
 import type { Presentation } from "@/lib/listing/presentation"
@@ -14,11 +14,7 @@ export const ProductDetailsPage = async ({
   locale: string
   presentation?: Presentation
 }) => {
-  const prod = await listProducts({
-    countryCode: locale,
-    queryParams: { handle: [handle], limit: 1 },
-    forceCache: true,
-  }).then(({ response }) => response.products[0])
+  const prod = await retrieveProductByHandle({ handle, countryCode: locale })
 
   if (!prod) return null
 
