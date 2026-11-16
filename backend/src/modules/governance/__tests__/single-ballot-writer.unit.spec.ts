@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import ts from "typescript"
 import { WorkflowManager } from "@medusajs/framework/orchestration"
 import * as governanceWorkflows from "../../../workflows/governance"
 
@@ -24,8 +25,48 @@ import * as governanceWorkflows from "../../../workflows/governance"
  * and be kept in step with them.
  *
  * This walks the source so a second writer does not come back unnoticed.
+ *
+ * What it guards, and what it does not. It finds code that names one of the
+ * module's generated ballot mutators (`createGardenVotes`, `updateGardenVotes`,
+ * ...): an identifier, or a string used as a property key. The files are
+ * parsed, so a comment or a message that mentions a mutator is not a writer.
+ * A ballot written by SQL is out of its reach. That is the migrations,
+ * skipped by directory (two of them remove duplicate ballots and recount
+ * tallies, once each), and customer erasure, which anonymises `garden_vote`
+ * rows through `lib/customer-data-registry.ts` without naming a mutator.
  */
 const SRC = path.join(__dirname, "../../..")
+
+const BALLOT_MUTATOR = /^(?:create|update|upsert|delete|softDelete|restore)GardenVotes$/
+
+/**
+ * The ballot mutators a file's code names: identifiers, and string literals
+ * used as a property key (`service["createGardenVotes"]`). Comments and other
+ * strings are not code and are not counted.
+ */
+function ballotMutatorsNamed(file: string, text: string): string[] {
+  const source = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  )
+  const named: string[] = []
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && BALLOT_MUTATOR.test(node.text)) named.push(node.text)
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      BALLOT_MUTATOR.test(node.argumentExpression.text)
+    ) {
+      named.push(node.argumentExpression.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return named
+}
 
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -49,11 +90,34 @@ describe("ballots are written in one place", () => {
   })
 
   it("only the governance service creates, changes or removes a ballot", () => {
-    const ballotWrite = /\b(?:create|update|upsert|delete|softDelete|restore)GardenVotes\b/
+    // The text match is only a cheap first pass over the tree; a file it
+    // picks is parsed, and counts when its code names a mutator.
+    const mentions = /(?:create|update|upsert|delete|softDelete|restore)GardenVotes/
     const writers = files
-      .filter((file) => ballotWrite.test(fs.readFileSync(file, "utf8")))
+      .filter((file) => {
+        const text = fs.readFileSync(file, "utf8")
+        return mentions.test(text) && ballotMutatorsNamed(file, text).length > 0
+      })
       .map((file) => path.relative(SRC, file))
     expect(writers).toEqual([path.join("modules", "governance", "service.ts")])
+  })
+
+  it("counts code that names a mutator, and not a comment or a message that does", () => {
+    const named = (text: string) => ballotMutatorsNamed("probe.ts", text)
+    expect(named("await governance.createGardenVotes(ballot)")).toEqual(["createGardenVotes"])
+    expect(named("const { softDeleteGardenVotes: remove } = governance")).toEqual(["softDeleteGardenVotes"])
+    expect(named('await governance["updateGardenVotes"](change)')).toEqual(["updateGardenVotes"])
+    expect(named("const votes = await governance.listGardenVotes({})")).toEqual([])
+    expect(
+      named(
+        [
+          "// the old workflow inserted through createGardenVotes",
+          "/** `deleteGardenVotes` was its compensation */",
+          'log.info("ballots are written by castBallot, not createGardenVotes")',
+          "const note = `see ${where}: updateGardenVotes is not called here`",
+        ].join("\n")
+      )
+    ).toEqual([])
   })
 
   it("the governance workflows register no vote-casting workflow", () => {
