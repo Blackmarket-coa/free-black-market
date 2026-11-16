@@ -24,19 +24,22 @@ import type { RouteVerb } from "@medusajs/framework/http"
  *   export { create as POST }                a local binding, renamed
  *   export { POST } from "./handlers"        a re-export (a getter)
  *
- * The regexes this replaced read the first form and a first declarator only.
+ * The regexes this replaced (one per walk) read a function declaration and
+ * the first declarator of a statement, and no other form; food-network's
+ * missed even a plain `export function GET`.
  *
  * Some forms decide keys the file does not show. They are reported in
  * `unreadable`, and a walk fails on them rather than guess:
  *
  *   export * from "./handlers"       the names are the other file's
- *   export default ..., export =     `resolveExports` (`@medusajs/utils`
- *                                    `dist/common/resolve-exports.js` lines
+ *   export default ...               `resolveExports` (`@medusajs/utils`
+ *   (and `export { x as default }`)  `dist/common/resolve-exports.js` lines
  *                                    4-11, from `dynamic-import.js` line 19)
  *                                    reads a default export's keys IN PLACE
  *                                    of the file's when it has a `default`
  *                                    key itself: it can add verbs and hide
  *                                    the declared ones
+ *   export = ...                     the value's keys are the file's
  *   exports.X, module.exports        keys no export statement names
  *
  * What it cannot tell is whether a verb-named export's value is a function
