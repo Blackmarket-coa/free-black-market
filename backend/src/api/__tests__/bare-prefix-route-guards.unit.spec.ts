@@ -1,11 +1,16 @@
 import fs from "fs"
 import http from "http"
+import os from "os"
 import path from "path"
 import type { AddressInfo } from "net"
 import express from "express"
 import type { NextFunction, Request, Response } from "express"
 import jwt from "jsonwebtoken"
+import ts from "typescript"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { HTTP_METHODS } from "@medusajs/framework/http"
+import type { RouteVerb } from "@medusajs/framework/http"
+import { readRouteFileExports } from "./route-file-exports"
 
 /**
  * Every route OUTSIDE /store, /admin, /vendor and /auth, by who can call it.
@@ -25,7 +30,12 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
  *   1. a route (file and verb) outside the four trees is not in REVIEWED
  *      below, or REVIEWED names one that no longer exists. Adding a route out
  *      here means deciding who may call it and writing that down, in the
- *      style of `lib/customer-data-registry.ts` and its walk;
+ *      style of `lib/customer-data-registry.ts` and its walk. A file's verbs
+ *      are every HTTP-method name it exports, however the export is spelled
+ *      (a second declarator, a destructured name, `export { a as POST }`),
+ *      read from its syntax tree the way Medusa's RoutesLoader registers them
+ *      (`route-file-exports.ts`); a file whose verbs cannot be read that way
+ *      (`export *`, a default export) is listed as unreviewed;
  *   2. a route REVIEWED says a middleware guards is reached with no
  *      credentials, with the wrong actor's token, or through a re-spelled URL
  *      (re-cased, trailing slash, percent-encoded id; SD-86 and SD-87 were
@@ -69,6 +79,12 @@ const { RoutesSorter } = require(path.join(httpDir, "routes-sorter")) as {
 const { wrapHandler } = require(path.join(httpDir, "utils", "wrap-handler")) as {
   wrapHandler: (fn: Handler) => Handler
 }
+const { RoutesLoader } = require(path.join(httpDir, "routes-loader")) as {
+  RoutesLoader: new () => {
+    scanDir(dir: string): Promise<void>
+    getRoutes(): { matcher: string; method: RouteVerb }[]
+  }
+}
 
 type Handler = (req: Request, res: Response, next: NextFunction) => unknown
 type LoadedMiddleware = { handler: Handler; matcher: string; methods?: string[] }
@@ -77,7 +93,6 @@ type SortableEntry = LoadedMiddleware | SentinelRoute
 
 const API_DIR = path.resolve(__dirname, "..")
 const GUARDED_TREES = ["store", "admin", "vendor", "auth"]
-const VERBS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 const JWT_SECRET = "bare-prefix-route-guards-spec-secret"
 const ADMIN_ORIGIN = "https://admin.bare-prefix-spec.test"
 
@@ -345,7 +360,8 @@ const GUARDS: Record<string, Guard> = { ...REVIEWED, ...STORE_TWINS }
 // The walk
 // ---------------------------------------------------------------------------
 
-type WalkedRoute = { key: string; method: string; matcher: string; file: string; source: string }
+/** `handler` is the text of the declaration that binds this verb's handler. */
+type WalkedRoute = { key: string; method: string; matcher: string; file: string; handler: string }
 
 function routeFiles(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -361,9 +377,6 @@ function isOutsideGuardedTrees(rel: string): boolean {
   return !GUARDED_TREES.includes(rel.split(path.sep)[0])
 }
 
-const verbDeclaration = (verb: string) =>
-  new RegExp(`^export\\s+(?:const|let|var|async\\s+function|function)\\s+${verb}\\b`, "m")
-
 /** `[id]` in a route directory is `:id` in its matcher. */
 const matcherOf = (rel: string) =>
   "/" +
@@ -373,20 +386,33 @@ const matcherOf = (rel: string) =>
     .map((segment) => segment.replace(/^\[(.+)\]$/, ":$1"))
     .join("/")
 
-function readRouteFile(apiDir: string, rel: string): WalkedRoute[] {
-  const source = fs.readFileSync(path.join(apiDir, rel), "utf8")
+/**
+ * The routes one route file adds: one per HTTP verb it exports, however the
+ * export is spelled, as Medusa's RoutesLoader registers them
+ * (`route-file-exports.ts` cites the loader).
+ */
+function routesOf(rel: string, text: string): WalkedRoute[] {
+  const read = readRouteFileExports(rel, text)
   const matcher = matcherOf(rel)
-  // How Medusa's RoutesLoader reads a route file: one handler per exported verb.
-  const methods = VERBS.filter((verb) => verbDeclaration(verb).test(source))
-  const routes: WalkedRoute[] = methods.map((method) => ({ key: `${method} ${matcher}`, method, matcher, file: rel, source }))
+  const routes: WalkedRoute[] = read.verbs.map((method) => ({
+    key: `${method} ${matcher}`,
+    method,
+    matcher,
+    file: rel,
+    handler: read.handlerSource(method),
+  }))
   // A route file that exports no verb is not a reviewed nothing: say so.
-  if (methods.length === 0) routes.push({ key: `(no verb) ${matcher}`, method: "", matcher, file: rel, source })
-  // `export { handler as POST }` and `export * from` export verbs this walk
-  // does not read. None exists; one that appears is unreviewed until the verb
-  // is declared in the file.
-  if (/^export\s*(\{|\*)/m.test(source)) routes.push({ key: `(re-export) ${matcher}`, method: "", matcher, file: rel, source })
+  if (read.verbs.length === 0) routes.push({ key: `(no verb) ${matcher}`, method: "", matcher, file: rel, handler: "" })
+  // `export *`, a default export or a CommonJS write can register verbs that
+  // no export in the file names. None exists; one that appears is unreviewed
+  // until the file exports its verbs by name.
+  for (const why of read.unreadable) {
+    routes.push({ key: `(unreadable: ${why}) ${matcher}`, method: "", matcher, file: rel, handler: "" })
+  }
   return routes
 }
+
+const readRouteFile = (apiDir: string, rel: string) => routesOf(rel, fs.readFileSync(path.join(apiDir, rel), "utf8"))
 
 function walkBareRoutes(apiDir: string): WalkedRoute[] {
   return routeFiles(apiDir)
@@ -394,19 +420,6 @@ function walkBareRoutes(apiDir: string): WalkedRoute[] {
     .map((abs) => path.relative(apiDir, abs))
     .filter(isOutsideGuardedTrees)
     .flatMap((rel) => readRouteFile(apiDir, rel))
-}
-
-/**
- * The text of one verb's handler: from its `export` to the next top-level
- * `export`, or the end of the file. A guard named for a verb must be in here,
- * not merely somewhere in the file.
- */
-function handlerSource(source: string, verb: string): string {
-  const start = source.search(verbDeclaration(verb))
-  if (start < 0) return ""
-  const rest = source.slice(start + 1)
-  const next = rest.search(/^export\s/m)
-  return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next)
 }
 
 const walked = walkBareRoutes(API_DIR)
@@ -590,8 +603,12 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       if (g.by === "public" && g.why.trim().length < 20) missing.push(`${r.key}: no reason given`)
       if (g.by === "handler") {
         if (g.how.trim().length < 10) missing.push(`${r.key}: guard not described`)
-        if (!handlerSource(r.source, r.method).includes(g.calls)) {
-          missing.push(`${r.key}: the ${r.method} handler in ${r.file} does not contain \`${g.calls}\``)
+        if (!r.handler.includes(g.calls)) {
+          missing.push(
+            r.handler
+              ? `${r.key}: the ${r.method} handler in ${r.file} does not contain \`${g.calls}\``
+              : `${r.key}: the ${r.method} handler is not declared in ${r.file} (re-exported or imported), so its guard cannot be read`
+          )
         }
       }
     }
@@ -604,14 +621,179 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       "  if (!requireCommerceApiKey(req, res)) return",
       "}",
       "",
+      "function helper(req) {",
+      "  return verifySomething(req)",
+      "}",
+      "",
       "export const POST = async (req, res) => {",
       "  res.json({})",
       "}",
     ].join("\n")
-    expect(handlerSource(source, "GET")).toContain("requireCommerceApiKey(req, res)")
-    expect(handlerSource(source, "POST")).not.toContain("requireCommerceApiKey(req, res)")
-    expect(handlerSource(source, "POST")).toContain("res.json({})")
-    expect(handlerSource(source, "DELETE")).toBe("")
+    const read = readRouteFileExports("route.ts", source)
+    expect(read.handlerSource("GET")).toContain("requireCommerceApiKey(req, res)")
+    // The handler is its own declaration, not the text up to the next export.
+    expect(read.handlerSource("GET")).not.toContain("verifySomething")
+    expect(read.handlerSource("POST")).not.toContain("requireCommerceApiKey(req, res)")
+    expect(read.handlerSource("POST")).toContain("res.json({})")
+    expect(read.handlerSource("DELETE")).toBe("")
+  })
+
+  describe("a file's verbs are every HTTP-method name it exports, as Medusa's RoutesLoader registers them", () => {
+    /**
+     * One route file per way of exporting a verb, and the verbs the loader
+     * registers for it. The last case runs every one through the loader
+     * itself. `./handlers` (HANDLERS) is the module the re-exports name.
+     */
+    const HANDLERS = ["export async function GET() {}", "export async function POST() {}", "export const PUT = async () => {}"].join("\n")
+    const FORMS: Record<string, { source: string; registers: RouteVerb[] }> = {
+      declarations: {
+        source: ["export async function GET() {}", "export function POST() {}", "export class PUT {}"].join("\n"),
+        registers: ["GET", "POST", "PUT"],
+      },
+      "second-declarator": {
+        source: ["export async function GET() {}", "export const HEAD = GET, DELETE = async () => {}"].join("\n"),
+        registers: ["GET", "DELETE", "HEAD"],
+      },
+      destructuring: {
+        source: [
+          "const handlers = { POST: async () => {}, nested: { PATCH: async () => {} }, put: async () => {} }",
+          "const list = [async () => {}, null, async () => {}]",
+          "export const { POST, nested: { PATCH }, put: PUT } = handlers",
+          "export const [DELETE, , HEAD] = list",
+        ].join("\n"),
+        registers: ["POST", "PUT", "PATCH", "DELETE", "HEAD"],
+      },
+      renamed: {
+        source: ["async function create() {}", "const remove = async () => {}", "export { create as POST, remove as DELETE }"].join("\n"),
+        registers: ["POST", "DELETE"],
+      },
+      "re-export": { source: 'export { POST, PUT as PATCH } from "./handlers"', registers: ["POST", "PATCH"] },
+      "export-star": { source: 'export * from "./handlers"', registers: ["GET", "POST", "PUT"] },
+      "export-default": {
+        // The loader reads this object's keys in place of the file's: POST, and not GET.
+        source: ["export async function GET() {}", "export default { default: {}, POST: async () => {} }"].join("\n"),
+        registers: ["POST"],
+      },
+      "export-equals": { source: "export = { GET: async () => {} }", registers: ["GET"] },
+      commonjs: { source: ["export async function GET() {}", "exports.POST = async () => {}"].join("\n"), registers: ["GET", "POST"] },
+      "no-runtime-verb": {
+        source: [
+          "// export const GET = async () => {}",
+          "export type POST = string",
+          "export interface PUT { put: true }",
+          "export declare const PATCH: () => void",
+          "export const get = async () => {}",
+          'export const message = "export const DELETE = async () => {}"',
+        ].join("\n"),
+        registers: [],
+      },
+    }
+    const read = (form: string) => readRouteFileExports("route.ts", FORMS[form].source)
+
+    it("an exported function or class declaration", () => {
+      expect(read("declarations")).toMatchObject({ verbs: ["GET", "POST", "PUT"], unreadable: [] })
+    })
+
+    it("every declarator of an exported variable statement, not only the first, each with its own handler", () => {
+      const r = read("second-declarator")
+      expect(r).toMatchObject({ verbs: ["GET", "DELETE", "HEAD"], unreadable: [] })
+      expect(r.handlerSource("DELETE")).toBe("DELETE = async () => {}")
+      expect(r.handlerSource("HEAD")).toBe("HEAD = GET")
+    })
+
+    it("every name an object or array pattern binds, nested and renamed", () => {
+      expect(read("destructuring")).toMatchObject({ verbs: ["POST", "PUT", "PATCH", "DELETE", "HEAD"], unreadable: [] })
+    })
+
+    it("export { local as VERB }, whose handler is the local's declaration", () => {
+      const r = read("renamed")
+      expect(r).toMatchObject({ verbs: ["POST", "DELETE"], unreadable: [] })
+      expect(r.handlerSource("POST")).toBe("async function create() {}")
+      expect(r.handlerSource("DELETE")).toBe("remove = async () => {}")
+    })
+
+    it("export { VERB } from another file names the verb, and its handler is not in this file", () => {
+      const r = read("re-export")
+      expect(r).toMatchObject({ verbs: ["POST", "PATCH"], unreadable: [] })
+      expect(r.handlerSource("POST")).toBe("")
+    })
+
+    it("export * from another file is unreadable: the names are that file's", () => {
+      expect(read("export-star")).toMatchObject({ verbs: [], unreadable: ['export * from "./handlers" (line 1)'] })
+    })
+
+    it("a default export, in any spelling, is unreadable: the loader can read its keys in place of the file's", () => {
+      expect(read("export-default").unreadable).toEqual(["export default (line 2)"])
+      expect(readRouteFileExports("route.ts", "export default async function GET() {}").unreadable).toEqual(["export default (line 1)"])
+      expect(readRouteFileExports("route.ts", "const h = {}\nexport { h as default }").unreadable).toEqual(["export { ... as default } (line 2)"])
+      expect(readRouteFileExports("route.ts", 'export { default } from "./handlers"').unreadable).toEqual(["export { ... as default } (line 1)"])
+    })
+
+    it("export = and a CommonJS write are unreadable", () => {
+      expect(read("export-equals").unreadable).toEqual(["export = (line 1)"])
+      expect(read("commonjs").unreadable).toEqual(["exports.POST (line 2)"])
+      expect(readRouteFileExports("route.js", "module.exports = { GET() {} }").unreadable).toEqual(["module.exports (line 1)"])
+    })
+
+    it("type-only and ambient exports, lower-case names, comments and strings register nothing", () => {
+      expect(read("no-runtime-verb")).toMatchObject({ verbs: [], unreadable: [] })
+    })
+
+    it("a verb-named export is listed whatever its value: the loader skips one that is not a function, and the walk errs toward review", () => {
+      expect(readRouteFileExports("route.ts", 'export const GET = "not a handler"').verbs).toEqual(["GET"])
+    })
+
+    it("Medusa's RoutesLoader registers exactly these verbs from each form, compiled as medusa build compiles it, and the walk reads them or refuses", async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fbm-route-exports-"))
+      try {
+        // tsc to CommonJS, as `medusa build` emits this package.
+        const compile = (source: string) =>
+          ts.transpileModule(source, {
+            compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021, esModuleInterop: true },
+          }).outputText
+        for (const [form, { source }] of Object.entries(FORMS)) {
+          fs.mkdirSync(path.join(dir, form))
+          fs.writeFileSync(path.join(dir, form, "route.js"), compile(source))
+          fs.writeFileSync(path.join(dir, form, "handlers.js"), compile(HANDLERS))
+        }
+        const loader = new RoutesLoader()
+        await loader.scanDir(dir)
+        const registered: Record<string, RouteVerb[]> = {}
+        for (const route of loader.getRoutes()) (registered[route.matcher.slice(1)] ??= []).push(route.method)
+
+        for (const [form, { source, registers }] of Object.entries(FORMS)) {
+          const loaded = HTTP_METHODS.filter((verb) => (registered[form] ?? []).includes(verb))
+          expect([form, loaded]).toEqual([form, registers])
+          const r = readRouteFileExports("route.ts", source)
+          // A form the walk reads gives exactly the loader's verbs. A form it
+          // refuses is one where the names in the file are not the loader's.
+          if (r.unreadable.length === 0) expect([form, r.verbs]).toEqual([form, registers])
+          else expect([form, r.verbs]).not.toEqual([form, registers])
+        }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it("the walk lists a verb exported by destructuring or as a second declarator, so it is unreviewed until listed", () => {
+      // The reviewer's scratch on the real /health route: the regex walk saw only HEAD.
+      const rel = path.join("health", "route.ts")
+      const scratch = [
+        fs.readFileSync(path.join(API_DIR, rel), "utf8"),
+        "const scratchHandlers = { POST: async () => {} }",
+        "export const { POST } = scratchHandlers",
+        "export const HEAD = GET, DELETE = async () => {}",
+      ].join("\n")
+      const keys = routesOf(rel, scratch).map((r) => r.key)
+      expect(keys).toEqual(["GET /health", "POST /health", "DELETE /health", "HEAD /health"])
+      expect(keys.filter((key) => !(key in REVIEWED))).toEqual(["POST /health", "DELETE /health", "HEAD /health"])
+    })
+
+    it("a route file whose verbs cannot be read is listed as unreviewed, so the walk fails on it", () => {
+      const keys = routesOf(path.join("health", "route.ts"), 'export * from "./handlers"').map((r) => r.key)
+      expect(keys).toEqual(["(no verb) /health", '(unreadable: export * from "./handlers" (line 1)) /health'])
+      expect(keys.filter((key) => key in REVIEWED)).toEqual([])
+    })
   })
 
   it("every twin under /store of a route closed out here exists and is guarded the same way", () => {
