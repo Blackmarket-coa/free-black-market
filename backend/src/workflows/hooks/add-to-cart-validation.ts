@@ -1,16 +1,19 @@
 import { addToCartWorkflow } from "@medusajs/medusa/core-flows"
-import { MedusaError } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
+import { isTicketLine, oneTicketPerSeatError } from "./ticket-line-rules"
 
-// Hook for addToCartWorkflow to validate seat availability
+// Hook for addToCartWorkflow to validate seat availability. The update route
+// has its own (`update-line-item-validation.ts`); the rule both apply is in
+// `ticket-line-rules.ts`.
 addToCartWorkflow.hooks.validate(
   async ({ input }, { container }) => {
     const items = input.items
-    const query = container.resolve("query")
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
     // Get the product variant to check if it's a ticket product variant
     const { data: productVariants } = await query.graph({
       entity: "product_variant",
-      fields: ["id", "product_id", "ticket_product_variant.purchases.*"],
+      fields: ["id", "product_id", "ticket_product_variant.id", "ticket_product_variant.purchases.*"],
       filters: {
         id: items.map((item) => item.variant_id).filter(Boolean) as string[]
       }
@@ -29,13 +32,14 @@ addToCartWorkflow.hooks.validate(
 
     // Check each item being added to cart
     for (const item of items) {
-      if (item.quantity !== 1) {
-        throw new MedusaError(
-          MedusaError.Types.INVALID_DATA, 
-          "You can only purchase one ticket for a seat."
-        )
-      }
       const productVariant = productVariants.find((variant) => variant.id === item.variant_id)
+
+      // One ticket per seat holds for ticket lines only. This test used to
+      // come first, unscoped, and refused every line not added at quantity 1,
+      // whatever the product (`ticket-line-rules.ts`).
+      if (isTicketLine(item.metadata, productVariant) && item.quantity !== 1) {
+        throw oneTicketPerSeatError()
+      }
 
       if (!productVariant || !item.metadata?.seat_number) continue
 
