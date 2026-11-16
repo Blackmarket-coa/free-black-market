@@ -80,10 +80,18 @@ async function create(items: Array<Record<string, unknown>> | undefined) {
   return graph.mock.calls.map(([q]) => q)
 }
 
-/** Run the update hook on `line` (the cart's only line), with `update`; resolves to the variant reads it made. */
-async function update(line: Record<string, unknown>, change: Record<string, unknown>, itemId = line.id as string) {
+/** Run the update hook on `line`, in a cart holding it and `others`, with `update`; resolves to the variant reads it made. */
+async function update(
+  line: Record<string, unknown>,
+  change: Record<string, unknown>,
+  itemId = line.id as string,
+  others: Array<Record<string, unknown>> = []
+) {
   const { context, graph } = world()
-  await handlers.update!({ input: { cart_id: "cart_1", item_id: itemId, update: change }, cart: { id: "cart_1", items: [line] } }, context)
+  await handlers.update!(
+    { input: { cart_id: "cart_1", item_id: itemId, update: change }, cart: { id: "cart_1", items: [line, ...others] } },
+    context
+  )
   return graph.mock.calls.map(([q]) => q)
 }
 
@@ -261,5 +269,39 @@ describe("POST /store/carts/:id/line-items/:line_id (updateLineItemInCartWorkflo
 
   it("leaves a line that is not in the cart to Medusa's own 404", async () => {
     await expect(update(seatLine, { quantity: 2 }, "item_elsewhere")).resolves.toEqual([])
+  })
+
+  describe("a line the update gives another seat", () => {
+    const seat8Line = { id: "item_seat8", variant_id: SHOW.id, quantity: 1, metadata: seat("8") }
+    const seatRuleRead = {
+      entity: "product_variant",
+      fields: ["id", "product_id", "ticket_product_variant.id", "ticket_product_variant.purchases.*"],
+      filters: { id: SHOW.id },
+    }
+
+    it("is refused onto a seat another line of the cart names", async () => {
+      await expect(update(seat8Line, { quantity: 1, metadata: { seat_number: "7" } }, seat8Line.id, [seatLine])).rejects.toMatchObject(inCart("7"))
+      await expect(update(seat8Line, { metadata: { seat_number: "7" } }, seat8Line.id, [seatLine])).rejects.toMatchObject(inCart("7"))
+    })
+
+    it("moves to a seat no other line names, after reading its variant for the seat rules", async () => {
+      await expect(update(seat8Line, { quantity: 1, metadata: { seat_number: "9" } }, seat8Line.id, [seatLine])).resolves.toEqual([seatRuleRead])
+      // Another date for the same seat number is another seat.
+      await expect(update(seat8Line, { quantity: 1, metadata: { seat_number: "7", show_date: "2027-03-15" } }, seat8Line.id, [seatLine])).resolves.toEqual([
+        seatRuleRead,
+      ])
+    })
+
+    it("is refused without a show date, and a line of two is refused a seat", async () => {
+      await expect(update(seat8Line, { quantity: 1, metadata: { show_date: "" } }, seat8Line.id, [seatLine])).rejects.toMatchObject({
+        message: `Show date is required for seat 8 in product ${SHOW.product_id}`,
+      })
+      await expect(update(plainLine, { metadata: seat("9") })).rejects.toMatchObject(refused)
+    })
+
+    it("is not judged when the update removes the line, or leaves its seat as it was", async () => {
+      await expect(update(seat8Line, { quantity: 0, metadata: { seat_number: "7" } }, seat8Line.id, [seatLine])).resolves.toEqual([])
+      await expect(update(seat8Line, { quantity: 1, metadata: { seat_number: "8", note: "aisle" } }, seat8Line.id, [seatLine])).resolves.toEqual([])
+    })
   })
 })

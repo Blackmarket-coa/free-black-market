@@ -25,7 +25,8 @@ jest.setTimeout(300 * 1000)
  * line metadata, which always goes through the add route, so any cycle add of
  * 2 or more was refused. And nothing held a seat to one ticket on the update
  * route, which the cart page's + button calls on every line, nor on the create
- * route, nor on an add that Medusa puts into a line already in the cart.
+ * route, nor on an add that Medusa puts into a line already in the cart; and
+ * the update route moved a line onto a seat another line already held.
  *
  * Every call is recorded and the whole record compared at once, so a tree
  * without the fix shows each call that answers wrongly, not just the first.
@@ -294,6 +295,41 @@ medusaIntegrationTestRunner({
         })
         const after = await readCart(s, cart.id)
         expect(after.items).toEqual([expect.objectContaining({ id: seatLine, quantity: 2, metadata: s.seat("7") })])
+      })
+    })
+
+    describe("a seat line given another seat through the update route", () => {
+      afterEach(settleBeforeTeardown)
+
+      it("moves to a seat no other line names, and not onto one another line names, nor off its show date", async () => {
+        const s = await makeStore()
+        const cart = await newCart(s)
+        const { answered, call } = recorder()
+
+        await call("add seat 7 x1", add(s, cart.id, { variant_id: s.show, quantity: 1, metadata: s.seat("7") }))
+        const with8 = await call("add seat 8 x1", add(s, cart.id, { variant_id: s.show, quantity: 1, metadata: s.seat("8") }))
+        const line8 = (with8?.cart?.items ?? []).find((i: any) => i.metadata?.seat_number === "8")?.id as string | undefined
+
+        await call("move seat 8's line onto seat 7", update(s, cart.id, line8, { quantity: 1, metadata: { seat_number: "7" } }))
+        await call("move seat 8's line to seat 9", update(s, cart.id, line8, { quantity: 1, metadata: { seat_number: "9" } }))
+        // Medusa merges update metadata into the line's, and "" deletes a key.
+        await call("drop seat 9's show date", update(s, cart.id, line8, { quantity: 1, metadata: { show_date: "" } }))
+
+        expect(answered).toEqual({
+          "add seat 7 x1": { status: 200 },
+          "add seat 8 x1": { status: 200 },
+          "move seat 8's line onto seat 7": { status: 400, message: `Seat 7 is already in your cart for show date ${SHOW_DATE}` },
+          "move seat 8's line to seat 9": { status: 200 },
+          "drop seat 9's show date": { status: 400, message: expect.stringMatching(/^Show date is required for seat 9 in product prod_/) },
+        })
+        const after = await readCart(s, cart.id)
+        expect(after.items).toHaveLength(2)
+        expect(after.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ quantity: 1, metadata: s.seat("7") }),
+            expect.objectContaining({ id: line8, quantity: 1, metadata: s.seat("9") }),
+          ])
+        )
       })
     })
 
