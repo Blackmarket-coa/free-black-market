@@ -13,6 +13,7 @@ import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
 import { BARTER_MODULE } from "../../src/modules/barter"
 import { DEMAND_POOL_MODULE } from "../../src/modules/demand-pool"
 import { FOOD_DISTRIBUTION_MODULE } from "../../src/modules/food-distribution"
+import { TICKET_BOOKING_MODULE } from "../../src/modules/ticket-booking"
 import { WISHLIST_MODULE as SHOPPER_WISHLIST_MODULE } from "../../src/modules/wishlist"
 import {
   BUYER_SELLER_FIELDS,
@@ -1155,6 +1156,69 @@ medusaIntegrationTestRunner({
     }
 
     describe("FBM's own public reads", () => {
+      it("a show's availability counts its seats sold and names no purchase or order; a draft show answers 404", async () => {
+        const { get, pak, buyersOrder, channel } = await makeMarket()
+        const tickets = container().resolve(TICKET_BOOKING_MODULE)
+        const SHOW_DATE = "2027-01-15T19:00:00.000Z"
+        const venue = await tickets.createVenues({ name: `Hall ${uid()}` })
+        const row = await tickets.createVenueRows({ venue_id: venue.id, row_number: "A", row_type: "standard", seat_count: 10 })
+
+        const show = async (status: "published" | "draft") => {
+          const id = uid()
+          const [product] = await container().resolve(Modules.PRODUCT).createProducts([
+            {
+              title: `Show ${id}`,
+              handle: `show-${id}`,
+              status,
+              options: [{ title: "Date", values: [SHOW_DATE] }, { title: "Row Type", values: ["standard"] }],
+              variants: [{ title: `Show ${id} standard`, manage_inventory: false, options: { Date: SHOW_DATE, "Row Type": "standard" } }],
+            },
+          ])
+          const tp = await tickets.createTicketProducts({ product_id: product.id, venue_id: venue.id, dates: [SHOW_DATE] })
+          const tv = await tickets.createTicketProductVariants({ ticket_product_id: tp.id, product_variant_id: product.variants[0].id, row_type: "standard" })
+          await link().create([
+            { [TICKET_BOOKING_MODULE]: { ticket_product_id: tp.id }, [Modules.PRODUCT]: { product_id: product.id } },
+            { [TICKET_BOOKING_MODULE]: { ticket_product_variant_id: tv.id }, [Modules.PRODUCT]: { product_variant_id: product.variants[0].id } },
+            { [Modules.PRODUCT]: { product_id: product.id }, [Modules.SALES_CHANNEL]: { sales_channel_id: channel.id } },
+          ])
+          return { product, tp, tv }
+        }
+
+        const published = await show("published")
+        const purchase = await tickets.createTicketPurchases({
+          order_id: buyersOrder.id,
+          ticket_product_id: published.tp.id,
+          ticket_variant_id: published.tv.id,
+          venue_row_id: row.id,
+          seat_number: "7",
+          show_date: new Date(SHOW_DATE),
+        })
+
+        const avail = await get(`/store/ticket-products/${published.product.id}/availability`, pak)
+        expect(avail.status).toBe(200)
+        const body = JSON.stringify(avail.data)
+        expect(body).not.toContain(buyersOrder.id)
+        expect(body).not.toContain(purchase.id)
+        expect(collect(avail.data, "order_id")).toEqual([])
+        expect(collect(avail.data, "purchases")).toEqual([])
+        // What the product page's ticket panel reads is still there, and the
+        // sold seat is still counted.
+        expect(avail.data.ticket_product).toEqual({
+          id: published.tp.id,
+          product_id: published.product.id,
+          dates: [SHOW_DATE],
+          venue: { id: venue.id, name: venue.name },
+        })
+        expect(avail.data.availability[0].row_types).toEqual([
+          { row_type: "standard", total_seats: 10, available_seats: 9, sold_out: false },
+        ])
+
+        const draft = await show("draft")
+        const hidden = await get(`/store/ticket-products/${draft.product.id}/availability`, pak)
+        expect(hidden.status).toBe(404)
+        expect(hidden.data.message).toBe(`Product with id: ${draft.product.id} was not found`)
+      })
+
       it("the demand-pool list and page are the public view; the creator still reads their own post whole", async () => {
         const { pak, reviewer, asReviewer, get } = await makeMarket()
         await addDemandPoolRawColumns()
