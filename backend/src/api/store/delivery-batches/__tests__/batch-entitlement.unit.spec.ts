@@ -67,6 +67,15 @@ const DELIVERIES: Record<string, Record<string, unknown>> = {
     batch_id: "bat_other",
     delivery_address: "7 Pine Road",
   },
+  // In no batch, and carried by cour_1: cus_driver may read it.
+  del_carried: {
+    id: "del_carried",
+    producer_id: "prd_1",
+    courier_id: "cour_1",
+    order_id: "fo_4",
+    batch_id: null,
+    delivery_address: "3 Birch Close",
+  },
 }
 const BATCH = { id: "bat_1", owner_id: "cus_planner", courier_id: null, status: "PLANNING" }
 
@@ -404,10 +413,13 @@ describe("POST /store/delivery-batches/:id — adding deliveries", () => {
   })
 
   it("does not let the courier's owner of such a batch add to it either", async () => {
+    // They read the run through GET; what is in it is still the recorded
+    // owner's to change. del_carried is a delivery cus_driver may read (their
+    // courier carries it), so the delivery is not what refuses them.
     const { req, res, service } = setup({
       actorId: "cus_driver",
       batch: { ...BATCH, owner_id: null, courier_id: "cour_1" },
-      body: { delivery_ids: ["del_1"] },
+      body: { delivery_ids: ["del_carried"] },
     })
 
     await addDeliveries(req, res as never)
