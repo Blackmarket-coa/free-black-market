@@ -56,8 +56,10 @@ export type RouteFileExports = {
    * The declaration that binds a verb's handler: the function, the one
    * declarator (`DELETE = async (req, res) => ...`), or for
    * `export { create as POST }` the declaration of `create`. Empty for a verb
-   * the file does not export, and for one whose handler is in another file (a
-   * re-export, an imported binding).
+   * the file does not export, for one whose handler is in another file (a
+   * re-export, an imported binding), and for one a destructuring pattern
+   * binds (`export const { GET, POST } = handlers`): the pattern's text holds
+   * every name's handler, so a guard in it is no one verb's.
    */
   handlerSource(verb: string): string
 }
@@ -81,7 +83,7 @@ export function readRouteFileExports(fileName: string, text: string): RouteFileE
   )
   const at = (node: ts.Node) => `line ${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`
 
-  /** Top-level name -> the declaration that binds it; undefined for an import. */
+  /** Top-level name -> the declaration that binds it; undefined for an import and for a name a pattern binds. */
   const locals = new Map<string, ts.Node | undefined>()
   /** Exported name -> the local name it exports; null when the value is another file's. */
   const exported = new Map<string, string | null>()
@@ -115,7 +117,11 @@ export function readRouteFileExports(fileName: string, text: string): RouteFileE
       else if (statement.name) bind(statement.name.text, statement, isExported)
     } else if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
-        for (const name of boundNames(declaration.name)) bind(name, declaration, isExported)
+        // A pattern's one declaration holds every name's handler
+        // (`{ GET, POST } = { GET: guarded, POST: open }`), so it is no one
+        // verb's: a name a pattern binds gets no handler.
+        const own = ts.isIdentifier(declaration.name) ? declaration : undefined
+        for (const name of boundNames(declaration.name)) bind(name, own, isExported)
       }
     } else if (ts.isEnumDeclaration(statement) || (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name))) {
       bind(statement.name.text, statement, isExported)

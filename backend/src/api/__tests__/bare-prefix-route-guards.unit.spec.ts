@@ -42,7 +42,10 @@ import { readRouteFileExports } from "./route-file-exports"
  *      both raw-path matching);
  *   3. a route REVIEWED says its handler guards itself no longer contains the
  *      call named as its guard, in THAT verb's handler (a file whose GET
- *      checks and whose POST does not is the failure this is for);
+ *      checks and whose POST does not is the failure this is for). A verb
+ *      with no declaration of its own (re-exported, imported, or bound by a
+ *      destructuring pattern, whose text holds every name's handler) has no
+ *      handler to read, and fails;
  *   4. a middleware matcher appears outside the four trees that is not in
  *      BARE_MATCHERS: a terminating middleware serves content exactly like a
  *      route (the `/.well-known` alias does);
@@ -422,6 +425,36 @@ function walkBareRoutes(apiDir: string): WalkedRoute[] {
     .flatMap((rel) => readRouteFile(apiDir, rel))
 }
 
+/** Check 1: each route a reviewed list does not name, with its file. */
+const unreviewedOf = (routes: WalkedRoute[], reviewed: Record<string, Guard>): string[] =>
+  routes.filter((r) => !(r.key in reviewed)).map((r) => `${r.key}  (${r.file})`)
+
+/**
+ * Check 3, and the reasons the list owes: a public entry that does not say
+ * why, and a handler guard missing from THAT verb's own handler, which is
+ * empty when the file does not declare it on its own (re-exported, imported,
+ * or bound by a destructuring pattern beside other verbs).
+ */
+function entryProblems(routes: WalkedRoute[], reviewed: Record<string, Guard>): string[] {
+  const missing: string[] = []
+  for (const r of routes) {
+    const g = reviewed[r.key]
+    if (!g) continue
+    if (g.by === "public" && g.why.trim().length < 20) missing.push(`${r.key}: no reason given`)
+    if (g.by === "handler") {
+      if (g.how.trim().length < 10) missing.push(`${r.key}: guard not described`)
+      if (!r.handler.includes(g.calls)) {
+        missing.push(
+          r.handler
+            ? `${r.key}: the ${r.method} handler in ${r.file} does not contain \`${g.calls}\``
+            : `${r.key}: the ${r.method} handler is not declared on its own in ${r.file} (re-exported, imported or destructured), so its guard cannot be read`
+        )
+      }
+    }
+  }
+  return missing
+}
+
 const walked = walkBareRoutes(API_DIR)
 const twins: WalkedRoute[] = Object.keys(STORE_TWINS).flatMap((key) => {
   const matcher = key.split(" ")[1]
@@ -586,8 +619,7 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
   })
 
   it("every route out here is in the reviewed list: decide who may call a new one, and add it", () => {
-    const unreviewed = walked.filter((r) => !(r.key in REVIEWED)).map((r) => `${r.key}  (${r.file})`)
-    expect(unreviewed).toEqual([])
+    expect(unreviewedOf(walked, REVIEWED)).toEqual([])
   })
 
   it("the reviewed list names no route that is gone", () => {
@@ -596,23 +628,7 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
   })
 
   it("a public entry says why, and a handler-guarded route still contains its guard", () => {
-    const missing: string[] = []
-    for (const r of walked) {
-      const g = REVIEWED[r.key]
-      if (!g) continue
-      if (g.by === "public" && g.why.trim().length < 20) missing.push(`${r.key}: no reason given`)
-      if (g.by === "handler") {
-        if (g.how.trim().length < 10) missing.push(`${r.key}: guard not described`)
-        if (!r.handler.includes(g.calls)) {
-          missing.push(
-            r.handler
-              ? `${r.key}: the ${r.method} handler in ${r.file} does not contain \`${g.calls}\``
-              : `${r.key}: the ${r.method} handler is not declared in ${r.file} (re-exported or imported), so its guard cannot be read`
-          )
-        }
-      }
-    }
-    expect(missing).toEqual([])
+    expect(entryProblems(walked, REVIEWED)).toEqual([])
   })
 
   it("a guard is looked for in its own verb's handler, not anywhere in the file", () => {
@@ -636,6 +652,26 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
     expect(read.handlerSource("POST")).not.toContain("requireCommerceApiKey(req, res)")
     expect(read.handlerSource("POST")).toContain("res.json({})")
     expect(read.handlerSource("DELETE")).toBe("")
+  })
+
+  it("a guard is not lent by one verb of a destructuring to another: neither handler can be read, so both fail check 3", () => {
+    // One pattern binds both verbs, and its text holds both handlers, so
+    // GET's guard sat in the text read for an unguarded POST.
+    const source = [
+      "export const { GET, POST } = {",
+      "  GET: async (req, res) => { if (!requireCommerceApiKey(req, res)) return; res.json({}) },",
+      "  POST: async (req, res) => { res.json({ wrote: true }) },",
+      "}",
+    ].join("\n")
+    const rel = path.join("scratch", "route.ts")
+    const routes = routesOf(rel, source)
+    expect(routes.map((r) => r.key)).toEqual(["GET /scratch", "POST /scratch"])
+    expect(entryProblems(routes, { "GET /scratch": COMMERCE_KEY, "POST /scratch": COMMERCE_KEY })).toEqual(
+      ["GET", "POST"].map(
+        (verb) =>
+          `${verb} /scratch: the ${verb} handler is not declared on its own in ${rel} (re-exported, imported or destructured), so its guard cannot be read`
+      )
+    )
   })
 
   describe("a file's verbs are every HTTP-method name it exports, as Medusa's RoutesLoader registers them", () => {
@@ -701,8 +737,25 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       expect(r.handlerSource("HEAD")).toBe("HEAD = GET")
     })
 
-    it("every name an object or array pattern binds, nested and renamed", () => {
-      expect(read("destructuring")).toMatchObject({ verbs: ["POST", "PUT", "PATCH", "DELETE", "HEAD"], unreadable: [] })
+    it("every name an object or array pattern binds, nested and renamed, and none has a handler of its own", () => {
+      const r = read("destructuring")
+      expect(r).toMatchObject({ verbs: ["POST", "PUT", "PATCH", "DELETE", "HEAD"], unreadable: [] })
+      for (const verb of r.verbs) expect([verb, r.handlerSource(verb)]).toEqual([verb, ""])
+      // The pattern's text holds every name's handler: GET's guard is not POST's.
+      const guarded = "async (req, res) => { if (!requireCommerceApiKey(req, res)) return }"
+      for (const source of [
+        `export const { GET, POST } = { GET: ${guarded}, POST: async (req, res) => { res.json({}) } }`,
+        `export const [GET, POST] = [${guarded}, async (req, res) => { res.json({}) }]`,
+      ]) {
+        const pair = readRouteFileExports("route.ts", source)
+        expect(pair.verbs).toEqual(["GET", "POST"])
+        expect(pair.handlerSource("POST")).not.toContain("requireCommerceApiKey(req, res)")
+        expect(pair.handlerSource("POST")).toBe("")
+      }
+      // A local a pattern binds, exported under a verb's name, has none either.
+      const renamed = readRouteFileExports("route.ts", `const { create, remove } = { create: ${guarded}, remove: async () => {} }\nexport { remove as DELETE }`)
+      expect(renamed.verbs).toEqual(["DELETE"])
+      expect(renamed.handlerSource("DELETE")).toBe("")
     })
 
     it("export { local as VERB }, whose handler is the local's declaration", () => {
@@ -776,17 +829,21 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
     })
 
     it("the walk lists a verb exported by destructuring or as a second declarator, so it is unreviewed until listed", () => {
-      // The reviewer's scratch on the real /health route: the regex walk saw only HEAD.
+      // The reviewer's scratch on /health, on a fixed source and list so a
+      // change to the real route cannot move it: the regex walk saw only HEAD.
       const rel = path.join("health", "route.ts")
       const scratch = [
-        fs.readFileSync(path.join(API_DIR, rel), "utf8"),
+        "export async function GET() {}",
         "const scratchHandlers = { POST: async () => {} }",
         "export const { POST } = scratchHandlers",
         "export const HEAD = GET, DELETE = async () => {}",
       ].join("\n")
-      const keys = routesOf(rel, scratch).map((r) => r.key)
-      expect(keys).toEqual(["GET /health", "POST /health", "DELETE /health", "HEAD /health"])
-      expect(keys.filter((key) => !(key in REVIEWED))).toEqual(["POST /health", "DELETE /health", "HEAD /health"])
+      const routes = routesOf(rel, scratch)
+      expect(routes.map((r) => r.key)).toEqual(["GET /health", "POST /health", "DELETE /health", "HEAD /health"])
+      const reviewedForGetAlone = { "GET /health": pub("a liveness probe, reviewed for GET and nothing else") }
+      expect(unreviewedOf(routes, reviewedForGetAlone)).toEqual(
+        ["POST /health", "DELETE /health", "HEAD /health"].map((key) => `${key}  (${rel})`)
+      )
     })
 
     it("a route file whose verbs cannot be read is listed as unreviewed, so the walk fails on it", () => {
