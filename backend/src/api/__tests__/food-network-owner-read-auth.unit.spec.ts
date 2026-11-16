@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken"
 import { authenticate } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { FOOD_NETWORK_OWNER_READ_PREFIXES } from "../middlewares/food-network-owner-read-auth"
+import { readRouteFileExports } from "./route-file-exports"
 
 /**
  * The food-network reads that are kept for a record's owner have to know who
@@ -112,8 +113,10 @@ function getRoutesUnder(prefix: string): string[] {
       if (entry.isDirectory()) {
         if (entry.name !== "__tests__") walk(full)
       } else if (/^route\.[jt]s$/.test(entry.name)) {
-        const source = fs.readFileSync(full, "utf8")
-        if (/export\s+(?:async\s+function|const)\s+GET\b/.test(source)) {
+        // GET however it is exported, as Medusa's RoutesLoader registers it.
+        const read = readRouteFileExports(full, fs.readFileSync(full, "utf8"))
+        if (read.unreadable.length > 0) throw new Error(`${full}: its verbs cannot be read (${read.unreadable.join("; ")})`)
+        if (read.verbs.includes("GET")) {
           const matcher = path
             .relative(API_DIR, dir)
             .split(path.sep)
