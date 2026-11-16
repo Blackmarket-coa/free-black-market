@@ -1,11 +1,12 @@
 import express from "express"
+import http from "http"
 import type { AddressInfo } from "net"
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { validateAndTransformQuery } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "zod"
 import { BUYER_SELLER_FIELDS, PUBLIC_SELLER_FIELDS } from "../../../shared/store-field-policy"
-import { guardStoreFields, storePublicFieldsMiddlewares } from "../store-public-fields"
+import { guardStoreFields, routedStorePath, storePublicFieldsMiddlewares } from "../store-public-fields"
 
 /**
  * The middleware around the policy: that whatever a route's validator
@@ -69,6 +70,24 @@ describe("guardStoreFields", () => {
     expect(req.queryConfig.pagination).toEqual({ skip: 0, take: 50 })
     expect(req.listConfig).toEqual({ select: ["id"], relations: ["variants"], skip: 0, take: 50 })
     expect(req.retrieveConfig).toEqual({ select: ["id", "seller.name"], relations: ["seller"] })
+  })
+
+  it("sanitises what a list is sorted by, on the page and on the list config", () => {
+    const { req } = request("/store/seller?order=-members.email")
+    guardStoreFields(req, response().res, jest.fn())
+
+    // One object for both, as `prepareListQuery` builds it.
+    const order = { members: { email: "DESC" }, tax_id: "ASC", name: "ASC" }
+    req.queryConfig = { fields: ["id", "name"], pagination: { skip: 0, take: 50, order } } as unknown as MedusaRequest["queryConfig"]
+    req.remoteQueryConfig = req.queryConfig
+    req.listConfig = { select: ["id", "name"], relations: [], skip: 0, take: 50, order } as unknown as MedusaRequest["listConfig"]
+
+    expect(req.queryConfig.pagination).toEqual({ skip: 0, take: 50, order: { name: "ASC" } })
+    expect(req.remoteQueryConfig.pagination).toEqual({ skip: 0, take: 50, order: { name: "ASC" } })
+    expect((req.listConfig as unknown as { order: unknown }).order).toEqual({ name: "ASC" })
+    // Nothing allowed left: no order at all.
+    req.queryConfig = { fields: ["id"], pagination: { skip: 0, take: 50, order: { tax_id: "DESC" } } } as unknown as MedusaRequest["queryConfig"]
+    expect(req.queryConfig.pagination).toEqual({ skip: 0, take: 50, order: undefined })
   })
 
   it("reads the profile from the request path: the buyer's order sees the seller's return address, a product read does not", () => {
@@ -181,18 +200,34 @@ describe("guardStoreFields", () => {
  */
 describe("mounted on /store", () => {
   const app = express()
+  // A rewrite in front of the router, as an app may have one: Express routes
+  // by the rewritten `req.url`, while `req.originalUrl` keeps the request line.
+  app.use((req, _res, next) => {
+    if (req.url.startsWith("/legacy-store/")) req.url = req.url.replace("/legacy-store/", "/store/")
+    next()
+  })
   for (const route of storePublicFieldsMiddlewares) {
     expect(route.methods ?? route.method).toBeUndefined()
     for (const middleware of route.middlewares ?? []) app.use(route.matcher as string, middleware as unknown as express.RequestHandler)
   }
-  const params = z.object({ fields: z.string().optional() })
+  const params = z.object({ fields: z.string().optional(), order: z.string().optional() })
   const validate = (defaults: string[]) =>
     validateAndTransformQuery(params, { defaults, isList: true }) as unknown as express.RequestHandler
   const echo: express.RequestHandler = (req, res) => {
-    res.json({ fields: (req as unknown as MedusaRequest).queryConfig.fields })
+    const { fields, pagination } = (req as unknown as MedusaRequest).queryConfig
+    res.json({ fields, order: pagination?.order ?? null })
   }
   app.get("/store/products", validate(["id", "title"]), echo)
   app.get("/store/seller", validate(["id", "name", "tax_id", "address_line"]), echo)
+  app.get("/store/seller/:handle", validate(["id", "name", "tax_id", "address_line"]), echo)
+  // As Mercur's handler: a fixed field list with `orders.seller.*`, and the
+  // path it was routed by in the answer.
+  app.get("/store/order-set/:id", (req, res) => {
+    res.json({
+      routed: routedStorePath(req as unknown as MedusaRequest),
+      order_set: { id: req.params.id, orders: [{ id: "order_1", seller: { id: "sel_1", name: "Farm", email: "grower@example.com", tax_id: "12-3456789" } }] },
+    })
+  })
   app.get("/vendor/sellers/me", validate(["id", "name"]), echo)
   app.get("/admin/sellers", validate(["id", "name"]), echo)
   app.get("/storefront/products", validate(["id"]), echo)
@@ -232,6 +267,71 @@ describe("mounted on /store", () => {
   it("a route's own defaults are sanitised too", async () => {
     expect(await fields("/store/seller")).toEqual(["id", "name"])
     expect(await fields("/store/seller?fields=%2Bemail,%2Bphone")).toEqual(["id", "name"])
+  })
+
+  /** A request line as written, absolute-form included: `fetch` would normalise it away. */
+  const raw = (target: string) =>
+    new Promise<{ status: number; body: any }>((resolve, reject) => {
+      const { port } = new URL(base)
+      const req = http.request({ host: "127.0.0.1", port, method: "GET", path: target }, (res) => {
+        let text = ""
+        res.on("data", (chunk) => (text += chunk))
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(text) }))
+      })
+      req.on("error", reject)
+      req.end()
+    })
+
+  it.each(["/store/Seller/riverbend-farm", "/STORE/SELLER/riverbend-farm", "/Store/seller/riverbend-farm", "/store/SELLER"])(
+    "Express routes %s to the seller route, and its handler gets only the public columns",
+    async (path) => {
+      expect(await fields(`${path}?fields=${encodeURIComponent("id,email,phone,tax_id,address_line")}`)).toEqual(["id"])
+      expect(await fields(path)).toEqual(["id", "name"])
+    }
+  )
+
+  it("an absolute-form request line is routed by its path, and so is profiled by it", async () => {
+    const asked = encodeURIComponent("id,email,tax_id")
+    for (const target of [`${base}/store/seller?fields=${asked}`, `${base.toUpperCase()}/STORE/Seller/riverbend-farm?fields=${asked}`]) {
+      const res = await raw(target)
+      expect([target, res.status, res.body.fields]).toEqual([target, 200, ["id"]])
+    }
+    const set = await raw(`${base}/store/order-set/ordset_1`)
+    expect(set.body.routed).toBe("/store/order-set/ordset_1")
+  })
+
+  it("cuts the order set's sellers on a re-cased path as on the plain one", async () => {
+    for (const path of ["/store/order-set/ordset_1", "/store/Order-Set/ordset_1", "/STORE/ORDER-SET/ordset_1"]) {
+      const res = await fetch(`${base}${path}`)
+      const body = (await res.json()) as { order_set: { orders: { seller: Record<string, unknown> }[] } }
+      expect([path, body.order_set.orders[0].seller]).toEqual([path, { id: "sel_1", name: "Farm", email: "grower@example.com" }])
+    }
+  })
+
+  it("is profiled by the path Express routed, not the request line: a rewrite upstream is followed", async () => {
+    expect(await fields(`/legacy-store/seller?fields=${encodeURIComponent("id,email,tax_id")}`)).toEqual(["id"])
+  })
+
+  const orderOf = async (pathAndQuery: string) => {
+    const res = await fetch(`${base}${pathAndQuery}`)
+    expect(res.status).toBe(200)
+    return ((await res.json()) as { order: unknown }).order
+  }
+
+  it.each(["tax_id", "-tax_id", "email", "-phone", "address_line", "-postal_code", "members.email", "-members.email"])(
+    "the seller list's handler is not handed order=%s",
+    async (order) => {
+      expect(await orderOf(`/store/seller?fields=id,name&order=${order}`)).toBeNull()
+      expect(await orderOf(`/STORE/Seller?fields=id,name&order=${order}`)).toBeNull()
+    }
+  )
+
+  it("the seller list's handler is still handed an order by what it serves", async () => {
+    expect(await orderOf("/store/seller?order=-name")).toEqual({ name: "DESC" })
+    expect(await orderOf("/store/products?order=-created_at")).toEqual({ created_at: "DESC" })
+    expect(await orderOf("/store/products?order=seller.tax_id")).toBeNull()
+    // /vendor and /admin sort by what they are asked.
+    expect(await orderOf("/vendor/sellers/me?order=tax_id")).toEqual({ tax_id: "ASC" })
   })
 
   it("does not match /vendor, /admin or a path that merely starts with the same letters", async () => {

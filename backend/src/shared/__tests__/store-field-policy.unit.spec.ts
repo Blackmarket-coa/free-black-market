@@ -5,8 +5,10 @@ import {
   PUBLIC_SELLER_FIELDS,
   keepVisibleNestedProducts,
   nestedProductIds,
+  normaliseStorePath,
   projectSellersInBody,
   sanitizeStoreFields,
+  sanitizeStoreOrder,
   sanitizeStoreSelectRelations,
   storeFieldProfile,
 } from "../store-field-policy"
@@ -304,6 +306,84 @@ describe("store field policy", () => {
     expect(storeFieldProfile("/store/order-claims").name).toBe("public")
     expect(storeFieldProfile("/store/carts/cart_1/line-items").name).toBe("cart")
     expect(storeFieldProfile("/store/products").name).toBe("public")
+  })
+
+  it("matches a route family as Express routes it: in any case, and from an absolute-form request line", () => {
+    // Express routes `/store/Seller/x` to Mercur's seller handler; compared
+    // case-sensitively it missed the seller profile and the tax id answered.
+    for (const path of [
+      "/store/Seller/riverbend-farm",
+      "/STORE/SELLER?fields=id,email,tax_id",
+      "/Store/seller/riverbend-farm",
+      "/store/SeLLeR/",
+      "http://127.0.0.1:9000/store/seller?fields=id,email,tax_id",
+      "HTTPS://shop.example.com/Store/Seller/riverbend-farm",
+    ]) {
+      expect([path, storeFieldProfile(path).name]).toEqual([path, "seller"])
+    }
+    expect(storeFieldProfile("/store/Order-Set/ordset_1").name).toBe("order-set")
+    expect(storeFieldProfile("/STORE/ORDER-SET").name).toBe("order-set")
+    expect(storeFieldProfile("/store/Orders/order_1").name).toBe("order")
+    expect(storeFieldProfile("http://host/store/CARTS/cart_1").name).toBe("cart")
+    // Whole segments still: case does not make a neighbour a member.
+    expect(storeFieldProfile("/store/Sellers/riverbend-farm").name).toBe("public")
+    expect(storeFieldProfile("/STORE/SELLER-REPORTS").name).toBe("public")
+    expect(normaliseStorePath("http://127.0.0.1:9000/Store/Seller/River?fields=Email")).toBe("/store/seller/river")
+  })
+
+  it("on the case-folded path, the seller route's own defaults still lose the address and the tax id", () => {
+    const defaults = ["id", "name", "handle", "address_line", "city", "postal_code", "country_code", "tax_id"]
+    for (const path of ["/store/Seller/riverbend-farm", "/STORE/SELLER", "http://host/store/seller"]) {
+      expect([path, sanitizeStoreFields(defaults, storeFieldProfile(path)).fields]).toEqual([path, ["id", "name", "handle"]])
+    }
+  })
+
+  describe("what a list may be sorted by", () => {
+    /** `order=` as Medusa's own `prepareListQuery` turns it into the page's order. */
+    const ordered = async (order: string) => {
+      const { remoteQueryConfig } = await prepareListQuery({ order }, { defaults: ["id"], isList: true })
+      return remoteQueryConfig.pagination.order as Record<string, unknown> | undefined
+    }
+    const sellerList = storeFieldProfile("/store/seller")
+
+    it.each(["tax_id", "-tax_id", "email", "-email", "phone", "address_line", "city", "postal_code", "-postal_code", "members.email", "-members.email", "invites.email", "orders.created_at", "reviews.customer.email"])(
+      "the seller list is not sorted by %s",
+      async (order) => {
+        const asked = await ordered(order)
+        expect(asked).toBeDefined()
+        expect(sanitizeStoreOrder(asked, sellerList)).toBeUndefined()
+      }
+    )
+
+    it("the seller list is still sorted by what it serves", async () => {
+      expect(sanitizeStoreOrder(await ordered("name"), sellerList)).toEqual({ name: "ASC" })
+      expect(sanitizeStoreOrder(await ordered("-created_at"), sellerList)).toEqual({ created_at: "DESC" })
+      expect(sanitizeStoreOrder(await ordered("handle"), storeFieldProfile("/STORE/Seller"))).toEqual({ handle: "ASC" })
+    })
+
+    it("keeps the allowed keys of a mixed order and drops the rest", () => {
+      expect(sanitizeStoreOrder({ name: "ASC", tax_id: "DESC", members: { email: "ASC" } }, sellerList)).toEqual({ name: "ASC" })
+      expect(sanitizeStoreOrder({ seller: { name: "ASC", email: "DESC" }, created_at: "DESC" })).toEqual({
+        seller: { name: "ASC" },
+        created_at: "DESC",
+      })
+      expect(sanitizeStoreOrder("tax_id", sellerList)).toBeUndefined()
+      expect(sanitizeStoreOrder(undefined, sellerList)).toBeUndefined()
+    })
+
+    it("a product list is not sorted through a seller's private columns or someone else's records", async () => {
+      for (const order of ["seller.email", "-seller.tax_id", "seller.orders.created_at", "sales_channels.orders.created_at", "wishlist.customer.email"]) {
+        expect([order, sanitizeStoreOrder(await ordered(order))]).toEqual([order, undefined])
+      }
+      // What the storefront sorts by.
+      expect(sanitizeStoreOrder(await ordered("-created_at"))).toEqual({ created_at: "DESC" })
+      expect(sanitizeStoreOrder(await ordered("created_at"))).toEqual({ created_at: "ASC" })
+      expect(sanitizeStoreOrder(await ordered("title"))).toEqual({ title: "ASC" })
+    })
+
+    it("a buyer's order list is sorted as the storefront asks", async () => {
+      expect(sanitizeStoreOrder(await ordered("-created_at"), storeFieldProfile("/store/orders"))).toEqual({ created_at: "DESC" })
+    })
   })
 
   it("is stable: a sanitised list is its own fixed point", async () => {

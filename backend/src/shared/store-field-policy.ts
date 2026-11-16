@@ -317,9 +317,35 @@ const PROFILES: readonly { prefix: string; profile: StoreFieldProfile }[] = [
   { prefix: "/store/reviews", profile: { name: "review", own: new Set(["customer"]) } },
 ]
 
-/** The profile for a request path (`/store/...`, with or without a query string). */
+/**
+ * A request path in the form the profiles are written in.
+ *
+ * Express matches a route without regard to case (Medusa never turns on
+ * `case sensitive routing`) and on the path alone, so `/store/Seller/x`,
+ * `/STORE/SELLER` and an absolute-form request line
+ * (`GET http://host/store/seller`) all reach Mercur's seller handler. Compared
+ * as raw strings they missed the seller profile and fell to the public one,
+ * which leaves a root record's own columns alone: the tax id, email and
+ * address answered (measured on Postgres). So the scheme and host go, the
+ * query goes, and ASCII letters are folded to lower case, which is exactly
+ * the folding Express's non-Unicode case-insensitive match does against these
+ * ASCII prefixes.
+ */
+export function normaliseStorePath(path: string): string {
+  return path
+    .split(/[?#]/)[0]
+    .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "")
+    .replace(/[A-Z]/g, (letter) => letter.toLowerCase())
+    .replace(/\/+$/, "")
+}
+
+/**
+ * The profile for a request path (`/store/...`, with or without a query
+ * string, in any case). The middleware hands it the path Express routed the
+ * request by, not the raw request line.
+ */
 export function storeFieldProfile(path: string): StoreFieldProfile {
-  const clean = path.split("?")[0].replace(/\/+$/, "")
+  const clean = normaliseStorePath(path)
   for (const { prefix, profile } of PROFILES) {
     if (clean === prefix || clean.startsWith(`${prefix}/`)) return profile
   }
@@ -422,6 +448,51 @@ export function sanitizeStoreFields(
     dropped: dropped.filter((field) => !out.has(field)),
     nestedProducts: productLists.size > 0,
   }
+}
+
+/**
+ * What a list may be sorted by: the same rule as what it may return.
+ *
+ * Medusa turns `order=-members.email` into `{ members: { email: "DESC" } }`
+ * and hands it to `query.graph` with the page (`req.queryConfig.pagination`,
+ * `req.listConfig.order`), and in 2.14.2 nothing checks it against the
+ * fields a route serves unless the route has an `allowed` list (Mercur's
+ * seller routes do not). So `GET /store/seller?order=tax_id` sorted sellers
+ * by the tax id the fields no longer returned, and by email, phone, address
+ * and staff email the same way (measured on Postgres): a vendor who controls
+ * one seller row can binary-search another seller's value by moving its own.
+ *
+ * A sort key is kept when the same path would be kept as a field under the
+ * request's profile; the rest are dropped, as fields are. What is left keeps
+ * Medusa's nested shape, and nothing left is no order at all.
+ */
+export function sanitizeStoreOrder(
+  order: unknown,
+  profile: StoreFieldProfile = PUBLIC_PROFILE
+): Record<string, unknown> | undefined {
+  if (!isPlainObject(order)) return undefined
+  const kept: Record<string, unknown> = {}
+  let any = false
+  const visit = (node: Record<string, unknown>, prefix: string[]) => {
+    for (const [key, value] of Object.entries(node)) {
+      const at = [...prefix, key]
+      if (isPlainObject(value)) {
+        visit(value, at)
+        continue
+      }
+      const path = at.join(".")
+      if (!sanitizeStoreFields([path], profile).fields.includes(path)) continue
+      let into = kept
+      for (const segment of at.slice(0, -1)) {
+        into[segment] = isPlainObject(into[segment]) ? into[segment] : {}
+        into = into[segment] as Record<string, unknown>
+      }
+      into[at[at.length - 1]] = value
+      any = true
+    }
+  }
+  visit(order, [])
+  return any ? kept : undefined
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   nestedProductIds,
   projectSellersInBody,
   sanitizeStoreFields,
+  sanitizeStoreOrder,
   sanitizeStoreSelectRelations,
   storeFieldProfile,
 } from "../../shared/store-field-policy"
@@ -53,13 +54,26 @@ import {
 
 const GUARDED_CONFIGS = ["queryConfig", "remoteQueryConfig", "listConfig", "retrieveConfig"] as const
 
-type FieldConfig = { fields?: unknown; select?: unknown; relations?: unknown }
+type FieldConfig = { fields?: unknown; select?: unknown; relations?: unknown; order?: unknown; pagination?: unknown }
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
 
+/**
+ * The path Express routed this request by: the mount it matched (`/store`,
+ * in whatever case the caller wrote it) and the rest of the path, without the
+ * scheme and host of an absolute-form request line or the query.
+ * `storeFieldProfile` folds the case. Off Express (a bare object in a unit
+ * test), the request line.
+ */
+export function routedStorePath(req: MedusaRequest): string {
+  const { baseUrl, path } = req as { baseUrl?: unknown; path?: unknown }
+  if (typeof path === "string") return `${typeof baseUrl === "string" ? baseUrl : ""}${path}`
+  return req.originalUrl ?? req.url ?? ""
+}
+
 export function guardStoreFields(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
-  const profile = storeFieldProfile(req.originalUrl ?? req.url)
+  const profile = storeFieldProfile(routedStorePath(req))
   let nestedProducts = false
 
   const sanitise = (config: unknown): unknown => {
@@ -80,6 +94,15 @@ export function guardStoreFields(req: MedusaRequest, res: MedusaResponse, next: 
       )
       if (isStringArray(target.select)) target.select = result.select
       target.relations = result.relations
+    }
+    // What the page is sorted by, under the same rule: `listConfig.order`,
+    // and `pagination.order` on the config every store list route hands to
+    // `query.graph`. (`req.validatedQuery.order`, the raw string, is read by
+    // no store handler of Medusa's, Mercur's or FBM's.)
+    if (target.order !== undefined) target.order = sanitizeStoreOrder(target.order, profile)
+    const pagination = target.pagination
+    if (pagination && typeof pagination === "object" && (pagination as { order?: unknown }).order !== undefined) {
+      target.pagination = { ...pagination, order: sanitizeStoreOrder((pagination as { order?: unknown }).order, profile) }
     }
     return config
   }
