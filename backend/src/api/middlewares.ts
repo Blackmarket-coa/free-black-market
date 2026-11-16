@@ -56,6 +56,7 @@ import { mutualAidMiddlewareRoutes } from "./store/mutual-aid/_middlewares";
 import { vendorHawalaMiddlewareRoutes } from "./vendor/hawala/_middlewares";
 import { vendorWellnessMiddlewareRoutes } from "./vendor/wellness/_middlewares";
 import { requireSellerContextV1 } from "./middlewares/seller-context-v1";
+import { barePrefixAuthMiddlewareRoutes } from "./middlewares/bare-prefix-auth";
 import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
@@ -669,6 +670,7 @@ const communityWriteAuthMatchers = COMMUNITY_WRITE_PREFIXES.flatMap((prefix) => 
 export default defineMiddlewares({
   routes: [
     ...communityWriteAuthMatchers,
+    ...barePrefixAuthMiddlewareRoutes,
     // ============================================================
     // GLOBAL: Strip 'q' parameter from all admin routes
     // ============================================================

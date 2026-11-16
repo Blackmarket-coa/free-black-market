@@ -27,6 +27,15 @@ maps to a URL; see
 - `key-exchange/`, `product-feed/`, `deliveries/`, `delivery-zones/`,
   `restaurants/`, `tickets/`, `users/` — narrower feature surfaces.
 
+**Nothing guards a route outside `store/`, `admin/`, `vendor/` and `auth/`
+by default.** Medusa authenticates `/admin`, asks `/store` for a publishable
+key, and Mercur guards `/vendor`; a route file anywhere else is served to
+anyone on the internet unless a matcher or the handler says otherwise
+(`/restaurants` was open that way: SD-116). Before adding one, decide who may
+call it, guard it (`middlewares/bare-prefix-auth.ts` holds the admin-only
+prefixes), and add it to the reviewed list in
+`__tests__/bare-prefix-route-guards.unit.spec.ts`, which fails until you do.
+
 ## Cross-cutting pieces
 
 - `middlewares.ts` + `middlewares/` — auth scoping, seller context,
