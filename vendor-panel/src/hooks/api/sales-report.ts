@@ -77,6 +77,22 @@ const localDayStart = (calendarDate: string, addDays = 0): Date | null => {
 }
 
 /**
+ * The browser's IANA time zone ("America/Los_Angeles"): the zone
+ * `new Date(y, m, d)` above reads its fields in. Undefined when the browser
+ * reports none it can name ("Etc/Unknown", ICU's zone for "could not tell",
+ * which keeps UTC time and which the backend would refuse with a 400): the
+ * request then carries no `time_zone` and the backend writes UTC dates.
+ */
+export const browserTimeZone = (): string | undefined => {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return zone && zone !== "Etc/Unknown" ? zone : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * What GET /vendor/sales-report is sent for a range of calendar dates as the
  * vendor picks them, for the JSON report and the CSV export alike.
  *
@@ -95,6 +111,13 @@ const localDayStart = (calendarDate: string, addDays = 0): Date | null => {
  *
  * An empty date is left out (the backend defaults it), and a string that is
  * not a calendar date is sent as it is, for the backend to refuse with a 400.
+ *
+ * `time_zone` is the zone those instants were worked out in. The window does
+ * not need it, but the CSV export writes each order's date and names its file
+ * by calendar date, and without the zone those were UTC dates: an order placed
+ * at 19:30 Pacific was in its day's export, dated the next day (SD-89). The
+ * JSON report is sent it too, so both requests are the same query; its
+ * `order_date` is an instant, which this page formats in the browser's zone.
  */
 export const salesReportQuery = (range: {
   start_date?: string
@@ -109,12 +132,17 @@ export const salesReportQuery = (range: {
     const nextDay = localDayStart(range.end_date, 1)
     query.end_date = nextDay ? new Date(nextDay.getTime() - 1).toISOString() : range.end_date
   }
+  const zone = browserTimeZone()
+  if (zone) {
+    query.time_zone = zone
+  }
   return query
 }
 
 /**
  * The sales report for a range of calendar dates (YYYY-MM-DD, the vendor's own
- * days). The cache key carries the instants actually sent.
+ * days). The cache key carries the instants actually sent; `time_zone` is not
+ * in it because the JSON report does not depend on it.
  */
 export const useSalesReport = (params: {
   start_date?: string

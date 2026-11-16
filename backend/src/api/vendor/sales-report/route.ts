@@ -5,6 +5,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PLACED_ORDER_LINES_SQL } from "../../../modules/creator-attribution/analytics-queries"
 import { parseReportDateRange } from "./date-range"
+import { parseReportTimeZone } from "./time-zone"
 
 /**
  * One CSV field: quoted, with embedded quotes doubled, and a leading
@@ -44,6 +45,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
   const { start: startDate, end: endDate, endExclusive } = parsed.range
 
+  // The zone the CSV writes its dates in (SD-89). The window above is the
+  // vendor's local days as instants, but the export's Date column and file
+  // name were each instant's UTC date, so a Los Angeles day's evening orders
+  // were dated the next day, outside the range the vendor chose. With a
+  // `time_zone` (an IANA name, validated in time-zone.ts and only ever handed
+  // to Intl) both are written in that zone; without one they are UTC dates as
+  // before. The JSON response is unchanged: its order_date is the instant,
+  // which the panel renders in the browser's zone.
+  const zone = parseReportTimeZone(req.query)
+  if (!zone.ok) {
+    return res.status(400).json({ type: "invalid_data", message: zone.message })
+  }
+  const { calendar } = zone
+  const csvFileName = `sales-report-${calendar.dateOf(startDate)}-to-${calendar.dateOf(endDate)}.csv`
+
   try {
     // Get product IDs owned by this seller
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
@@ -76,7 +92,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
       if (format === "csv") {
         res.setHeader("Content-Type", "text/csv")
-        res.setHeader("Content-Disposition", `attachment; filename="sales-report-${startDate.toISOString().split("T")[0]}-to-${endDate.toISOString().split("T")[0]}.csv"`)
+        res.setHeader("Content-Disposition", `attachment; filename="${csvFileName}"`)
         return res.send("Order ID,Date,Product,Variant,SKU,Quantity,Unit Price,Total,Currency\n")
       }
 
@@ -133,7 +149,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // Amounts are major units already; the old `/ 100` showed a $12.50
       // line as 0.13.
       const csvRows = lineItems.map((item) => {
-        const date = new Date(item.order_date).toISOString().split("T")[0]
+        const date = calendar.dateOf(new Date(item.order_date))
         return [
           csvField(item.display_id || item.order_id),
           csvField(date),
@@ -148,7 +164,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }).join("\n")
 
       res.setHeader("Content-Type", "text/csv")
-      res.setHeader("Content-Disposition", `attachment; filename="sales-report-${startDate.toISOString().split("T")[0]}-to-${endDate.toISOString().split("T")[0]}.csv"`)
+      res.setHeader("Content-Disposition", `attachment; filename="${csvFileName}"`)
       return res.send(csvHeader + csvRows)
     }
 

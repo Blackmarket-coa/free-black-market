@@ -94,7 +94,8 @@ medusaIntegrationTestRunner({
      * vendor-panel/src/routes/sales-report/sales-report.tsx getDefaultDateRange()
      * and vendor-panel/src/hooks/api/sales-report.ts salesReportQuery() build
      * it: the last 30 calendar days ending today in the browser's zone (here,
-     * this process's), each sent as the instant that bounds that local day.
+     * this process's), each sent as the instant that bounds that local day,
+     * with that zone's name as time_zone.
      * Until SD-89 (a) it sent the UTC calendar dates themselves.
      */
     function panelDefaultQuery() {
@@ -106,6 +107,7 @@ medusaIntegrationTestRunner({
       return new URLSearchParams({
         start_date: localMidnight(start).toISOString(),
         end_date: new Date(localMidnight(end, 1).getTime() - 1).toISOString(),
+        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }).toString()
     }
 
@@ -180,11 +182,35 @@ medusaIntegrationTestRunner({
         expect(rows[1]).toMatch(/,"Linen Apron","Default","SKU-Linen Apron",2,12\.50,25\.00,"usd"$/)
       })
 
-      it("with the dates the panel sends: today's order is in the default range, a vendor's local evening is in their day, a date-only end date is that whole UTC day, and a bad date is a 400", async () => {
+      it("with the dates the panel sends: today's order is in the default range, a vendor's local evening is in their day and, with time_zone, dated that day in the export, a date-only end date is that whole UTC day, and a bad date or zone is a 400", async () => {
         const vendor = await createAuthenticatedSeller({ api, getContainer })
+        const get = (query: string) => safe(api.get(`/vendor/sales-report?${query}`, authHeader(vendor.token)))
+        /** The file name the backend gives an export, from Content-Disposition. */
+        const fileName = (r: { headers: Record<string, unknown> }) =>
+          /^attachment; filename="([^"]+)"$/.exec(String(r.headers["content-disposition"]))?.[1]
+        const LA = new URLSearchParams({ time_zone: "America/Los_Angeles" }).toString()
+
+        // SD-89: before the vendor has a product the export is its header row
+        // alone, from a separate branch of the route that names the file too.
+        // Los Angeles' 13 November 2025 is 08:00Z on the 13th to 07:59:59.999Z
+        // on the 14th: named by UTC dates without a zone, by the vendor's with.
+        const laNov13 = new URLSearchParams({
+          start_date: "2025-11-13T08:00:00.000Z",
+          end_date: "2025-11-14T07:59:59.999Z",
+          format: "csv",
+        }).toString()
+        for (const [query, name] of [
+          [laNov13, "sales-report-2025-11-13-to-2025-11-14.csv"],
+          [`${laNov13}&${LA}`, "sales-report-2025-11-13-to-2025-11-13.csv"],
+        ]) {
+          const empty = await get(query)
+          expect(empty.status).toBe(200)
+          expect(String(empty.data).trim().split("\n")).toHaveLength(1)
+          expect(fileName(empty)).toBe(name)
+        }
+
         const apron = await productFor(vendor.seller.id, "Linen Apron")
         const placed = await order([{ product: apron, quantity: 2, unit_price: 12.5 }])
-        const get = (query: string) => safe(api.get(`/vendor/sales-report?${query}`, authHeader(vendor.token)))
 
         // The panel's default request (end_date = today) with an order placed
         // just now. This read zero orders: the end date meant its midnight.
@@ -199,6 +225,16 @@ medusaIntegrationTestRunner({
         const csv = await get(`${query}&format=csv`)
         expect(csv.status).toBe(200)
         expect(String(csv.data).trim().split("\n")).toHaveLength(2)
+        // The export is named by the calendar dates the panel's vendor picked:
+        // the local dates of the window's two ends, in the zone it sent.
+        const localDate = (iso: string | null) => {
+          const d = new Date(String(iso))
+          return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-")
+        }
+        const sentRange = new URLSearchParams(query)
+        expect(fileName(csv)).toBe(
+          `sales-report-${localDate(sentRange.get("start_date"))}-to-${localDate(sentRange.get("end_date"))}.csv`
+        )
 
         // Placed yesterday at 15:00 UTC, after the end date's first instant:
         // counted with end_date = yesterday, and a one-day range is that day.
@@ -250,6 +286,55 @@ medusaIntegrationTestRunner({
         const csvRows = String(local13Csv.data).trim().split("\n")
         expect(csvRows).toHaveLength(2)
         expect(csvRows[1]).toMatch(/,1,9\.00,9\.00,"usd"$/)
+
+        // SD-89: the dates the export writes. The evening order was placed at
+        // 2025-11-14T03:30Z, the 13th for the vendor. Without time_zone the
+        // Date cell and the file name are UTC dates, as they always were (the
+        // 14th, a date outside the day the vendor asked for). With the panel's
+        // time_zone both are the vendor's 13th, and nothing else in the row
+        // changes.
+        const dateCell = (row: string) => row.split(",")[1]
+        expect(new Date("2025-11-13T19:30:00-08:00").toISOString()).toBe("2025-11-14T03:30:00.000Z")
+        expect(dateCell(csvRows[1])).toBe('"2025-11-14"')
+        expect(fileName(local13Csv)).toBe("sales-report-2025-11-13-to-2025-11-14.csv")
+        const zonedCsv = await get(`${nov13}&format=csv&${LA}`)
+        expect(zonedCsv.status).toBe(200)
+        expect(String(zonedCsv.headers["content-type"])).toContain("text/csv")
+        const zonedRows = String(zonedCsv.data).trim().split("\n")
+        expect(zonedRows).toHaveLength(2)
+        expect(dateCell(zonedRows[1])).toBe('"2025-11-13"')
+        expect(zonedRows[1]).toBe(csvRows[1].replace('"2025-11-14"', '"2025-11-13"'))
+        expect(zonedRows[0]).toBe(csvRows[0])
+        expect(fileName(zonedCsv)).toBe("sales-report-2025-11-13-to-2025-11-13.csv")
+        // Two local days, newest first: the order at the 14th's local midnight
+        // is the 14th either way; the evening order is the 13th only in the
+        // vendor's zone. The window ends at 07:59:59.999Z on the 15th, which is
+        // the 14th there.
+        const twoDays = range("2025-11-13T08:00:00.000Z", "2025-11-15T07:59:59.999Z")
+        const twoDaysUtc = await get(`${twoDays}&format=csv`)
+        expect(String(twoDaysUtc.data).trim().split("\n").slice(1).map(dateCell)).toEqual([
+          '"2025-11-14"',
+          '"2025-11-14"',
+        ])
+        expect(fileName(twoDaysUtc)).toBe("sales-report-2025-11-13-to-2025-11-15.csv")
+        const twoDaysZoned = await get(`${twoDays}&format=csv&${LA}`)
+        expect(String(twoDaysZoned.data).trim().split("\n").slice(1).map(dateCell)).toEqual([
+          '"2025-11-14"',
+          '"2025-11-13"',
+        ])
+        expect(fileName(twoDaysZoned)).toBe("sales-report-2025-11-13-to-2025-11-14.csv")
+        // East of UTC the same instant is the 14th, and the window's ends are
+        // the 14th and the 15th.
+        const tokyo = await get(`${nov13}&format=csv&time_zone=Asia%2FTokyo`)
+        expect(String(tokyo.data).trim().split("\n").slice(1).map(dateCell)).toEqual(['"2025-11-14"'])
+        expect(fileName(tokyo)).toBe("sales-report-2025-11-13-to-2025-11-14.csv")
+        // The JSON report is the same with and without the zone: its
+        // order_date is the instant, which the panel renders in the browser's
+        // own zone, so it needs no server-side date.
+        const zonedJson = await get(`${nov13}&${LA}`)
+        expect(zonedJson.status).toBe(200)
+        expect(zonedJson.data).toEqual(local13.data)
+        expect(zonedJson.data.line_items[0].order_date).toBe("2025-11-14T03:30:00.000Z")
         // The next local day has the midnight order and not the evening one.
         const local14 = await get(range("2025-11-14T08:00:00.000Z", "2025-11-15T07:59:59.999Z"))
         expect(local14.status).toBe(200)
@@ -266,6 +351,33 @@ medusaIntegrationTestRunner({
           expect(bad.status).toBe(400)
           expect(bad.data).toMatchObject({ type: "invalid_data" })
         }
+
+        // So is a time_zone that is not an IANA zone name, for the JSON report
+        // and the export alike: an unknown zone, a UTC offset (which Intl
+        // would take), SQL- and header-shaped text, and a repeated parameter.
+        // The refusal does not repeat what was sent.
+        const zoneQuery = (time_zone: string) => new URLSearchParams({ time_zone }).toString()
+        for (const q of [
+          zoneQuery("Mars/Phobos"),
+          zoneQuery("-08:00"),
+          zoneQuery(`America/Los_Angeles'; DROP TABLE "order"; --`),
+          zoneQuery('UTC".csv"\r\nX-Injected: 1'),
+          `${LA}&${LA}`,
+        ]) {
+          for (const format of ["", "&format=csv"]) {
+            const bad = await get(`${nov13}&${q}${format}`)
+            expect(bad.status).toBe(400)
+            expect(bad.data).toEqual({
+              type: "invalid_data",
+              message: "time_zone must be an IANA time zone name, for example America/Los_Angeles",
+            })
+            expect(bad.headers["content-disposition"]).toBeUndefined()
+          }
+        }
+        // And the orders are still there to report.
+        const after = await get(`${nov13}&format=csv&${LA}`)
+        expect(after.status).toBe(200)
+        expect(String(after.data).trim().split("\n")).toEqual(zonedRows)
       })
     })
 

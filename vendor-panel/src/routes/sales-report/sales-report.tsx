@@ -106,7 +106,8 @@ export const SalesReportPage = () => {
   const handleExportCSV = async () => {
     try {
       const token = getAuthToken()
-      // The same local-day instants the JSON report is fetched with.
+      // The same local-day instants the JSON report is fetched with, and the
+      // browser's time zone, which the export's Date column is written in.
       const params = new URLSearchParams({
         ...salesReportQuery({ start_date: appliedStart, end_date: appliedEnd }),
         format: "csv",
