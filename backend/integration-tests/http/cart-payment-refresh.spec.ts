@@ -9,6 +9,7 @@ import {
 } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import {
+  CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE,
   CART_PAYMENT_AMOUNT_MISMATCH,
   CART_PAYMENT_AMOUNT_MISMATCH_MESSAGE,
 } from "../../src/lib/cart-payment-amount"
@@ -75,6 +76,13 @@ medusaIntegrationTestRunner({
       retrieve: jest.SpyInstance
       /** What was captured: Mercur's capture after an order set, FBM's in its flagged checkouts. */
       capture: jest.SpyInstance
+      /**
+       * The intent's next status read answers `succeeded`: a payment method
+       * Stripe captures at once. Medusa then stores the session as
+       * `authorized` with a captured Payment, and Stripe refuses to cancel
+       * the intent.
+       */
+      captureAtAuthorization: (intentId: string) => void
     }
     let stripe: Stripe
     let drainSubscribers: () => Promise<void> = async () => {}
@@ -108,16 +116,30 @@ medusaIntegrationTestRunner({
         return intent
       })
       jest.spyOn(api_, "update").mockImplementation(async () => ({}))
+      const capturedAtOnce = new Set<string>()
       stripe = {
         intents,
-        cancel: jest
-          .spyOn(api_, "cancel")
-          .mockImplementation(async (id: any) => ({ ...(byId.get(id) ?? {}), id, object: "payment_intent", status: "canceled" })),
+        cancel: jest.spyOn(api_, "cancel").mockImplementation(async (id: any) => {
+          // As Stripe answers: a captured intent cannot be cancelled.
+          if (byId.get(id)?.status === "succeeded") {
+            throw Object.assign(new Error("You cannot cancel this PaymentIntent because it has a status of succeeded."), {
+              type: "StripeInvalidRequestError",
+              code: "payment_intent_unexpected_state",
+              payment_intent: { id, status: "succeeded" },
+            })
+          }
+          return { ...(byId.get(id) ?? {}), id, object: "payment_intent", status: "canceled" }
+        }),
         // The storefront confirms the card with Stripe before it completes
         // the cart, so by then the intent is waiting to be captured.
-        retrieve: jest
-          .spyOn(api_, "retrieve")
-          .mockImplementation(async (id: any) => ({ ...(byId.get(id) ?? {}), id, object: "payment_intent", status: "requires_capture" })),
+        retrieve: jest.spyOn(api_, "retrieve").mockImplementation(async (id: any) => {
+          const intent = { ...(byId.get(id) ?? {}), id, object: "payment_intent", status: capturedAtOnce.has(id) ? "succeeded" : "requires_capture" }
+          byId.set(id, intent)
+          return intent
+        }),
+        captureAtAuthorization: (intentId: string) => {
+          capturedAtOnce.add(intentId)
+        },
         capture: jest
           .spyOn(api_, "capture")
           .mockImplementation(async (id: any) => ({ ...(byId.get(id) ?? {}), id, object: "payment_intent", status: "succeeded" })),
@@ -885,6 +907,31 @@ medusaIntegrationTestRunner({
         expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(2)
       })
 
+      it("a session whose payment Stripe captured at authorization (Medusa stores it as authorized) is refused with the message that does not say the card was not charged, and nothing of it is deleted", async () => {
+        const w = await world()
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA, w.productB], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await pickShipping(w, cart.id, w.optionB.id)
+        await openCardSession(w, cart.id)
+        const [session] = (await stateOf(cart.id)).sessions
+        stripe.captureAtAuthorization("pi_test_cpr_1")
+        await container().resolve(Modules.PAYMENT).authorizePaymentSession(session.id, {})
+        // Captured, though the session reads authorized.
+        expect((await stateOf(cart.id)).sessions).toEqual([{ id: session.id, amount: 32, status: "authorized" }])
+        expect(await paymentsOf(cart.id)).toEqual([{ id: expect.any(String), amount: 32, intent: "pi_test_cpr_1", captured: true, canceled: false }])
+        await repriceFirstLine(cart.id, 14)
+        expect(await stateOf(cart.id)).toMatchObject({ total: 36, collection: 32 })
+
+        const refused = expectStatus(await complete(w, cart.id), 409)
+        expect(refused.data).toEqual({ code: CART_PAYMENT_AMOUNT_MISMATCH, type: CART_PAYMENT_AMOUNT_MISMATCH, message: CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE })
+        expect(await orderSetsOf(cart.id)).toEqual([])
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+        // The money stays where it is for a person to refund: the session and its captured payment stand.
+        expect((await stateOf(cart.id)).sessions).toEqual([{ id: session.id, amount: 32, status: "authorized" }])
+        expect(await paymentsOf(cart.id)).toEqual([{ id: expect.any(String), amount: 32, intent: "pi_test_cpr_1", captured: true, canceled: false }])
+      })
+
       it("the collection already at the total and only the session behind it: the refusal deletes that session, and the next one is for the total", async () => {
         const w = await world()
         const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
@@ -1167,6 +1214,25 @@ medusaIntegrationTestRunner({
         const completed = expectStatus(await api.post("/store/subscriptions", body, asCustomer).catch(answerOf), 201)
         expect(completed.data.order?.id).toBeTruthy()
         expect(await ordersOf(customer.id)).toEqual([{ id: completed.data.order.id, total: 19 }])
+      })
+
+      it("complete-digital on a session whose payment Stripe captured at authorization: the hook reads the payment and answers with the message that does not say the card was not charged, and nothing of it is deleted", async () => {
+        const w = await world()
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await openCardSession(w, cart.id)
+        const [session] = (await stateOf(cart.id)).sessions
+        stripe.captureAtAuthorization("pi_test_cpr_1")
+        await container().resolve(Modules.PAYMENT).authorizePaymentSession(session.id, {})
+        await repriceFirstLine(cart.id, 14)
+        expect(await stateOf(cart.id)).toMatchObject({ total: 19, collection: 15, sessions: [{ id: session.id, amount: 15, status: "authorized" }] })
+
+        const refused = expectStatus(await api.post(`/store/carts/${cart.id}/complete-digital`, {}, w.pak).catch(answerOf), 409)
+        expect(refused.data).toEqual({ code: CART_PAYMENT_AMOUNT_MISMATCH, type: CART_PAYMENT_AMOUNT_MISMATCH, message: CART_PAYMENT_AMOUNT_CAPTURED_MESSAGE })
+        expect(await ordersOf(customer.id)).toEqual([])
+        expect((await stateOf(cart.id)).sessions).toEqual([{ id: session.id, amount: 15, status: "authorized" }])
+        expect(await paymentsOf(cart.id)).toEqual([{ id: expect.any(String), amount: 15, intent: "pi_test_cpr_1", captured: true, canceled: false }])
       })
 
       it("a session behind a collection that is already at the total is deleted after the refusal too (complete-digital)", async () => {
