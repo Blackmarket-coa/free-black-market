@@ -17,6 +17,7 @@ import { getRegion } from "./regions"
 import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
 import { applyAttributionToCart } from "./attribution"
 import { applyBookingToCart } from "./booking"
+import { CART_FIELDS } from "./cart-query"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -37,10 +38,7 @@ export async function retrieveCart(cartId?: string) {
   return await medusaFetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
     method: "GET",
     query: {
-      fields:
-        "*items,*region, *items.product, *items.variant, *items.variant.options, items.variant.options.option.title," +
-        "*items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name, *items.product.seller" +
-        "",
+      fields: CART_FIELDS,
     },
     headers,
     cache: "no-cache",

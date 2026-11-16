@@ -36,7 +36,8 @@
  *   reviewer's first and last name (what the seller page prints) and the
  *   seller's name for a reply. Never the reviewer's email, phone or addresses.
  * - **Other people's records are refused by name**: orders, carts, customers,
- *   payments and the rows that hang off them, wherever in a path they appear.
+ *   payments and the rows that hang off them, wherever in a path they appear,
+ *   and with them every link's own join rows (`*_link`).
  * - **The caller's own record is the exception**, by route: a cart, an order
  *   or `customers/me` may be read through the relations of that record
  *   (`OWN`), and no further. `region.orders` on a cart is still refused.
@@ -217,6 +218,24 @@ export const DENIED_RELATIONS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * A link's own join rows (`seller_link`, `products_link`, ...). They carry
+ * ids only, but each is a second way to the record on the far side under a
+ * name the rules above do not know (`sales_channels.products_link.product`
+ * is every product in the channel, drafts included). No client asks for
+ * them.
+ */
+const isLinkRow = (segment: string) => segment.endsWith("_link")
+
+/**
+ * A relation that is refused only after a particular one: an inventory item
+ * may be shared by variants of several products, so its `variants` lead to
+ * products the caller was not listed.
+ */
+const DENIED_AFTER: Readonly<Record<string, ReadonlySet<string>>> = {
+  inventory: new Set(["variants"]),
+}
+
+/**
  * How a route's field list is read. By default the public rules apply from
  * the first segment. A route whose root record is the caller's own names the
  * relations of that record in `own`: a path may pass through them freely, and
@@ -366,7 +385,8 @@ export function sanitizeStoreFields(
       }
       inOwn = false
       if (REVIEW_NAMES.has(segment)) return guarded([...path, segment], REVIEW, after, star)
-      if (DENIED_RELATIONS.has(segment)) return []
+      if (DENIED_RELATIONS.has(segment) || isLinkRow(segment)) return []
+      if (DENIED_AFTER[path[path.length - 1]]?.has(segment)) return []
       path.push(segment)
       if (segment === "products") productLists.add(path.join("."))
     }
