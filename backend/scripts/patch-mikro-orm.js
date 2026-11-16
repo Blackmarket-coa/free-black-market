@@ -20,12 +20,19 @@
  * `payments.captures_id` (a derived foreign key). On 6.6.14 each of those
  * becomes a populate hint for a property that does not exist.
  *
- * Unpatched, that is a TypeError in `pruneToOneRelations` on every such read.
- * With switched-off merging alone (pristine 6.6.14, `shouldMerge = false`)
- * and on pristine 6.6.12, the buyer's whole cart path answers 200. Medusa
- * itself moved to 6.6.14 in 2.16.0 and in the same release began dropping
+ * Measured, each on the same calls (create a cart in a one-country and a
+ * two-country region, add and change a line, set addresses, Mercur's
+ * shipping-method routes, pay, complete, read the order, cancel it as admin):
+ *   - 6.6.14 as npm ships it: a TypeError in `pruneToOneRelations` on every
+ *     such read;
+ *   - 6.6.14 with the merge switched off and nothing else: every call 200;
+ *   - 6.6.14 with the first version of this script: 500 on most of them;
+ *   - 6.6.14 with this script: every call 200, and the response bodies the
+ *     same as with the merge switched off.
+ * Medusa moved to 6.6.14 in 2.16.0 and in the same release began dropping
  * unresolvable paths before they reach MikroORM
  * (`pruneFindOptionsAgainstMetadata` in `@medusajs/utils`), for this reason.
+ * MikroORM has not changed the merge up to 6.6.18.
  *
  * WHAT THE FIRST VERSION OF THIS PATCH GOT WRONG
  *
@@ -42,13 +49,20 @@
  *
  * `FBM-PATCHED-mergeResolvablePopulate` goes to where the hint is made: a
  * nested path from `fields` is merged into an explicit `populate` only when
- * every segment of it is a property of its entity (`canPopulate`). Anything
- * else is left out, which is what 6.6.12 did with it. Paths that resolve are
- * merged as 6.6.14 intends. A find given `fields` and no `populate` is not
- * touched: there an unknown field is still named by MikroORM's validation.
+ * MikroORM's own `canPopulate` accepts it, which is the check its validation
+ * applies to a populate hint. Anything else is left out, which is what
+ * 6.6.12 did with it. Paths that resolve are merged as 6.6.14 intends. A
+ * find given `fields` and no `populate` is planned exactly as before.
  * `FBM-PATCHED-pruneUnknownRelation` covers the one dereference the first
  * version missed in the same function (a dotted path whose FIRST segment is
- * unknown, `reading 'targetMeta'`).
+ * unknown, `reading 'targetMeta'`); an unknown relation in the explicit
+ * `populate` is then refused by MikroORM's validation, by name.
+ *
+ * What a caller sees: a read that names a nested field the entity lacks
+ * gets its rows without that field, and no error. An order read selecting
+ * `items.quantity` used to throw and now returns lines with no quantity
+ * (SD-52: select `items.*`). The check that names that mistake is
+ * `src/shared/__tests__/order-items-quantity-guard.unit.spec.ts`.
  *
  * The five original guards stay. With the hint no longer made they are not
  * reached from the merge, but removing them would need a tree patched by the
@@ -59,13 +73,19 @@
  * Every patch is marker-guarded and idempotent, and the two new ones anchor
  * on lines the first version never touched, so this script applies the same
  * way to a pristine tree and to one already patched by the first version
- * (which gains the two new markers). It runs from `postinstall` and from
- * `scripts/railway-start.js` on every container start. A pattern that is not
- * found is reported and skipped, not fatal: after a MikroORM bump, read the
- * output. `src/scripts/__tests__/patch-mikro-orm.unit.spec.ts` fails when a
- * pattern no longer matches the installed files, and
- * `integration-tests/http/store-cart-path.spec.ts` fails when the installed
- * tree does not carry the fix.
+ * (which gains the two new markers). The second case is the common one: pnpm
+ * hard-links node_modules to its store, so the first version's in-place
+ * write patched the store's copy too, and a fresh install from that store
+ * starts from it.
+ *
+ * It runs from `postinstall` and from `scripts/railway-start.js` on every
+ * container start. In the Docker image the start is the one that counts: the
+ * deps stage runs `pnpm install` before scripts/ is copied in. A pattern that
+ * is not found is reported and skipped, not fatal: after a MikroORM bump,
+ * read the output. `src/scripts/__tests__/patch-mikro-orm.unit.spec.ts` fails
+ * when a pattern no longer matches the installed files or the installed tree
+ * does not carry every patch, and `integration-tests/http/store-cart-path.spec.ts`
+ * walks the buyer's cart path through the real routes.
  *
  * Verified against @mikro-orm/core@6.6.14 and @mikro-orm/knex@6.6.14 (the
  * npm tarballs, diffed).

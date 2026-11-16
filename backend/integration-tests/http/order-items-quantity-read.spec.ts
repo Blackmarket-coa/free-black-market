@@ -17,6 +17,9 @@ import emitBlackoutOrderPlaced from "../../src/subscribers/emit-blackout-order-p
 import emitBlackoutOrderUpdated from "../../src/subscribers/emit-blackout-order-updated"
 import emitBlackoutOrderRefundCancel from "../../src/subscribers/emit-blackout-order-refund-cancel"
 import wellnessOrderPlaced from "../../src/subscribers/wellness-order-placed"
+import growerKarmaOnOrderPlaced from "../../src/subscribers/grower-karma-on-order-placed"
+import { loadOrderNodeContext } from "../../src/modules/agriculture/plant-order-helpers"
+import { GrowerKarmaService } from "../../src/modules/progression/grower-karma"
 import { NON_SALE_ORDER_FILTERS, getSellerOrders } from "../../src/shared/seller-orders"
 import { logger } from "../../src/shared/logger"
 import { collectCrossChannelRevenue } from "../../src/shared/cross-channel-revenue"
@@ -37,25 +40,34 @@ jest.setTimeout(240 * 1000)
  * Medusa 2.14.2 rewrites an order read's `items.quantity` to
  * `items.item.quantity` (`@medusajs/order/dist/utils/transform-order.js`), and
  * OrderLineItem has no `quantity` (the order's per-line quantity lives on
- * OrderItem). The read throws for any order that has a line item. CI applies
- * `scripts/patch-mikro-orm.js` and logs "Entity 'OrderLineItem' does not have
- * property 'quantity'" (run 43273089067: 43 times each under
- * cottage-food-record-sale, emit-blackout-order-placed,
+ * OrderItem). Until SD-117 the read threw for any order that has a line item:
+ * MikroORM 6.6.14 made the unresolvable path a populate hint. CI, with the
+ * first version of `scripts/patch-mikro-orm.js`, logged "Entity
+ * 'OrderLineItem' does not have property 'quantity'" (run 43273089067: 43
+ * times each under cottage-food-record-sale, emit-blackout-order-placed,
  * grower-karma-on-order-placed and wellness-order-placed); without that patch
- * the same read fails earlier with "reading 'kind'". Every caller caught it,
+ * the same read failed earlier with "reading 'kind'". Every caller caught it,
  * so no test failed. The unit specs mocked `query.graph`, which is how it hid.
+ *
+ * Since SD-117 the patch keeps such a path out of the populate, as MikroORM
+ * 6.6.12 (the version Medusa 2.14.2 is built against) did, and the read
+ * succeeds WITHOUT the quantity. That is quieter, not better: the callers
+ * below were moved to `items.*` because it is the form that returns it, and
+ * "the field path" pins what a read by name gets now.
  *
  * Orders are created through the order module and linked to their seller as
  * Mercur's split links them (helpers/card-orders.ts does the same); the
  * failure is in the read's field path, not in how the order was placed.
  * Subscribers are called directly with the `order.placed` payload.
  *
- * Not here, on purpose: `subscribers/grower-karma-on-order-placed.ts` and the
+ * Not fixed, on purpose: `subscribers/grower-karma-on-order-placed.ts` and the
  * read it depends on (`modules/agriculture/plant-order-helpers.ts`) still
  * select `items.quantity`. Fixing that read starts awarding grower KARMA for
  * sales, which docs/F7_FLAT_PAYOUT_INVENTORY.md §10 item 8 leaves to the
  * operator. The wellness subscriber's sale KARMA waits on the same decision
- * (FF_WELLNESS_SALE_KARMA_V1, default off).
+ * (FF_WELLNESS_SALE_KARMA_V1, default off). What stops the grower award
+ * changed with SD-117, from a read that threw to one that reports zero
+ * units, so "grower KARMA" below pins that a sale still awards nothing.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -135,28 +147,55 @@ medusaIntegrationTestRunner({
     }
 
     describe("the field path", () => {
-      it("an order read selecting items.quantity throws for an order with a line; items.* returns the quantity", async () => {
+      it("an order read selecting items.quantity returns the line without its quantity; items.* returns it", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
 
-        await expect(
-          query().graph({ entity: "order", fields: ["id", "items.quantity"], filters: { id: order.id } })
-        ).rejects.toThrow(/does not have property 'quantity'|reading 'kind'/)
+        // Threw until SD-117 ("Entity 'OrderLineItem' does not have property
+        // 'quantity'"). Now it reads, and the quantity is simply not there.
+        const named = await query().graph({
+          entity: "order",
+          fields: ["id", "items.id", "items.product_id", "items.unit_price", "items.quantity"],
+          filters: { id: order.id },
+        })
+        expect(named.data[0].items).toEqual([expect.objectContaining({ product_id: product.id, unit_price: 12.5 })])
+        expect(named.data[0].items[0]).not.toHaveProperty("quantity")
+        // Asked for alone, not even the line comes back.
+        const alone = await query().graph({ entity: "order", fields: ["id", "items.quantity"], filters: { id: order.id } })
+        expect(alone.data[0].items).toEqual([null])
 
         const { data } = await query().graph({ entity: "order", fields: ["id", "items.*"], filters: { id: order.id } })
         expect(data[0].items).toEqual([expect.objectContaining({ product_id: product.id, quantity: 3, unit_price: 12.5 })])
       })
 
-      it("items.total throws the same way: the failure is any field OrderLineItem lacks, not quantity alone", async () => {
-        // shared/order-dispute-intake.ts selects items.total (open, SD-52 follow-up).
+      it("items.total goes the same way: it is any field OrderLineItem lacks, not quantity alone", async () => {
+        // shared/order-dispute-intake.ts selected items.total until SD-79.
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
+
+        const named = await query().graph({ entity: "order", fields: ["id", "items.id", "items.total"], filters: { id: order.id } })
+        expect(named.data[0].items).toHaveLength(1)
+        expect(named.data[0].items[0]).not.toHaveProperty("total")
+        const alone = await query().graph({ entity: "order", fields: ["id", "items.total"], filters: { id: order.id } })
+        expect(alone.data[0].items).toEqual([null])
+      })
+
+      it("a relation the order does not have is still refused by name", async () => {
+        // The legacy settlement read (SD-39) depends on this refusal, and
+        // SD-117 must not have loosened it: only a nested FIELD that does not
+        // resolve is left out; an unknown relation is an error, as before.
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
 
         await expect(
-          query().graph({ entity: "order", fields: ["id", "items.total"], filters: { id: order.id } })
-        ).rejects.toThrow(/does not have property 'total'|reading 'kind'/)
+          query().graph({ entity: "order", fields: ["id", "customer.id"], filters: { id: order.id } })
+        ).rejects.toThrow("Entity 'Order' does not have property 'customer'")
+        await expect(
+          container().resolve(Modules.ORDER).retrieveOrder(order.id, { relations: ["items", "customer"] })
+        ).rejects.toThrow("Entity 'Order' does not have property 'customer'")
       })
 
       it("every field the guard allows under items. reads on a real order, and the column list is the table's", async () => {
@@ -168,7 +207,7 @@ medusaIntegrationTestRunner({
         )
         // `totals_id` is on the table (Medusa's order Migration20240219102530)
         // but OrderLineItem has no property for it, so it is not allowed; it is
-        // read below to show it fails the same way.
+        // read below to show it is left out the same way.
         const NOT_LINE_PROPERTIES = ["totals_id"]
         const columns = rows.map((r: { column_name: string }) => r.column_name)
         expect(columns.filter((c: string) => !NOT_LINE_PROPERTIES.includes(c)).sort()).toEqual([...ORDER_LINE_ITEM_COLUMNS].sort())
@@ -177,19 +216,65 @@ medusaIntegrationTestRunner({
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
-        await expect(
-          query().graph({ entity: "order", fields: ["id", "items.totals_id"], filters: { id: order.id } })
-        ).rejects.toThrow(/does not have property 'totals_id'|reading 'kind'/)
+        const notALineField = await query().graph({ entity: "order", fields: ["id", "items.totals_id"], filters: { id: order.id } })
+        expect(notALineField.data[0].items).toEqual([null])
+        // An allowed field brings the line back with that field on it; a
+        // field the line lacks brings back `null` (above), so "one item" is
+        // not the check.
         const failed: string[] = []
         for (const field of [...ORDER_LINE_ITEM_COLUMNS, ...ORDER_LINE_ITEM_RELATIONS]) {
           try {
             const { data } = await query().graph({ entity: "order", fields: ["id", `items.${field}`], filters: { id: order.id } })
-            if (data?.[0]?.items?.length !== 1) failed.push(`${field}: no line`)
+            const line = data?.[0]?.items?.[0] as Record<string, unknown> | null | undefined
+            if (data?.[0]?.items?.length !== 1 || !line) failed.push(`${field}: no line`)
+            else if (!(field in line)) failed.push(`${field}: not on the line`)
           } catch (e) {
             failed.push(`${field}: ${(e as Error).message}`)
           }
         }
         expect(failed).toEqual([])
+      })
+    })
+
+    describe("grower KARMA (not fixed, on purpose: F7 inventory §10 item 8)", () => {
+      it("a plant sale still awards no grower KARMA: the read now succeeds and reports zero units", async () => {
+        // A grower whose KARMA subject resolves (its first member), selling a
+        // plant product from a node: everything the award needs but a quantity.
+        const seller = await makeSeller()
+        const sellers = container().resolve(SELLER_MODULE)
+        const [member] = await sellers.createMembers([{ name: "Grower", email: `g-${uid()}@example.com`, seller_id: seller.id }])
+        const product = await makeProduct(seller.id, { grower_node: "node_a", is_live_plant: true })
+        const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
+        const events = () =>
+          container().resolve(PROGRESSION_MODULE).listXpEvents({ customer_id: member.id }) as Promise<
+            Array<{ reason: string; amount: number }>
+          >
+
+        // Until SD-117 this read threw and the subscriber logged it. It reads
+        // now, with the line attributed to the grower and its quantity as 0.
+        const context = await loadOrderNodeContext(container(), order.id)
+        expect(context?.items).toEqual([
+          expect.objectContaining({ seller_id: seller.id, grower_node: "node_a", quantity: 0, gross_cents: 0 }),
+        ])
+
+        // Every createLogger() logger shares this prototype.
+        const error = jest.spyOn(Object.getPrototypeOf(logger), "error")
+        try {
+          await growerKarmaOnOrderPlaced(placed(order.id))
+          expect(error.mock.calls.filter((c) => String(c[0]).includes("grower-karma-on-order-placed"))).toEqual([])
+        } finally {
+          error.mockRestore()
+        }
+        expect(await events()).toEqual([])
+
+        // The award itself works for this grower; only the quantity is missing.
+        await new GrowerKarmaService(container()).emitGrowerKarmaEvent({
+          seller_id: seller.id,
+          event_type: "units_sold",
+          units: 3,
+          reference_id: `${order.id}:control`,
+        })
+        expect(await events()).toEqual([expect.objectContaining({ reason: "grower:units_sold", amount: 3 })])
       })
     })
 

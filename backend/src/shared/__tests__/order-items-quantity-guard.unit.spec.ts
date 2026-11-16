@@ -8,13 +8,16 @@ import { ORDER_READ_ITEM_FIELDS } from "../order-line-item-fields"
  *
  * Medusa 2.14.2 rewrites every `items.<field>` on an order read to
  * `items.item.<field>` (`@medusajs/order/dist/utils/transform-order.js`), and
- * the read throws for any order with a line when OrderLineItem has no such
- * field. `items.quantity` did that on every order for the cottage-food meter,
- * the Blackout order events, wellness registration and the seller order lists,
- * and `items.total` does it to buyer dispute intake; every caller caught it,
- * so no test failed. Select `items.*` (it carries the quantity) or only the
- * line's own columns. The allowed set and why is `shared/order-line-item-fields.ts`;
- * the real-database proof is integration-tests/http/order-items-quantity-read.spec.ts.
+ * when OrderLineItem has no such field the line comes back without it: a
+ * quantity or a total that reads as nothing, with no error. (Until SD-117 the
+ * read threw instead, for any order with a line. `items.quantity` did that on
+ * every order for the cottage-food meter, the Blackout order events, wellness
+ * registration and the seller order lists, and `items.total` did it to buyer
+ * dispute intake; every caller caught it, so no test failed.) Since the read
+ * is now silent, this scan is the only thing that names the mistake. Select
+ * `items.*` (it carries the quantity) or only the line's own columns. The
+ * allowed set and why is `shared/order-line-item-fields.ts`; the real-database
+ * proof is integration-tests/http/order-items-quantity-read.spec.ts.
  *
  * Cart reads are fine: a cart line item has its own `quantity` and totals.
  *
@@ -35,9 +38,12 @@ const SRC = join(__dirname, "..", "..")
  */
 const KNOWN_BROKEN: Record<string, string> = {
   // `items.quantity`. Its one live caller is
-  // subscribers/grower-karma-on-order-placed.ts: making this read work starts
-  // awarding grower KARMA for sales, which docs/F7_FLAT_PAYOUT_INVENTORY.md
-  // §10 item 8 reserves to the operator.
+  // subscribers/grower-karma-on-order-placed.ts: making this read return
+  // quantities starts awarding grower KARMA for sales, which
+  // docs/F7_FLAT_PAYOUT_INVENTORY.md §10 item 8 reserves to the operator.
+  // Since SD-117 the read succeeds and every line's quantity is 0, so the
+  // subscriber awards nothing (pinned on a real order in
+  // integration-tests/http/order-items-quantity-read.spec.ts).
   "modules/agriculture/plant-order-helpers.ts": "SD-52 / F7 §10 item 8 (operator-gated)",
   // `shared/order-dispute-intake.ts` used to be here (`items.total`, so no buyer
   // could open a dispute); the admin disputes work fixed its read, units and

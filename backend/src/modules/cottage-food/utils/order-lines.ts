@@ -38,8 +38,9 @@ export async function resolveSellerTotalsForOrder(
 
   // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
   // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
-  // not have, and the read throws for every order with a line item. `items.*`
-  // returns each line with its quantity.
+  // not have, and the line comes back without a quantity (until SD-117 the
+  // read threw for every order with a line item). `items.*` returns each
+  // line with its quantity.
   const { data: orders } = await query.graph({
     entity: "order",
     fields: ["id", "items.*"],
