@@ -10,8 +10,10 @@ import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { WISHLIST_MODULE } from "@mercurjs/b2c-core/modules/wishlist"
 import { REVIEW_MODULE } from "@mercurjs/reviews/modules/reviews"
 import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
+import { BARTER_MODULE } from "../../src/modules/barter"
 import { DEMAND_POOL_MODULE } from "../../src/modules/demand-pool"
 import { FOOD_DISTRIBUTION_MODULE } from "../../src/modules/food-distribution"
+import { WISHLIST_MODULE as SHOPPER_WISHLIST_MODULE } from "../../src/modules/wishlist"
 import {
   BUYER_SELLER_FIELDS,
   ORDER_SET_HEADING_FIELDS,
@@ -125,6 +127,50 @@ const ORDER_LIST_FIELDS =
   "*items,+items.metadata,*items.variant,*items.product,*seller,*reviews,*order_set,shipping_total,total,created_at"
 
 const q = (fields: string) => `fields=${encodeURIComponent(fields)}`
+
+/** Values only a pool's creator, or the person a row is about, may read. */
+const POOL_PRIVATE = {
+  supplier_id: "sel_supplier_private_01",
+  terms: "net-30-private-terms",
+  notes: "supplier-private-note",
+  compliance: "compliance-private-note",
+  proposal_metadata: "proposal-private-metadata",
+  counter: "counter-offer-private-note",
+  escrow_entry: "escrow-entry-private-01",
+  bounty_metadata: "bounty-proof-private-note",
+  barter_entry: "barter-ledger-private-01",
+  barter_metadata: "barter-private-metadata",
+} as const
+
+/** The values of POOL_PRIVATE, and the ids given, that a response contains. */
+const poolPrivateValues = (data: unknown, ids: string[]) => {
+  const text = JSON.stringify(data) ?? ""
+  return [...Object.values(POOL_PRIVATE), ...ids].filter((value) => text.includes(value))
+}
+
+/** What a pool's rows say to someone who is not its creator, nor on the row (written out here, not imported). */
+const PROPOSAL_TERMS = [
+  "id",
+  "demand_post_id",
+  "status",
+  "unit_price",
+  "currency_code",
+  "min_quantity",
+  "max_quantity",
+  "volume_tiers",
+  "fulfillment_timeline_days",
+  "delivery_method",
+  "delivery_cost",
+  "certifications",
+  "votes_for",
+  "votes_against",
+  "vote_weight_for",
+  "vote_weight_against",
+  "submitted_at",
+]
+const BOUNTY_TERMS = ["id", "demand_post_id", "objective", "amount", "currency_code", "milestones", "milestones_completed", "status", "visibility"]
+const TRADE_TERMS = ["id", "demand_post_id", "offering", "wanting", "estimated_hours", "status"]
+const keysOf = (rows: Record<string, unknown>[]) => rows.map((row) => Object.keys(row).sort())
 
 medusaIntegrationTestRunner({
   inApp: true,
@@ -519,6 +565,55 @@ medusaIntegrationTestRunner({
         expect(found(joined.data, ["draft_title", "wholesale_title"])).toEqual([])
       })
 
+      /**
+       * FBM's `api/store/wishlist/route.ts` answers this path, not Mercur's:
+       * it reads FBM's own wishlist module, ignores `fields`, and selects
+       * each product whole by id. So the field policy never sees it, and
+       * the route checks what it takes and what it serves itself.
+       */
+      it("FBM's wishlist takes and serves only what the product listing serves: not a draft, not another channel's product", async () => {
+        const { get, as, buyer, tomatoes, corn, sauce, pallet } = await makeMarket()
+        const asBuyer = as(buyer)
+        const add = (id: string) => safe(api.post("/store/wishlist", { reference: "product", reference_id: id }, asBuyer))
+        const served = async () => {
+          const res = await get("/store/wishlist", asBuyer)
+          expect(res.status).toBe(200)
+          const titles = (res.data.wishlists as { products: { title: string }[] }[]).flatMap((wishlist) =>
+            wishlist.products.map((product) => product.title)
+          )
+          return { titles: titles.sort(), data: res.data }
+        }
+
+        expect((await add(tomatoes.id)).status).toBe(201)
+        expect((await add(corn.id)).status).toBe(201)
+        expect((await served()).titles).toEqual(["Heirloom Tomatoes", "Sweet Corn"])
+
+        // A draft, another channel's product and an id that names nothing
+        // are refused alike, with what the product page answers for each.
+        const missingId = `${sauce.id.slice(0, -4)}ZZZZ`
+        for (const [what, id] of [
+          ["a draft", sauce.id],
+          ["another channel's product", pallet.id],
+          ["no product", missingId],
+        ] as const) {
+          const res = await add(id)
+          const page = await get(`/store/products/${id}`, asBuyer)
+          expect([what, res.status, page.status]).toEqual([what, 404, 404])
+          expect([what, res.data]).toEqual([what, page.data])
+        }
+
+        // Rows the module already holds (written before the route checked,
+        // or a product unpublished since it was saved) are not served.
+        const shopper = container().resolve(SHOPPER_WISHLIST_MODULE)
+        await shopper.addProductToWishlist(buyer.id, sauce.id)
+        await shopper.addProductToWishlist(buyer.id, pallet.id)
+        await container().resolve(Modules.PRODUCT).updateProducts(corn.id, { status: "draft" })
+        const after = await served()
+        expect(after.titles).toEqual(["Heirloom Tomatoes"])
+        expect(found(after.data, ["draft_title", "wholesale_title"])).toEqual([])
+        expect(collect(after.data, "status")).toEqual(["published"])
+      })
+
       it("Mercur's seller routes serve the seller a storefront shows, and the storefront's seller page still gets what it prints", async () => {
         const { get } = await makeMarket()
 
@@ -893,6 +988,9 @@ medusaIntegrationTestRunner({
         }
 
         // The record each public store route with a `fields` parameter serves.
+        // (Not `/store/wishlist`: FBM's own handler answers that path and
+        // ignores `fields`, so the walk would judge nothing that answers a
+        // request. Its own case above pins what it takes and serves.)
         const roots: [string, string][] = [
           ["/store/products", "Product"],
           ["/store/product-variants", "ProductVariant"],
@@ -905,7 +1003,6 @@ medusaIntegrationTestRunner({
           ["/store/return-reasons", "ReturnReason"],
           ["/store/currencies", "Currency"],
           ["/store/payment-providers", "PaymentProvider"],
-          ["/store/wishlist", "Product"],
         ]
         for (const [route, entity] of roots) {
           expect([route, storeFieldProfile(route).name]).toEqual([route, "public"])
@@ -948,6 +1045,113 @@ medusaIntegrationTestRunner({
       for (const [table, column, type] of columns) {
         await pg.raw(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" ${type}`)
       }
+    }
+
+    /**
+     * A pool with one of each row its sub-routes list: a supplier's
+     * proposal, a bounty a participant put up and an outsider claimed, a
+     * restricted bounty of the creator's, and an outsider's offer of a
+     * trade. Every value only the creator or the person a row is about may
+     * read appears nowhere else. (Each bounty names its milestones:
+     * `demand_bounty.milestones` is NOT NULL in the migration, SD-63's
+     * family.)
+     */
+    async function makePoolRows(input: {
+      creatorId: string
+      visibility: string
+      participantId: string
+      contributorId: string
+      assigneeId: string
+      proposerId: string
+    }) {
+      const pools = container().resolve(DEMAND_POOL_MODULE)
+      const trades = container().resolve(BARTER_MODULE)
+      const post = await pools.createDemandPost({
+        creator_id: input.creatorId,
+        creator_type: "CUSTOMER",
+        title: `Bulk oats ${uid()}`,
+        description: "Sacks between neighbours",
+        category: "pantry",
+        target_quantity: 50,
+        min_quantity: 10,
+        unit_of_measure: "sacks",
+        visibility: input.visibility,
+      })
+      await pools.publishDemandPost(post.id)
+      // Only a participant (or the creator) may put up a bounty.
+      for (const customerId of [input.participantId, input.contributorId]) {
+        await pools.joinDemandPool({ demand_post_id: post.id, customer_id: customerId, quantity_committed: 3 })
+      }
+      const proposal = await pools.submitProposal({
+        demand_post_id: post.id,
+        supplier_id: POOL_PRIVATE.supplier_id,
+        unit_price: 12,
+        min_quantity: 10,
+        max_quantity: 60,
+        fulfillment_timeline_days: 14,
+        delivery_method: "pallet freight",
+        delivery_cost: 40,
+        certifications: ["organic"],
+        compliance_notes: POOL_PRIVATE.compliance,
+        payment_terms: POOL_PRIVATE.terms,
+        notes: POOL_PRIVATE.notes,
+      })
+      await pools.updateSupplierProposals({
+        id: proposal.id,
+        metadata: { internal: POOL_PRIVATE.proposal_metadata },
+        counter_offer: { notes: POOL_PRIVATE.counter },
+      })
+      const milestones = [{ description: "Supplier named", percentage: 100, condition: "a signed quote" }]
+      const open = await pools.addBounty({
+        demand_post_id: post.id,
+        contributor_id: input.contributorId,
+        objective: "FIND_SUPPLIER",
+        amount: 25,
+        milestones,
+      })
+      await pools.updateDemandBounties({
+        id: open.id,
+        assignee_id: input.assigneeId,
+        assignee_type: "CUSTOMER",
+        escrowed: true,
+        escrow_ledger_entry_id: POOL_PRIVATE.escrow_entry,
+        metadata: { proofs: [{ note: POOL_PRIVATE.bounty_metadata }] },
+      })
+      const restricted = await pools.addBounty({
+        demand_post_id: post.id,
+        contributor_id: input.creatorId,
+        objective: "NEGOTIATE_PRICE",
+        amount: 10,
+        milestones,
+        visibility: "RESTRICTED",
+      })
+      const trade = await trades.proposeBarter({
+        proposer_id: input.proposerId,
+        demand_post_id: post.id,
+        offering: "two hours of hauling",
+        wanting: "one sack",
+      })
+      await trades.updateBarterProposals({
+        id: trade.id,
+        ledger_entry_id: POOL_PRIVATE.barter_entry,
+        metadata: { note: POOL_PRIVATE.barter_metadata },
+      })
+      return {
+        post: post as { id: string },
+        proposal: proposal as { id: string },
+        open: open as { id: string },
+        restricted: restricted as { id: string },
+        trade: trade as { id: string },
+      }
+    }
+
+    /** The pool's people, each a customer of their own. */
+    async function makePoolPeople() {
+      const created = await container()
+        .resolve(Modules.CUSTOMER)
+        .createCustomers(["participant", "contributor", "assignee", "proposer", "stranger"].map((role) => ({ email: `${role}-${uid()}@example.com` })))
+      const [participant, contributor, assignee, proposer, stranger] = created as { id: string }[]
+      return { participant, contributor, assignee, proposer, stranger }
     }
 
     describe("FBM's own public reads", () => {
@@ -1033,6 +1237,154 @@ medusaIntegrationTestRunner({
           metadata: { note: "internal-note-for-the-creator" },
         })
         expect(own.data.demand_pool.participants.list).toEqual([expect.objectContaining({ customer_id: "cus_participant_one" })])
+      })
+
+      it("a public pool's proposals, bounties and trades: the creator reads them whole, the people on a row read it whole, anyone else the terms", async () => {
+        const { pak, reviewer, asReviewer, as, get } = await makeMarket()
+        await addDemandPoolRawColumns()
+        const { participant, contributor, assignee, proposer, stranger } = await makePoolPeople()
+        const rows = await makePoolRows({
+          creatorId: reviewer.id,
+          visibility: "PUBLIC",
+          participantId: participant.id,
+          contributorId: contributor.id,
+          assigneeId: assignee.id,
+          proposerId: proposer.id,
+        })
+        const base = `/store/collective/demand-pools/${rows.post.id}`
+        const privateOf = (data: unknown) => poolPrivateValues(data, [reviewer.id, participant.id, contributor.id, assignee.id, proposer.id])
+
+        // Before: each sub-route served its rows as stored, to anyone: the
+        // supplier's notes and terms, the customers who put up, claimed or
+        // offered, and the ledger entries.
+        for (const [who, headers] of [
+          ["the publishable key alone", pak],
+          ["another customer", as(stranger)],
+          ["a participant", as(participant)],
+        ] as const) {
+          const proposals = await get(`${base}/proposals`, headers)
+          const bounties = await get(`${base}/bounties`, headers)
+          const trades = await get(`${base}/barter`, headers)
+          expect([who, proposals.status, bounties.status, trades.status]).toEqual([who, 200, 200, 200])
+          expect([who, privateOf([proposals.data, bounties.data, trades.data])]).toEqual([who, []])
+
+          expect([who, keysOf(proposals.data.proposals)]).toEqual([who, [[...PROPOSAL_TERMS].sort()]])
+          expect(proposals.data.proposals[0]).toMatchObject({
+            id: rows.proposal.id,
+            unit_price: 12,
+            min_quantity: 10,
+            max_quantity: 60,
+            fulfillment_timeline_days: 14,
+            delivery_method: "pallet freight",
+            delivery_cost: 40,
+            certifications: ["organic"],
+            status: "SUBMITTED",
+            votes_for: 0,
+          })
+          // The restricted bounty is still hidden from them, as before.
+          expect([who, keysOf(bounties.data.bounties)]).toEqual([who, [[...BOUNTY_TERMS].sort()]])
+          expect(bounties.data.bounties[0]).toMatchObject({
+            id: rows.open.id,
+            objective: "FIND_SUPPLIER",
+            amount: 25,
+            currency_code: "USD",
+            status: "ACTIVE",
+            visibility: "PUBLIC",
+            milestones: [{ description: "Supplier named", percentage: 100, condition: "a signed quote" }],
+          })
+          expect([who, trades.data.count, keysOf(trades.data.proposals)]).toEqual([who, 1, [[...TRADE_TERMS].sort()]])
+          expect(trades.data.proposals[0]).toMatchObject({ id: rows.trade.id, offering: "two hours of hauling", wanting: "one sack", status: "PROPOSED" })
+        }
+
+        // The people a row is about read that row whole, and nothing else of anyone's.
+        const asContributor = await get(`${base}/bounties`, as(contributor))
+        expect(asContributor.data.bounties).toEqual([
+          expect.objectContaining({ id: rows.open.id, contributor_id: contributor.id, assignee_id: assignee.id, escrow_ledger_entry_id: POOL_PRIVATE.escrow_entry }),
+        ])
+        const asAssignee = await get(`${base}/bounties`, as(assignee))
+        expect(asAssignee.data.bounties).toEqual([expect.objectContaining({ id: rows.open.id, contributor_id: contributor.id, assignee_id: assignee.id })])
+        const asProposer = await get(`${base}/barter`, as(proposer))
+        expect(asProposer.data.proposals).toEqual([expect.objectContaining({ id: rows.trade.id, proposer_id: proposer.id, ledger_entry_id: POOL_PRIVATE.barter_entry })])
+        expect(privateOf((await get(`${base}/proposals`, as(proposer))).data)).toEqual([])
+        expect(privateOf((await get(`${base}/proposals`, as(contributor))).data)).toEqual([])
+
+        // The creator reads every row whole, the restricted bounty included.
+        const [ownProposals, ownBounties, ownTrades] = await Promise.all(["/proposals", "/bounties", "/barter"].map((sub) => get(`${base}${sub}`, asReviewer)))
+        expect([ownProposals.status, ownBounties.status, ownTrades.status]).toEqual([200, 200, 200])
+        expect(ownProposals.data.proposals[0]).toMatchObject({
+          supplier_id: POOL_PRIVATE.supplier_id,
+          payment_terms: POOL_PRIVATE.terms,
+          notes: POOL_PRIVATE.notes,
+          compliance_notes: POOL_PRIVATE.compliance,
+        })
+        expect(ownBounties.data.bounties.map((row: { id: string }) => row.id).sort()).toEqual([rows.open.id, rows.restricted.id].sort())
+        expect(ownTrades.data.proposals[0]).toMatchObject({ proposer_id: proposer.id })
+      })
+
+      it("a pool that is not public lists its rows to its creator, its participants and the people on a row; anyone else gets what a missing pool gets", async () => {
+        const { pak, reviewer, asReviewer, as, get } = await makeMarket()
+        await addDemandPoolRawColumns()
+        const { participant, contributor, assignee, proposer, stranger } = await makePoolPeople()
+        const rows = await makePoolRows({
+          creatorId: reviewer.id,
+          visibility: "INVITE_ONLY",
+          participantId: participant.id,
+          contributorId: contributor.id,
+          assigneeId: assignee.id,
+          proposerId: proposer.id,
+        })
+        const base = `/store/collective/demand-pools/${rows.post.id}`
+        const missing = `/store/collective/demand-pools/${rows.post.id.slice(0, -4)}ZZZZ`
+        const notFound = { error: "Demand pool not found" }
+        const privateOf = (data: unknown) => poolPrivateValues(data, [reviewer.id, participant.id, contributor.id, assignee.id, proposer.id])
+
+        // Before: 200 and every row, whatever the pool's visibility; only
+        // /ledger refused. Now the answer /ledger gives, and a missing pool.
+        for (const sub of ["/proposals", "/bounties", "/barter"]) {
+          for (const [who, headers] of [
+            ["the publishable key alone", pak],
+            ["another customer", as(stranger)],
+          ] as const) {
+            const res = await get(`${base}${sub}`, headers)
+            expect([sub, who, res.status, res.data]).toEqual([sub, who, 404, notFound])
+          }
+          const nothing = await get(`${missing}${sub}`)
+          expect([sub, "no such pool", nothing.status, nothing.data]).toEqual([sub, "no such pool", 404, notFound])
+        }
+        const ledger = await get(`${base}/ledger`)
+        expect([ledger.status, ledger.data]).toEqual([404, notFound])
+
+        // A participant reads the terms.
+        for (const sub of ["/proposals", "/bounties", "/barter"]) {
+          const res = await get(`${base}${sub}`, as(participant))
+          expect([sub, res.status]).toEqual([sub, 200])
+          expect([sub, privateOf(res.data)]).toEqual([sub, []])
+        }
+        expect((await get(`${base}/bounties`, as(participant))).data.bounties.map((row: { id: string }) => row.id)).toEqual([rows.open.id])
+
+        // Someone outside who claimed a bounty, or offered a trade: their
+        // own row, whole, and nothing else of the pool.
+        const claimed = await get(`${base}/bounties`, as(assignee))
+        expect([claimed.status, claimed.data.bounties?.map((row: { id: string }) => row.id)]).toEqual([200, [rows.open.id]])
+        expect(claimed.data.bounties[0]).toMatchObject({ assignee_id: assignee.id, contributor_id: contributor.id })
+        const offered = await get(`${base}/barter`, as(proposer))
+        expect([offered.status, offered.data.proposals?.map((row: { id: string }) => row.id)]).toEqual([200, [rows.trade.id]])
+        expect(offered.data.proposals[0]).toMatchObject({ proposer_id: proposer.id })
+        for (const [who, headers, sub] of [
+          ["the assignee", as(assignee), "/proposals"],
+          ["the assignee", as(assignee), "/barter"],
+          ["the proposer", as(proposer), "/proposals"],
+          ["the proposer", as(proposer), "/bounties"],
+        ] as const) {
+          const res = await get(`${base}${sub}`, headers)
+          expect([who, sub, res.status, res.data]).toEqual([who, sub, 404, notFound])
+        }
+
+        // The creator reads every row whole.
+        const own = await get(`${base}/proposals`, asReviewer)
+        expect([own.status, own.data.proposals?.[0]?.payment_terms]).toEqual([200, POOL_PRIVATE.terms])
+        const ownBounties = await get(`${base}/bounties`, asReviewer)
+        expect(ownBounties.data.bounties.map((row: { id: string }) => row.id).sort()).toEqual([rows.open.id, rows.restricted.id].sort())
       })
 
       it("food producers are the public listing; the owner reads the whole row; a profile switched off answers as a missing one", async () => {
