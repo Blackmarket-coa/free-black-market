@@ -126,8 +126,13 @@ async function deleteSessionsNotForCartTotal(scope: MedusaContainer, cartId: str
  * captured at Stripe without Medusa recording it: money was taken) is left
  * where it is, and this throws, so the caller does not report the cart as
  * settled.
+ *
+ * Also run on its own in front of Mercur's completion
+ * (`api/middlewares/cart-payment-refresh.ts`), for a payment that one of
+ * Medusa's own cart workflows orphaned: their refresh deletes an authorized
+ * session too, and nothing of FBM's runs after it.
  */
-async function retireOrphanedPayments(scope: MedusaContainer, cartId: string): Promise<void> {
+export async function retireOrphanedPayments(scope: MedusaContainer, cartId: string): Promise<void> {
   const cart = await readCart(scope, cartId)
   const orphans = cart ? paymentsLeftWithoutSession(cart) : []
   if (!orphans.length) return

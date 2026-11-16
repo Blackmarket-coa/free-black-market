@@ -7,8 +7,9 @@ import {
   cartPaymentAmountMismatchResponse,
   cartPaymentRefreshFailedResponse,
   judgeCartPaymentAmount,
+  paymentsLeftWithoutSession,
 } from "../../lib/cart-payment-amount"
-import { refreshCartPaymentCollection } from "../../lib/cart-payment-refresh"
+import { refreshCartPaymentCollection, retireOrphanedPayments } from "../../lib/cart-payment-refresh"
 
 const log = createLogger("api/middlewares/cart-payment-refresh")
 
@@ -237,7 +238,14 @@ export function refreshCartPaymentAfter(cartsOf: CartsOf) {
   }
 }
 
-/** The fields the completion check reads: a subset of what Mercur's own completion reads (`completeCartFields`). */
+/**
+ * The fields the completion check reads: the cart's side of the comparison
+ * and its sessions, a subset of what Mercur's own completion reads
+ * (`completeCartFields`), and the collection's payments, for the ones left
+ * without their session. The payment's own session column is read, not the
+ * session through it: a nested read of the session leaves out a payment
+ * whose session is gone.
+ */
 const COMPLETION_FIELDS = [
   "id",
   "completed_at",
@@ -247,6 +255,10 @@ const COMPLETION_FIELDS = [
   "payment_collection.payment_sessions.id",
   "payment_collection.payment_sessions.amount",
   "payment_collection.payment_sessions.status",
+  "payment_collection.payments.id",
+  "payment_collection.payments.payment_session_id",
+  "payment_collection.payments.captured_at",
+  "payment_collection.payments.canceled_at",
 ]
 
 /** Put a refused cart's payment side right, so that the buyer's next step works. A failure is logged; the refusal stands. */
@@ -278,18 +290,30 @@ async function settleAfterRefusal(scope: MedusaRequest["scope"], cartId: string)
  * instruction works: the collection takes the total and the session for the
  * wrong amount is deleted, whichever of the two was behind (its intent is
  * cancelled, releasing a hold the storefront's card confirmation may have
- * placed), and the next session is opened for the cart's total. A captured
- * session is the exception: it is left, and the buyer is sent to support.
+ * placed), a payment that session had authorized is cancelled and taken off
+ * the collection, and the next session is opened for the cart's total. A
+ * captured session is the exception: it is left, and the buyer is sent to
+ * support.
+ *
+ * A completion that passes the check goes on to Mercur's route with no
+ * payment left on the collection whose session is gone: Mercur captures the
+ * collection's first payment, so one an earlier session left (Medusa's own
+ * cart workflows delete an authorized session as readily as FBM's refresh
+ * does, and nothing of FBM's runs after them) would be captured instead of
+ * the one this completion authorizes. Such a payment is cancelled and taken
+ * off first (`retireOrphanedPayments`); when that fails the completion is
+ * refused like one whose amounts cannot be read.
  *
  * Closed on doubt: when the cart cannot be read, or the comparison cannot be
  * made, the completion is refused with the same status and code and a
  * message that says only that (nothing is known then about the total having
- * changed). The read is a subset of the one Mercur's completion makes next,
- * so a cart this cannot read is one that could not have completed. A cart
- * that does not exist goes on to the route, which answers for it.
+ * changed). The read is the cart's side and its sessions, a subset of the
+ * one Mercur's completion makes next, and the collection's payments, so a
+ * cart this cannot read is one that could not have completed. A cart that
+ * does not exist goes on to the route, which answers for it.
  *
- * Read only as far as Coalition Credits go: it resolves the query and the
- * payment refresh, never the ledger (Posture A).
+ * Read only as far as Coalition Credits go: it resolves the query, the
+ * payment refresh and the payment module, never the ledger (Posture A).
  */
 export async function refuseCompletionOnPaymentAmountMismatch(
   req: MedusaRequest,
@@ -314,7 +338,28 @@ export async function refuseCompletionOnPaymentAmountMismatch(
   if (!cart) return next()
 
   const verdict = judgeCartPaymentAmount(cart)
-  if (verdict.ok) return next()
+  if (verdict.ok) {
+    if (paymentsLeftWithoutSession(cart).length) {
+      // Mercur's capture takes the collection's first payment once the order
+      // set is placed, so a payment an earlier session left behind would be
+      // captured in place of the one this completion authorizes (measured in
+      // review, through Medusa's own add-to-cart after an authorization).
+      // Taken off the collection first; and when that cannot be done this
+      // completion does not go on, for the same reason.
+      try {
+        await retireOrphanedPayments(req.scope, cartId)
+      } catch (error) {
+        const refusal = cartPaymentAmountMismatchResponse("amount_unknown")
+        log.error(
+          `[cart-payment] cart ${cartId}: completion refused, a payment left without its session could not be taken off the collection, and Mercur's capture would take it: ${(error as Error)?.message ?? error}`,
+          { cart_id: cartId, reason: "amount_unknown" }
+        )
+        res.status(refusal.status).json(refusal.body)
+        return
+      }
+    }
+    return next()
+  }
 
   const refusal = cartPaymentAmountMismatchResponse(verdict.reason)
   log.error(`[cart-payment] completion refused: ${verdict.detail}; answered ${refusal.status} ${refusal.body.code}, nothing authorized`, {

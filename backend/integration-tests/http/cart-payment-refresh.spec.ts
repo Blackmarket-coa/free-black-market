@@ -916,6 +916,80 @@ medusaIntegrationTestRunner({
     })
 
     /**
+     * SD-115 review: deleting an authorized session leaves its Payment row on
+     * the collection, live, and Mercur's order-set capture takes the
+     * collection's first payment. The review measured both writes below
+     * ending in the cancelled 32.00 intent captured and the new payment left
+     * uncaptured: a delivery change through Mercur's route (Medusa's refresh
+     * inside Mercur's workflow deletes the session) and an add-to-cart through
+     * Medusa's own route (its refresh does, and nothing of FBM's runs after
+     * it). The first is settled by the middleware after Mercur's handler; the
+     * second by the completion check in front of Mercur's route.
+     */
+    describe("a payment an authorized session left behind, on the main checkout (SD-115 review)", () => {
+      afterEach(settleBeforeTeardown)
+
+      async function authorizedTwoSellerCart(w: World) {
+        const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${uid()}@example.com` }])
+        const cart = await w.makeCart([w.productA, w.productB], { customer_id: customer.id, email: customer.email })
+        await pickShipping(w, cart.id, w.optionA.id)
+        await pickShipping(w, cart.id, w.optionB.id)
+        await openCardSession(w, cart.id)
+        const [session] = (await stateOf(cart.id)).sessions
+        await container().resolve(Modules.PAYMENT).authorizePaymentSession(session.id, {})
+        const [held] = await paymentsOf(cart.id)
+        expect(held).toMatchObject({ amount: 32, intent: "pi_test_cpr_1", captured: false, canceled: false })
+        return { cart, customer, held }
+      }
+
+      async function expectPaidOnceAtTotal(w: World, cartId: string, customerId: string, total: number) {
+        await openCardSession(w, cartId)
+        expect(lastIntent()).toMatchObject({ id: "pi_test_cpr_2", amount: total * 100 })
+        expect(expectStatus(await complete(w, cartId), 200).data.order_set?.id).toBeTruthy()
+        await drainSubscribers()
+        // Mercur captured the payment this completion authorized, and only that one.
+        expect(stripe.capture.mock.calls.map((call) => call[0])).toEqual(["pi_test_cpr_2"])
+        expect(await paymentsOf(cartId)).toEqual([{ id: expect.any(String), amount: total, intent: "pi_test_cpr_2", captured: true, canceled: false }])
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customerId })).toHaveLength(2)
+      }
+
+      it("a delivery option changed through Mercur's route after the card was authorized: the payment is cancelled and taken off by the middleware, and the cart then pays at the new total", async () => {
+        const w = await world()
+        const { cart, customer, held } = await authorizedTwoSellerCart(w)
+
+        await pickShipping(w, cart.id, w.optionB2.id)
+        const changed = await stateOf(cart.id)
+        expectInStep(changed, 34)
+        expect(changed.sessions).toEqual([])
+        expect(await paymentsOf(cart.id)).toEqual([])
+        const retired = await storedPayment(held.id)
+        expect(retired?.canceled_at).toBeTruthy()
+        expect(retired?.deleted_at).toBeTruthy()
+
+        await expectPaidOnceAtTotal(w, cart.id, customer.id, 34)
+      })
+
+      it("an item added through Medusa's own route after the card was authorized: nothing of FBM's runs after it, and the payment is taken off before Mercur's completion runs", async () => {
+        const w = await world()
+        const { cart, customer, held } = await authorizedTwoSellerCart(w)
+
+        expectWritten(
+          await api.post(`/store/carts/${cart.id}/line-items`, { variant_id: w.productA.variants[0].id, quantity: 1 }, w.pak).catch(answerOf)
+        )
+        const added = await stateOf(cart.id)
+        expectInStep(added, 42)
+        expect(added.sessions).toEqual([])
+        // Medusa's refresh deleted the authorized session and left its payment, live.
+        expect(await paymentsOf(cart.id)).toEqual([{ id: held.id, amount: 32, intent: "pi_test_cpr_1", captured: false, canceled: false }])
+
+        await expectPaidOnceAtTotal(w, cart.id, customer.id, 42)
+        const retired = await storedPayment(held.id)
+        expect(retired?.canceled_at).toBeTruthy()
+        expect(retired?.deleted_at).toBeTruthy()
+      })
+    })
+
+    /**
      * SD-114 / SD-115 review: the storefront's pay button shows a notice when
      * the card session on the page is not for the cart's total, and offers
      * "Update payment" with it. That action is exactly two of the backend's

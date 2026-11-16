@@ -15,8 +15,10 @@ jest.mock("../../../shared/logger", () => ({
 // what matters is when it is called, for which cart, and what the caller is
 // told when it fails.
 const refreshCartPaymentCollection = jest.fn()
+const retireOrphanedPayments = jest.fn()
 jest.mock("../../../lib/cart-payment-refresh", () => ({
   refreshCartPaymentCollection: (...args: unknown[]) => refreshCartPaymentCollection(...args),
+  retireOrphanedPayments: (...args: unknown[]) => retireOrphanedPayments(...args),
 }))
 
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
@@ -115,6 +117,8 @@ beforeEach(() => {
   logWarn.mockClear()
   refreshCartPaymentCollection.mockReset()
   refreshCartPaymentCollection.mockResolvedValue(undefined)
+  retireOrphanedPayments.mockReset()
+  retireOrphanedPayments.mockResolvedValue(undefined)
 })
 
 describe("the routes it sits in front of", () => {
@@ -389,6 +393,7 @@ describe("POST /store/carts/:id/complete: a session for another amount is refuse
     expect(t.next).toHaveBeenCalledWith()
     expect(t.sendJson).not.toHaveBeenCalled()
     expect(refreshCartPaymentCollection).not.toHaveBeenCalled()
+    expect(retireOrphanedPayments).not.toHaveBeenCalled()
     expect(t.graph).toHaveBeenCalledWith({
       entity: "cart",
       fields: [
@@ -400,8 +405,64 @@ describe("POST /store/carts/:id/complete: a session for another amount is refuse
         "payment_collection.payment_sessions.id",
         "payment_collection.payment_sessions.amount",
         "payment_collection.payment_sessions.status",
+        "payment_collection.payments.id",
+        "payment_collection.payments.payment_session_id",
+        "payment_collection.payments.captured_at",
+        "payment_collection.payments.canceled_at",
       ],
       filters: { id: "cart_1" },
+    })
+  })
+
+  describe("a payment left on the collection by a session that is gone, on a cart whose session is for its total (SD-115 review)", () => {
+    // What Medusa's own add-to-cart leaves after an authorization: its
+    // refresh deleted the authorized session, the payment stayed, and the
+    // buyer's new session is for the new total.
+    const orphaned = (payments: Array<Record<string, unknown>>) => ({
+      ...cartWith(36, 36),
+      payment_collection: { id: "pay_col_1", payment_sessions: [{ id: "payses_new", amount: 36, status: "pending" }], payments },
+    })
+
+    it("is taken off the collection before the route runs, since Mercur's capture takes the collection's first payment", async () => {
+      const t = request({ methods: [], carts: { cart_1: orphaned([{ id: "pay_old", payment_session_id: "payses_deleted", captured_at: null }]) } })
+      retireOrphanedPayments.mockImplementation(async () => {
+        t.events.push("retired")
+      })
+      await handler(t.req, t.res, t.next)
+
+      expect(retireOrphanedPayments).toHaveBeenCalledWith(t.req.scope, "cart_1")
+      expect(t.next).toHaveBeenCalledTimes(1)
+      expect(t.next).toHaveBeenCalledWith()
+      expect(t.sendJson).not.toHaveBeenCalled()
+      expect(t.events).toEqual(["read cart_1", "retired"])
+      expect(refreshCartPaymentCollection).not.toHaveBeenCalled()
+    })
+
+    it("when that fails the completion does not go on: Mercur would capture that payment", async () => {
+      const t = request({ methods: [], carts: { cart_1: orphaned([{ id: "pay_old", payment_session_id: "payses_deleted" }]) } })
+      retireOrphanedPayments.mockRejectedValue(new Error("stripe unavailable"))
+      await handler(t.req, t.res, t.next)
+
+      expect(t.next).not.toHaveBeenCalled()
+      expect(t.raw.statusCode).toBe(409)
+      expect(t.raw.body).toEqual({ ...refusal, message: CART_PAYMENT_AMOUNT_UNCONFIRMED_MESSAGE })
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("Mercur's capture would take it: stripe unavailable"), {
+        cart_id: "cart_1",
+        reason: "amount_unknown",
+      })
+    })
+
+    it("nothing is retired for a payment whose session is still there, one that captured, or on a cart whose payments were not read", async () => {
+      for (const cart of [
+        orphaned([{ id: "pay_live", payment_session_id: "payses_new" }]),
+        orphaned([{ id: "pay_taken", payment_session_id: "payses_deleted", captured_at: "2026-11-16T00:00:00.000Z" }]),
+        cartWith(36, 36),
+      ]) {
+        const t = request({ methods: [], carts: { cart_1: cart } })
+        await handler(t.req, t.res, t.next)
+        expect(t.next).toHaveBeenCalledTimes(1)
+      }
+      expect(retireOrphanedPayments).not.toHaveBeenCalled()
     })
   })
 
