@@ -16,11 +16,13 @@
  * with `*seller`.
  *
  * One thing the page asks for is not for rendering and must not reach a
- * browser: `seller.products`. The link returns every product of the seller,
- * drafts and products outside the storefront's sales channel included, so it
- * is only the list of handles to ask the listing for (`moreFromSellerHandles`),
- * and `lib/data/products.ts` takes it off the product before any component
- * sees it.
+ * browser: `seller.products`. Until SD-118 the link returned every product of
+ * the seller, drafts and products outside the storefront's sales channel
+ * included; the backend now serves it as the listing would (published, in the
+ * key's channel). It is still only the list of handles to ask the listing for
+ * (`moreFromSellerHandles`), and `lib/data/products.ts` still takes it off the
+ * product before any component sees it: the page does not depend on the
+ * backend's filter.
  *
  * Pure and import-free on purpose:
  * `backend/integration-tests/http/store-product-page-query.spec.ts` loads this
@@ -148,12 +150,14 @@ type SellerProductCandidate = {
  * The handles to ask the listing for to fill "More from this seller": the
  * seller's other published products, a few more than are shown.
  *
- * `seller.products` is every product linked to the seller. The status check
- * keeps drafts, proposals and rejected products from using up the candidates,
- * but it is not the gate: a published product outside the storefront's sales
- * channel passes it. The gate is the listing itself (`GET /store/products`
- * serves only published products in the publishable key's channel), and the
- * section renders only what that returns.
+ * `seller.products` is the seller's products as the backend serves the link:
+ * since SD-118, the published ones in the storefront's sales channel. The
+ * status check stays for a backend that does not filter (it kept drafts,
+ * proposals and rejected products from using up the candidates), and it was
+ * never the gate: a published product outside the channel passed it. The gate
+ * is the listing itself (`GET /store/products` serves only published products
+ * in the publishable key's channel), and the section renders only what that
+ * returns.
  */
 export const moreFromSellerHandles = (product: {
   id: string
