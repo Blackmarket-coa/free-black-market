@@ -179,15 +179,20 @@ describe("reviewVendorDebit", () => {
     checked_at: after(30 * 24 * 60 * 60 * 1000),
     order_payout_ids: [],
     order_settled_to_vendor: { sel_vendor: true },
+    // Captured at placement: the order settled the moment it was placed.
+    order_settled_at: { sel_vendor: PLACED },
+    order_settlement_reversed: {},
+    order_refunds: [],
     vendor_withdrawals: { sel_vendor: [] },
   }
+  const DAY = 24 * 60 * 60 * 1000
   const planFor = (rows: StoredAttributionAmounts[]) => {
     const plan = planCommissionMinorUnitCorrection(rows, usd25) as CommissionMinorUnitCorrection
     if (plan.action !== "correct") throw new Error(`expected a correction, got ${JSON.stringify(plan)}`)
     return plan
   }
 
-  it("lets the correction go ahead when the vendor sold the order, its proceeds reached them, and they have not been paid out since", () => {
+  it("lets the correction go ahead when the vendor sold the order, its proceeds reached them, it was not refunded, and they have not been paid out since", () => {
     const rows = [row()]
     expect(vendorsDebitedOnApproval(rows)).toEqual(["sel_vendor"])
     expect(reviewVendorDebit(planFor(rows), rows, clean)).toBeNull()
@@ -224,18 +229,128 @@ describe("reviewVendorDebit", () => {
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_settled_to_vendor: { sel_consignor: true } })).toContain(never)
   })
 
+  it("says a refund reversed the proceeds, not that they never arrived, when the vendor's settlement leg is REVERSED", () => {
+    const rows = [row()]
+    const reason = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      order_settled_to_vendor: { sel_vendor: false },
+      order_settled_at: { sel_vendor: null },
+      order_settlement_reversed: { sel_vendor: true },
+    })
+    expect(reason).toContain(
+      "the order's proceeds reached vendor sel_vendor's earnings in the ledger and a refund reversed them (its settlement leg is REVERSED)"
+    )
+    expect(reason).not.toContain("never reached")
+    // A reversed leg never stands in for one that moved money: with the
+    // vendor still settled by another leg, the order passes.
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_settlement_reversed: { sel_vendor: true } })).toBeNull()
+  })
+
+  it("lists an order refunded in the ledger while its attribution is still held, naming the refund legs", () => {
+    const rows = [row()]
+    const off = (id: string, amount = 19.4) => ({ id, status: "COMPLETED", amount, from_vendor_id: "sel_vendor" })
+    const other = (id: string, amount = 20) => ({ id, status: "COMPLETED", amount, from_vendor_id: null })
+    const fromVendor = "the order was refunded out of vendor sel_vendor's earnings (refund leg hle_r1 19.4 COMPLETED)"
+    const notReversed = "and its attribution was not reversed (a refund does not reverse a held attribution; only a cancellation does)"
+
+    // A card order refunded in part: the seller's share came out of the
+    // vendor's earnings and the settlement leg is still COMPLETED.
+    const partial = reviewVendorDebit(planFor(rows), rows, { ...clean, order_refunds: [other("hle_fee", 0.6), off("hle_r1"), other("hle_cust")] })
+    expect(partial).toContain(`${fromVendor} ${notReversed}`)
+    expect(partial).toContain("from 2 to 250")
+    expect(partial).not.toContain("with nothing taken from")
+
+    // Refunded with nothing taken from the vendor (they held nothing; the
+    // ledger records it as owed): still a refund of an order whose row is held.
+    const owed = reviewVendorDebit(planFor(rows), rows, { ...clean, order_refunds: [other("hle_fee", 0.6), other("hle_cust")] })
+    expect(owed).toContain(
+      `the order was refunded in the ledger (refund leg hle_fee 0.6 COMPLETED, refund leg hle_cust 20 COMPLETED) ` +
+        `with nothing taken from sel_vendor's earnings, ${notReversed}`
+    )
+    // A leg off another vendor's earnings is not this vendor's.
+    expect(
+      reviewVendorDebit(planFor(rows), rows, { ...clean, order_refunds: [{ ...off("hle_r1"), from_vendor_id: "sel_other" }] })
+    ).toContain("with nothing taken from sel_vendor's earnings")
+
+    // More than three are cut short.
+    const many = reviewVendorDebit(planFor(rows), rows, { ...clean, order_refunds: ["a", "b", "c", "d"].map((id) => off(`hle_${id}`, 1)) })
+    expect(many).toContain("(refund leg hle_a 1 COMPLETED, refund leg hle_b 1 COMPLETED, refund leg hle_c 1 COMPLETED, …)")
+  })
+
   it("lists an order placed inside the payout window that Mercur has not paid yet; one exactly at the window's end passes", () => {
     const rows = [row()]
     const recent = "inside the 48 hours in which the nightly payout sends an order's proceeds to its vendor"
     expect(PAYOUT_WINDOW_MS).toBe(2 * 24 * 60 * 60 * 1000)
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(60 * 60 * 1000) })).toContain(
-      `the order was placed 1 hours before this check, ${recent}, and no payout for it exists yet`
+      `the order was placed 1 hour before this check, ${recent}, and no payout for it exists yet`
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(2 * 60 * 60 * 1000) })).toContain(
+      "the order was placed 2 hours before this check"
     )
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(PAYOUT_WINDOW_MS - 1) })).toContain(recent)
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(PAYOUT_WINDOW_MS) })).toBeNull()
     // A check time before the placement, or one that cannot be read, lists it too.
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: after(-1000) })).toContain(recent)
     expect(reviewVendorDebit(planFor(rows), rows, { ...clean, checked_at: "not a date" })).toContain("an unknown time")
+  })
+
+  it("counts the payout window from when the order settled to the vendor when that is later than its placement", () => {
+    const rows = [row()]
+    const recent = "inside the 48 hours in which the nightly payout sends an order's proceeds to its vendor, and no payout for it exists yet"
+    // Placed five days before its payment was captured; settled at capture.
+    const lateCapture = { ...clean, order_settled_at: { sel_vendor: after(5 * DAY) } }
+
+    // Checked 25 ms after it settled: five days after placement, and the
+    // nightly payout will send it tonight.
+    expect(reviewVendorDebit(planFor(rows), rows, { ...lateCapture, checked_at: after(5 * DAY + 25) })).toContain(
+      `the order's proceeds reached the vendor's earnings 0 hours before this check (the order was placed 120 hours before it), ${recent}`
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, { ...lateCapture, checked_at: after(5 * DAY + PAYOUT_WINDOW_MS - 1) })).toContain(
+      "the order's proceeds reached the vendor's earnings 47 hours before this check (the order was placed 167 hours before it)"
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, { ...lateCapture, checked_at: after(5 * DAY + PAYOUT_WINDOW_MS) })).toBeNull()
+
+    // A settlement stamped before the placement does not shorten the window.
+    const early = { ...clean, order_settled_at: { sel_vendor: after(-DAY) } }
+    expect(reviewVendorDebit(planFor(rows), rows, { ...early, checked_at: after(PAYOUT_WINDOW_MS - 1) })).toContain(
+      "the order was placed 47 hours before this check"
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, { ...early, checked_at: after(PAYOUT_WINDOW_MS) })).toBeNull()
+
+    // Settled, but when is missing or unreadable: it cannot be shown to be
+    // outside the window, however old the order.
+    const unreadable: Array<Record<string, string | null>> = [{}, { sel_vendor: null }, { sel_vendor: "not a date" }]
+    for (const order_settled_at of unreadable) {
+      expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_settled_at })).toContain(
+        "the order's proceeds reached the vendor's earnings an unknown time before this check (the order was placed 720 hours before it)"
+      )
+    }
+
+    // A vendor the order never settled to has no settlement time to count from.
+    const unsettled = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      order_settled_to_vendor: { sel_vendor: false },
+      order_settled_at: { sel_vendor: after(30 * DAY - 1000) },
+    })
+    expect(unsettled).toContain("never reached")
+    expect(unsettled).not.toContain("nightly payout")
+  })
+
+  it("keeps an unreadable settlement time when a later vendor's is readable", () => {
+    // Two levels, two vendors: the first settled at an unknown time, the
+    // second a month ago. The unknown one must still list the order.
+    const rows = [
+      row({ id: "a", level: 1, vendor_id: "sel_a" }),
+      row({ id: "b", level: 2, vendor_id: "sel_b", level_split_percent: 20, commission_amount_cents: 0 }),
+    ]
+    const reason = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      order_seller_id: "sel_a",
+      order_settled_to_vendor: { sel_a: true, sel_b: true },
+      order_settled_at: { sel_a: null, sel_b: PLACED },
+      vendor_withdrawals: {},
+    })
+    expect(reason).toContain("the order's proceeds reached the vendor's earnings an unknown time before this check")
   })
 
   it("names the Mercur payout, not the window, for a recent order Mercur already paid", () => {
@@ -261,6 +376,8 @@ describe("reviewVendorDebit", () => {
       order_seller_id: "sel_other",
       checked_at: after(60 * 60 * 1000),
       order_settled_to_vendor: {},
+      order_settled_at: {},
+      order_refunds: [{ id: "hle_r1", status: "COMPLETED", amount: 19.4, from_vendor_id: "sel_vendor" }],
       vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
     }
     for (const rows of [

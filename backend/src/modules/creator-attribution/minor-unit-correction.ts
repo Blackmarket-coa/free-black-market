@@ -252,11 +252,21 @@ export function planCommissionMinorUnitCorrection(
 }
 
 /**
- * How long after an order is placed the nightly payout can still be about to
- * send its proceeds to the vendor. The job runs once a day
- * (`jobs/daily-payouts.ts`, "0 0 * * *") and pays every order not paid yet,
- * so an order waits up to a day for its run, and the run's own queue, delays
- * and retries take it past that. Two days.
+ * How long the nightly payout can still be about to send an order's proceeds
+ * to the vendor. The job runs once a day (`jobs/daily-payouts.ts`,
+ * "0 0 * * *") and pays every order not paid yet, so an order waits up to a
+ * day for its run, and the run's own queue, delays and retries take it past
+ * that. Two days.
+ *
+ * Counted from the later of the order's placement and its settlement to the
+ * vendor's earnings, not from placement alone. An order settles only once
+ * its money is captured, and the payout pays what was captured. Stripe
+ * intents here are manual-capture (the provider is registered with no
+ * `capture` option, `medusa-config.ts`); Mercur's
+ * `order-set-placed-payment-capture` subscriber captures a cart's payment
+ * right after it is placed, but when that capture fails and is made later
+ * the proceeds reach the vendor days after the order. An order placed a week
+ * ago and captured this morning is paid tonight.
  */
 export const PAYOUT_WINDOW_MS = 2 * 24 * 60 * 60 * 1000
 
@@ -282,6 +292,30 @@ export type VendorDebitContext = {
    */
   order_settled_to_vendor: Readonly<Record<string, boolean>>
   /**
+   * Per vendor id: when the latest of those legs was written (ISO), which is
+   * when the order's proceeds reached that vendor. The payout window is
+   * counted from it when it is later than the placement. A vendor settled
+   * above with no time here counts as settled at an unknown time.
+   */
+  order_settled_at: Readonly<Record<string, string | null>>
+  /**
+   * Per vendor id: a settlement leg of this order credited that vendor's
+   * earnings and is now REVERSED: a refund undid it (a card order refunded in
+   * full, a wallet order refunded at all). Only changes what the review line
+   * says for a vendor not settled above.
+   */
+  order_settlement_reversed: Readonly<Record<string, boolean>>
+  /**
+   * The order's REFUND legs that moved money, whoever they debited (the
+   * customer's leg, the fee reversal, the seller's share). `from_vendor_id`
+   * names the attributed vendor whose SELLER_EARNINGS a leg came out of, or
+   * is null. A refund does not reverse a held attribution (nothing emits the
+   * `order.refund_created` its reversal listens for; only `order.canceled`
+   * does), so any of these on an order whose row is still creditable means
+   * the commission is on a sale that was undone in part or in full.
+   */
+  order_refunds: ReadonlyArray<{ id: string; status: string; amount: number; from_vendor_id: string | null }>
+  /**
    * Per vendor id: money that left that vendor's earnings after the order was
    * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; WITHDRAWAL
    * or VENDOR_PAYMENT legs off their SELLER_EARNINGS that moved money).
@@ -299,7 +333,9 @@ export function vendorsDebitedOnApproval(rows: readonly StoredAttributionAmounts
 
 /** An age in whole hours for a review line, or "an unknown time" when it cannot be read. */
 function describeAge(ms: number): string {
-  return Number.isFinite(ms) ? `${Math.max(0, Math.floor(ms / 3_600_000))} hours` : "an unknown time"
+  if (!Number.isFinite(ms)) return "an unknown time"
+  const hours = Math.max(0, Math.floor(ms / 3_600_000))
+  return `${hours} ${hours === 1 ? "hour" : "hours"}`
 }
 
 /**
@@ -318,21 +354,30 @@ function describeAge(ms: number): string {
  *   creator's link or promo code, never from the order; under Mercur's split
  *   a cart's other sellers' orders carry the link's vendor too), or the order
  *   has no seller to compare with;
- * - names a vendor whose earnings the order's proceeds never entered: no
- *   settlement leg of the order that moved money credits them. Settlement
- *   with FF_CARD_ORDER_LEDGER_V1 off throws before any leg (SD-39), a charge
- *   on a partner's connected account settles nothing here, a card order in
- *   another currency is refused, and a consignment split can send the whole
- *   seller side to the consignor. The debit would then come out of other
- *   orders' proceeds, or fail on an empty account;
+ * - names a vendor whose earnings do not hold the order's proceeds: no
+ *   settlement leg of the order that moved money credits them. Either none
+ *   was written (settlement with FF_CARD_ORDER_LEDGER_V1 off throws before
+ *   any leg, SD-39; a charge on a partner's connected account settles
+ *   nothing here; a card order in another currency is refused; a consignment
+ *   split can send the whole seller side to the consignor), or a refund
+ *   reversed it. The debit would then come out of other orders' proceeds, or
+ *   fail on an empty account;
+ * - is on an order that has been refunded in the ledger, in part or in full:
+ *   a REFUND leg of the order moved money. A refund does not reverse a held
+ *   attribution (only a cancellation does), and a card order refunded in
+ *   part keeps its settlement leg, so without this the full commission would
+ *   be debited for a sale the vendor gave most of back;
  * - names a vendor who has been paid out since the order was placed: a
  *   payout request that moved money, or a withdrawal or a payment to another
  *   vendor off their earnings. The commission was never carved out of that
  *   money, so the debit would come out of later sales' proceeds;
  * - is on an order whose proceeds a Mercur payout already sent;
- * - is on an order placed less than {@link PAYOUT_WINDOW_MS} before the
- *   check with no Mercur payout yet: the nightly payout has not reached it,
- *   and will send its proceeds in full, commission included; or
+ * - is on an order placed, or settled to the vendor's earnings, less than
+ *   {@link PAYOUT_WINDOW_MS} before the check with no Mercur payout yet: the
+ *   nightly payout has not reached it, and will send its proceeds in full,
+ *   commission included. Settled, because an order whose payment was
+ *   captured days after it was placed is paid out the night after the
+ *   capture; or
  * - the order's placement time is unknown, so the above cannot be checked.
  *
  * Rows approve-held will not credit (reversed, disqualified) and rows with no
@@ -340,15 +385,18 @@ function describeAge(ms: number): string {
  *
  * WHAT A NULL DOES NOT MEAN. This looks once, at `checked_at`. The debit
  * happens at approve-held, after the row's hold (7 days by default) and only
- * once crediting works, and nothing looks again then: a vendor paid out between this check
- * and that debit (an order older than the window whose seller only later
- * gets an active payout account, a payout request raised the next day) is
- * debited the full commission out of whatever they hold by then. Commission
- * is not reserved from the vendor at settlement, for corrected rows or for
- * any new attributed order; until it is, or until approve-held makes these
- * checks itself, this narrows the cases and settles none of them. Hence: run
- * the script immediately before the repair that makes crediting work
- * deploys, not earlier.
+ * once crediting works, and nothing looks again then: a vendor paid out
+ * between this check and that debit (an order older than the window whose
+ * seller only later gets an active payout account, a payout request raised
+ * the next day), or an order refunded in between, is debited the full
+ * commission out of whatever the vendor holds by then. Nor does it read
+ * every way money leaves a vendor's earnings: recoveries of what a vendor
+ * owes (ADJUSTMENT legs taken from the seller credit at settlement) and
+ * advance repayments are not looked at. Commission is not reserved from the
+ * vendor at settlement, for corrected rows or for any new attributed order;
+ * until it is, or until approve-held makes these checks itself, this narrows
+ * the cases and settles none of them. Hence: run the script immediately
+ * before the repair that makes crediting work deploys, not earlier.
  */
 export function reviewVendorDebit(
   plan: Extract<CommissionMinorUnitCorrection, { action: "correct" }>,
@@ -375,9 +423,20 @@ export function reviewVendorDebit(
     }
     if (ctx.order_settled_to_vendor[vendor] !== true) {
       reasons.push(
-        `the order's proceeds never reached vendor ${vendor}'s earnings in the ledger ` +
-          `(no settlement leg of the order that moved money credits them), ` +
-          `so the debit would come out of other orders' proceeds`
+        ctx.order_settlement_reversed[vendor] === true
+          ? `the order's proceeds reached vendor ${vendor}'s earnings in the ledger and a refund reversed them ` +
+              `(its settlement leg is REVERSED), so the debit would come out of other orders' proceeds`
+          : `the order's proceeds never reached vendor ${vendor}'s earnings in the ledger ` +
+              `(no settlement leg of the order that moved money credits them), ` +
+              `so the debit would come out of other orders' proceeds`
+      )
+    }
+    const refunded = ctx.order_refunds.filter((r) => r.from_vendor_id === vendor)
+    if (refunded.length) {
+      const shown = refunded.slice(0, 3).map((r) => `refund leg ${r.id} ${r.amount} ${r.status}`)
+      reasons.push(
+        `the order was refunded out of vendor ${vendor}'s earnings (${shown.join(", ")}${refunded.length > 3 ? ", …" : ""}) ` +
+          `and its attribution was not reversed (a refund does not reverse a held attribution; only a cancellation does)`
       )
     }
     const paid = ctx.vendor_withdrawals[vendor] ?? []
@@ -389,17 +448,50 @@ export function reviewVendorDebit(
       )
     }
   }
+  if (ctx.order_refunds.length && !ctx.order_refunds.some((r) => r.from_vendor_id !== null && vendors.includes(r.from_vendor_id))) {
+    // Refunded, but not out of the attributed vendor's earnings: they held
+    // nothing to take (the ledger records the refund as owed by the vendor),
+    // or the order settled to someone else.
+    const shown = ctx.order_refunds.slice(0, 3).map((r) => `refund leg ${r.id} ${r.amount} ${r.status}`)
+    reasons.push(
+      `the order was refunded in the ledger (${shown.join(", ")}${ctx.order_refunds.length > 3 ? ", …" : ""}) ` +
+        `with nothing taken from ${vendors.join(", ")}'s earnings, and its attribution was not reversed ` +
+        `(a refund does not reverse a held attribution; only a cancellation does)`
+    )
+  }
   if (ctx.order_payout_ids.length) {
     reasons.push(`the order's proceeds were already sent to the vendor by Mercur payout ${ctx.order_payout_ids.join(", ")}`)
   } else if (ctx.order_placed_at) {
     // Not paid by Mercur yet. Inside the payout window that is only because
-    // the nightly run has not reached the order. `!(>=)` so an unreadable
-    // time on either side lists the order too.
-    const age = Date.parse(ctx.checked_at) - Date.parse(ctx.order_placed_at)
+    // the nightly run has not reached the order. The window runs from the
+    // later of the placement and the settlement to a vendor debited: the
+    // payout pays captured money, and a capture can come days after the
+    // order. `!(<=)` and `!(>=)` so an unreadable time anywhere lists the
+    // order too, and once one is unreadable no later vendor's time replaces
+    // it.
+    const checkedAt = Date.parse(ctx.checked_at)
+    const placedAt = Date.parse(ctx.order_placed_at)
+    let windowStart = placedAt
+    let settledLater = false
+    for (const vendor of vendors) {
+      if (Number.isNaN(windowStart)) break
+      if (ctx.order_settled_to_vendor[vendor] !== true) continue
+      const settledAt = Date.parse(ctx.order_settled_at[vendor] ?? "")
+      if (!(settledAt <= windowStart)) {
+        windowStart = settledAt
+        settledLater = true
+      }
+    }
+    const age = checkedAt - windowStart
     if (!(age >= PAYOUT_WINDOW_MS)) {
+      const window =
+        `inside the ${PAYOUT_WINDOW_MS / 3_600_000} hours in which the nightly payout sends an order's proceeds ` +
+        `to its vendor, and no payout for it exists yet`
       reasons.push(
-        `the order was placed ${describeAge(age)} before this check, inside the ${PAYOUT_WINDOW_MS / 3_600_000} hours ` +
-          `in which the nightly payout sends an order's proceeds to its vendor, and no payout for it exists yet`
+        settledLater
+          ? `the order's proceeds reached the vendor's earnings ${describeAge(age)} before this check ` +
+              `(the order was placed ${describeAge(checkedAt - placedAt)} before it), ${window}`
+          : `the order was placed ${describeAge(age)} before this check, ${window}`
       )
     }
   }

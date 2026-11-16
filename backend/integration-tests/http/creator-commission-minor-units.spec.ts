@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { refundPaymentWorkflow } from "@medusajs/medusa/core-flows"
 import { PAYOUT_MODULE } from "@mercurjs/b2c-core/modules/payout"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../src/modules/creator-attribution"
@@ -268,7 +269,7 @@ medusaIntegrationTestRunner({
         // attribute-order-on-placed (the Redis event bus runs an event's
         // subscribers with Promise.all), and if it reads the attribution
         // first the stored breakdown has no creator line. A pre-existing
-        // race, recorded in the SD-95 follow-up; the creator's credit is
+        // race, recorded as SD-100 (4); the creator's credit is
         // unaffected, because approve-held reads the attribution row.
         process.env[CARD] = "true"
         const payments = container().resolve(Modules.PAYMENT)
@@ -345,10 +346,11 @@ medusaIntegrationTestRunner({
      * linked to its seller the way Mercur's split links a placed order.
      *
      * The script corrects a held row only when the order's proceeds reached
-     * the vendor's earnings and the order is past the payout window, so an
-     * order a case expects corrected is settled for real (`settle`: payment
-     * captured, then the settlement subscriber under FF_CARD_ORDER_LEDGER_V1)
-     * and the script is run as of three days on (`afterPayoutWindow`).
+     * the vendor's earnings and the order is past the payout window, counted
+     * from when it settled, so an order a case expects corrected is settled
+     * for real (`settle`: payment captured, then the settlement subscriber
+     * under FF_CARD_ORDER_LEDGER_V1) and the script is run as of three days
+     * on (`afterPayoutWindow`).
      */
     describe("scripts/fix-creator-commission-minor-units.ts", () => {
       const card = cardOrderFixtures(getContainer)
@@ -365,15 +367,16 @@ medusaIntegrationTestRunner({
       const afterPayoutWindow = () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
 
       /**
-       * Settle the order as a card order settles: its payment captured, then
-       * the real `order.placed` settlement subscriber. Returns the leg that
-       * credited the seller's earnings, checked to be the one the script
-       * looks for.
+       * Settle the order as a card order settles when its payment is captured
+       * at placement: the payment captured, then the real `order.placed`
+       * settlement subscriber. Returns the leg that credited the seller's
+       * earnings, checked to be the one the script looks for, and the payment.
        */
       async function settle(orderId: string, sellerId: string) {
+        let paymentId: string
         process.env[CARD] = "true"
         try {
-          await card.pay([orderId], 25, { capture: true })
+          ;({ paymentId } = await card.pay([orderId], 25, { capture: true }))
           await card.placed(orderId)
         } finally {
           delete process.env[CARD]
@@ -382,8 +385,16 @@ medusaIntegrationTestRunner({
         const [leg] = await hawala().listLedgerEntries({ idempotency_key: `order-payment-${orderId}-seller` })
         expect(leg).toMatchObject({ status: "COMPLETED", entry_type: "TRANSFER", order_id: orderId })
         expect(leg.credit_account_id).toBe((await card.sellerEarnings(sellerId)).id)
-        return leg as { id: string }
+        return { id: leg.id as string, paymentId }
       }
+
+      /** The order's refund legs that moved money, as the script reads them. */
+      const refundLegs = async (orderId: string) =>
+        (await hawala().listLedgerEntries({ order_id: orderId, entry_type: "REFUND", status: ["COMPLETED", "SETTLED"] })) as Array<{
+          id: string
+          amount: unknown
+          debit_account_id: string
+        }>
 
       /** A Mercur payout of the order, recorded as Mercur's nightly job records one (`order_payout`). */
       async function mercurPayout(orderId: string, amount: number) {
@@ -768,9 +779,10 @@ medusaIntegrationTestRunner({
         const today = await fixCreatorCommissionMinorUnits(container(), { apply: true })
         const todays = Object.fromEntries(today.review.map((r) => [r.order_id, r.reason]))
         expect(today.corrected).toEqual([])
+        // It settled moments after it was placed; the window runs from that.
         expect(why(todays[recentOrder.id])).toBe(
-          "the order was placed 0 hours before this check, inside the 48 hours in which the nightly payout " +
-            "sends an order's proceeds to its vendor, and no payout for it exists yet"
+          "the order's proceeds reached the vendor's earnings 0 hours before this check (the order was placed 0 hours before it), " +
+            "inside the 48 hours in which the nightly payout sends an order's proceeds to its vendor, and no payout for it exists yet"
         )
         expect(why(todays[mercurOrder.id])).toBe(
           `the order's proceeds were already sent to the vendor by Mercur payout ${payout.id}`
@@ -806,6 +818,167 @@ medusaIntegrationTestRunner({
             currency_code: "usd",
           },
         ])
+      })
+
+      it("counts the payout window from the settlement: an order placed 5 days ago whose payment is captured only now is listed, and corrected once 2 days have passed since it settled", async () => {
+        const vendor = await makeSeller("LateCapture")
+        const order = await order25(vendor.id)
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        await pg.raw(`UPDATE "order" SET created_at = now() - interval '120 hours' WHERE id = ?`, [order.id])
+        const row = await attributionRow(order.id, vendor.id)
+
+        // Authorised at placement and not captured. Stripe intents here are
+        // manual-capture (the provider is registered with no `capture`
+        // option); Mercur's capture-on-placement subscriber normally
+        // captures at once, and this is the order it did not capture. The
+        // order.placed settlement finds nothing captured and writes no leg.
+        process.env[CARD] = "true"
+        const { paymentId } = await card.pay([order.id], 25, { capture: false })
+        await card.placed(order.id)
+        expect(await hawala().listLedgerEntries({ order_id: order.id })).toEqual([])
+
+        // Run now, five days after the order: nothing has reached the vendor.
+        const uncaptured = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        expect(uncaptured.corrected).toEqual([])
+        expect(uncaptured.review.map((r) => r.order_id)).toEqual([order.id])
+        expect(why(uncaptured.review[0].reason)).toBe(
+          `the order's proceeds never reached vendor ${vendor.id}'s earnings in the ledger ` +
+            `(no settlement leg of the order that moved money credits them), so the debit would come out of other orders' proceeds`
+        )
+        expect(uncaptured.never_settled).toEqual([order.id])
+
+        // The payment is captured today and `payment.captured` settles the
+        // order: the nightly payout will send these proceeds tonight.
+        await card.setProvider(paymentId, "pp_system_default")
+        await container().resolve(Modules.PAYMENT).capturePayment({ payment_id: paymentId, amount: 25 })
+        await card.setProvider(paymentId, "pp_stripe_stripe")
+        await card.captured(paymentId)
+        delete process.env[CARD]
+        await drainSubscribers()
+        const [leg] = await hawala().listLedgerEntries({ idempotency_key: `order-payment-${order.id}-seller` })
+        expect(leg).toMatchObject({ status: "COMPLETED", entry_type: "TRANSFER", order_id: order.id })
+        expect(leg.credit_account_id).toBe((await card.sellerEarnings(vendor.id)).id)
+
+        // Run now, as the CLI does: the order is five days old, its proceeds
+        // minutes old. Listed for the settlement's age and nothing else.
+        const today = await fixCreatorCommissionMinorUnits(container(), { apply: true })
+        expect(today.corrected).toEqual([])
+        expect(today.review.map((r) => r.order_id)).toEqual([order.id])
+        expect(why(today.review[0].reason)).toBe(
+          "the order's proceeds reached the vendor's earnings 0 hours before this check (the order was placed 120 hours before it), " +
+            "inside the 48 hours in which the nightly payout sends an order's proceeds to its vendor, and no payout for it exists yet"
+        )
+        expect(today.never_settled).toEqual([])
+        expect(await read(row.id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
+
+        // One millisecond short of two days after the leg was written: still
+        // listed. At two days: corrected.
+        const settledAt = new Date(leg.created_at).getTime()
+        const almost = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: new Date(settledAt + 2 * 24 * 60 * 60 * 1000 - 1) })
+        expect(almost.corrected).toEqual([])
+        expect(why(almost.review[0].reason)).toContain("the order's proceeds reached the vendor's earnings 47 hours before this check")
+        const later = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: new Date(settledAt + 2 * 24 * 60 * 60 * 1000) })
+        expect(later.review).toEqual([])
+        expect(later.corrected.map((c) => c.order_id)).toEqual([order.id])
+        expect(await read(row.id)).toMatchObject({ subtotal: 2500, commission: 250, status: CommissionStatus.HELD })
+      })
+
+      it("lists a held row whose order was refunded in the ledger, in part, in full, or with nothing left to take from the vendor: a card refund leaves the attribution held", async () => {
+        const notReversed = "and its attribution was not reversed (a refund does not reverse a held attribution; only a cancellation does)"
+        const statusOf = async (id: string) => (await read(id)).status
+
+        // Refunded in part, $20 of $25, through Medusa's own refund workflow
+        // (the admin "Refund Payment" route). It emits `payment.refunded` and
+        // nothing about the order; the app's own subscribers take it from
+        // the event bus.
+        const partVendor = await makeSeller("PartRefund")
+        const partOrder = await order25(partVendor.id)
+        const partRow = await attributionRow(partOrder.id, partVendor.id)
+        const part = await settle(partOrder.id, partVendor.id)
+        const partEarnings = await card.sellerEarnings(partVendor.id)
+        expect(card.cents(partEarnings.balance)).toBe(2425)
+        process.env[CARD] = "true"
+        await refundPaymentWorkflow(container()).run({ input: { payment_id: part.paymentId, amount: 20 } })
+        await drainSubscribers()
+        delete process.env[CARD]
+        // The ledger took the seller's share of the refund out of the
+        // vendor's earnings and left the settlement leg as it was.
+        const partLegs = await refundLegs(partOrder.id)
+        const partOffVendor = partLegs.filter((l) => l.debit_account_id === partEarnings.id)
+        expect(partOffVendor.map((l) => card.cents(l.amount))).toEqual([1940])
+        expect(card.cents((await card.sellerEarnings(partVendor.id)).balance)).toBe(485)
+        expect((await hawala().listLedgerEntries({ id: part.id }))[0].status).toBe("COMPLETED")
+        // And nothing reversed the attribution.
+        expect(await statusOf(partRow.id)).toBe(CommissionStatus.HELD)
+
+        // Refunded in full: the settlement legs are marked REVERSED.
+        const fullVendor = await makeSeller("FullRefund")
+        const fullOrder = await order25(fullVendor.id)
+        const fullRow = await attributionRow(fullOrder.id, fullVendor.id)
+        const full = await settle(fullOrder.id, fullVendor.id)
+        const fullEarnings = await card.sellerEarnings(fullVendor.id)
+        process.env[CARD] = "true"
+        await card.refund(full.paymentId, 25)
+        await card.refunded(full.paymentId)
+        delete process.env[CARD]
+        await drainSubscribers()
+        const fullOffVendor = (await refundLegs(fullOrder.id)).filter((l) => l.debit_account_id === fullEarnings.id)
+        expect(fullOffVendor.map((l) => card.cents(l.amount))).toEqual([2425])
+        expect((await hawala().listLedgerEntries({ id: full.id }))[0].status).toBe("REVERSED")
+        expect(await statusOf(fullRow.id)).toBe(CommissionStatus.HELD)
+
+        // Refunded in part when the vendor's earnings hold nothing: the money
+        // was taken to repay what the vendor owed (simulated here by one
+        // ADJUSTMENT transfer off their earnings, a leg type the script does
+        // not read). The ledger records the refund as owed by the vendor and
+        // posts no leg off their earnings; the order was refunded all the same.
+        const owedVendor = await makeSeller("OwedRefund")
+        const owedOrder = await order25(owedVendor.id)
+        const owedRow = await attributionRow(owedOrder.id, owedVendor.id)
+        const owed = await settle(owedOrder.id, owedVendor.id)
+        const owedEarnings = await card.sellerEarnings(owedVendor.id)
+        const reserve = await hawala().getOrCreateSystemAccount("RESERVE")
+        await hawala().createTransfer({
+          debit_account_id: owedEarnings.id,
+          credit_account_id: reserve.id,
+          amount: Number(owedEarnings.balance),
+          entry_type: "ADJUSTMENT",
+          description: "spec: the vendor's earnings recovered against what they owe",
+        })
+        expect(card.cents((await card.sellerEarnings(owedVendor.id)).balance)).toBe(0)
+        process.env[CARD] = "true"
+        await card.refund(owed.paymentId, 20)
+        await card.refunded(owed.paymentId)
+        delete process.env[CARD]
+        await drainSubscribers()
+        const owedLegs = await refundLegs(owedOrder.id)
+        expect(owedLegs.length).toBeGreaterThan(0)
+        expect(owedLegs.filter((l) => l.debit_account_id === owedEarnings.id)).toEqual([])
+        expect((await hawala().listLedgerEntries({ id: owed.id }))[0].status).toBe("COMPLETED")
+        expect(await statusOf(owedRow.id)).toBe(CommissionStatus.HELD)
+
+        // Three days on, so nothing about any order's age stands in the way.
+        const summary = await fixCreatorCommissionMinorUnits(container(), { apply: true, now: afterPayoutWindow() })
+        const reasons = Object.fromEntries(summary.review.map((r) => [r.order_id, r.reason]))
+        expect(summary.corrected).toEqual([])
+        expect(why(reasons[partOrder.id])).toBe(
+          `the order was refunded out of vendor ${partVendor.id}'s earnings (refund leg ${partOffVendor[0].id} 19.4 COMPLETED) ${notReversed}`
+        )
+        expect(reasons[partOrder.id]).toContain("from 2 to 250")
+        expect(why(reasons[fullOrder.id])).toBe(
+          `the order's proceeds reached vendor ${fullVendor.id}'s earnings in the ledger and a refund reversed them ` +
+            `(its settlement leg is REVERSED), so the debit would come out of other orders' proceeds; ` +
+            `the order was refunded out of vendor ${fullVendor.id}'s earnings (refund leg ${fullOffVendor[0].id} 24.25 COMPLETED) ${notReversed}`
+        )
+        const owedReason = why(reasons[owedOrder.id])
+        expect(owedReason.startsWith("the order was refunded in the ledger (refund leg ")).toBe(true)
+        expect(owedReason.endsWith(`) with nothing taken from ${owedVendor.id}'s earnings, ${notReversed}`)).toBe(true)
+        for (const leg of owedLegs) expect(owedReason).toContain(`refund leg ${leg.id} `)
+        // None of the three is counted as never having settled.
+        expect(summary.never_settled).toEqual([])
+        for (const id of [partRow.id, fullRow.id, owedRow.id]) {
+          expect(await read(id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null, status: CommissionStatus.HELD })
+        }
       })
 
       it("writes an order's chain in one transaction: a row that changed since it was planned rolls back the rows before it", async () => {
