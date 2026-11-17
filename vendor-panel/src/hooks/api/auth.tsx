@@ -10,8 +10,7 @@ import {
   sdk,
   setAuthToken,
 } from "../../lib/client"
-import { devLogger } from "../../lib/logger"
-import { filingRefusalMessage, registerOrSignIn } from "../../lib/register-or-sign-in"
+import { finishSellerSignUp, registerOrSignIn } from "../../lib/register-or-sign-in"
 
 const fetchRegistrationStatus = async (token: string) => {
   const response = await fetch(
@@ -96,7 +95,7 @@ export const useSignInWithEmailPass = (
  *
  * When the address already has a login, signs in to it with the password
  * typed instead; a wrong password rejects with `ExistingAccountError`, and a
- * filing refused with 409 rejects with the backend's message.
+ * filing that does not answer 2xx rejects with a message for the page.
  */
 export const useSignUpWithEmailPass = (
   options?: UseMutationOptions<
@@ -139,46 +138,34 @@ export const useSignUpWithEmailPass = (
       return token
     },
     onSuccess: async (data, variables, context) => {
-      try {
-        const token = typeof data === "string" ? data : getAuthToken()
-        if (token) {
-          const status = await fetchRegistrationStatus(token)
-          if (status.status === "pending" || status.status === "approved") {
-            options?.onSuccess?.(data, variables, context)
-            return
-          }
-        }
-
-        await fetchQuery("/auth/seller/register-request", {
-          method: "POST",
-          body: {
-            name: variables.name,
-            vendor_type:
-              variables.vendor_type ||
-              playbookToVendorType(variables.playbook) ||
-              "producer",
-            playbook: variables.playbook,
-            recommended_playbook: variables.recommended_playbook,
-            roles: variables.roles,
-            resources: variables.resources,
-            node_operator_opt_in: variables.node_operator_opt_in === true,
-            member: {
+      // Success only once the application is filed (2xx) or the login already
+      // has one pending or a store; any other outcome rejects with a message
+      // the page shows (lib/register-or-sign-in.ts finishSellerSignUp).
+      const token = typeof data === "string" ? data : getAuthToken()
+      await finishSellerSignUp({
+        status: async () => (token ? fetchRegistrationStatus(token) : null),
+        file: () =>
+          fetchQuery("/auth/seller/register-request", {
+            method: "POST",
+            body: {
               name: variables.name,
-              email: variables.email.toLowerCase().trim(),
+              vendor_type:
+                variables.vendor_type ||
+                playbookToVendorType(variables.playbook) ||
+                "producer",
+              playbook: variables.playbook,
+              recommended_playbook: variables.recommended_playbook,
+              roles: variables.roles,
+              resources: variables.resources,
+              node_operator_opt_in: variables.node_operator_opt_in === true,
+              member: {
+                name: variables.name,
+                email: variables.email.toLowerCase().trim(),
+              },
             },
-          },
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        })
-      } catch (error) {
-        // A taken store name, or a login that already has a store: theirs to
-        // act on, so the sign-up fails with the backend's message rather than
-        // showing its success screen over an application that was not filed.
-        const refusal = filingRefusalMessage(error)
-        if (refusal) {
-          throw new Error(refusal)
-        }
-        devLogger.error("Failed to create seller registration request:", error)
-      }
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }),
+      })
 
       // Call user's onSuccess callback if provided
       options?.onSuccess?.(data, variables, context)

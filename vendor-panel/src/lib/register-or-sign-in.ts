@@ -15,18 +15,56 @@ export const isTakenEmailError = (error: unknown): boolean => {
 
 /**
  * What to tell an applicant whose filing (`POST /auth/seller/register-request`)
- * was refused with 409: the store name is taken, or the login already has a
- * store. Both are theirs to act on, so the sign-up shows the backend's message
- * instead of its success screen. Null for any other failure, which the sign-up
- * still only logs. Reads the `details` that `fetchQuery` attaches.
+ * failed, so the sign-up shows it instead of its success screen. Reads the
+ * `details` that `fetchQuery` attaches; a network failure has none.
+ *
+ * - 409: the backend's message (a taken store name, or a login that already
+ *   has a store), which is theirs to act on.
+ * - 429: the auth limiter, which every sign-up from the same network shares.
+ * - another 4xx with a message: that message.
+ * - anything else (5xx, network): the account exists and pressing again files.
  */
-export const filingRefusalMessage = (error: unknown): string | null => {
+export const filingFailureMessage = (error: unknown): string => {
   const details = (error as { details?: { status?: number; backendMessage?: string | null } } | null)
     ?.details
-  if (details?.status !== 409) {
-    return null
+  const status = details?.status
+  const backendMessage = details?.backendMessage?.trim()
+  if (status === 409) {
+    return backendMessage || "This store could not be registered. Choose another store name."
   }
-  return details.backendMessage || "This store could not be registered. Choose another store name."
+  if (status === 429) {
+    return "Too many sign-up attempts from your network just now. Wait a minute, then press the button again."
+  }
+  if (status !== undefined && status >= 400 && status < 500 && backendMessage) {
+    return backendMessage
+  }
+  return "Your account was created, but your application could not be filed. Press the button again to finish."
+}
+
+type RegistrationStatus = { status?: string } | null
+
+/**
+ * The sign-up's last step: file the application, unless the login already has
+ * one pending or a store. Resolves only then, or when the filing answered 2xx
+ * (201 filed, 200 already pending); otherwise rejects with
+ * `filingFailureMessage`, so the success screen never stands over an
+ * application that was not filed. A status check that fails is not a reason
+ * to skip filing. Pressing the button again signs in and gets here again.
+ */
+export async function finishSellerSignUp(steps: {
+  status: () => Promise<RegistrationStatus>
+  file: () => Promise<unknown>
+}): Promise<"filed" | "already"> {
+  const current = await steps.status().catch(() => null)
+  if (current?.status === "pending" || current?.status === "approved") {
+    return "already"
+  }
+  try {
+    await steps.file()
+  } catch (error) {
+    throw new Error(filingFailureMessage(error))
+  }
+  return "filed"
 }
 
 /** The address has a login, and the password typed is not its password. */

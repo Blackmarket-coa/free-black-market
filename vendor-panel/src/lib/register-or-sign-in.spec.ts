@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   ExistingAccountError,
-  filingRefusalMessage,
+  filingFailureMessage,
+  finishSellerSignUp,
   isTakenEmailError,
   registerOrSignIn,
   type EmailPassAuth,
@@ -93,27 +94,79 @@ describe("registerOrSignIn", () => {
   })
 })
 
-describe("filingRefusalMessage", () => {
-  // The shape fetchQuery throws (lib/client/client.ts).
-  const failed = (status: number, backendMessage: string | null) =>
-    Object.assign(new Error(`${backendMessage} (POST /auth/seller/register-request (${status}))`), {
-      details: { status, backendMessage },
-    })
+// The shape fetchQuery throws (lib/client/client.ts).
+const failed = (status: number, backendMessage: string | null) =>
+  Object.assign(new Error(`${backendMessage} (POST /auth/seller/register-request (${status}))`), {
+    details: { status, backendMessage },
+  })
 
-  it("returns the backend's message for a 409, which the sign-up shows", () => {
+describe("filingFailureMessage", () => {
+  it("passes on the backend's message for a 409: a taken store name, or a login that has a store", () => {
     const taken = 'A store named "Sunny Farm" already exists. Choose another store name.'
-    expect(filingRefusalMessage(failed(409, taken))).toBe(taken)
+    expect(filingFailureMessage(failed(409, taken))).toBe(taken)
+    expect(filingFailureMessage(failed(409, null))).toMatch(/Choose another store name/)
   })
 
-  it("still says something for a 409 with no message", () => {
-    expect(filingRefusalMessage(failed(409, null))).toMatch(/Choose another store name/)
+  it("names the shared limiter for a 429", () => {
+    expect(filingFailureMessage(failed(429, "Too many requests, please try again later"))).toMatch(/Wait a minute/)
   })
 
-  it("returns null for any other failure, which the sign-up only logs", () => {
-    expect(filingRefusalMessage(failed(500, "Server error"))).toBeNull()
-    expect(filingRefusalMessage(failed(401, "Unauthorized"))).toBeNull()
-    expect(filingRefusalMessage(new Error("network down"))).toBeNull()
-    expect(filingRefusalMessage(undefined)).toBeNull()
+  it("passes on another 4xx's message", () => {
+    expect(filingFailureMessage(failed(400, "Seller name is required"))).toBe("Seller name is required")
+    expect(filingFailureMessage(failed(401, "Create your account or sign in before applying to sell."))).toBe(
+      "Create your account or sign in before applying to sell."
+    )
+  })
+
+  it("says the account exists and pressing again finishes, for a 5xx or a network failure", () => {
+    for (const error of [failed(500, "Internal error"), failed(503, null), new TypeError("Failed to fetch"), undefined]) {
+      expect(filingFailureMessage(error)).toMatch(/Press the button again to finish/)
+    }
+  })
+})
+
+describe("finishSellerSignUp", () => {
+  const steps = (status: unknown, file: () => Promise<unknown>) => ({
+    status: vi.fn(async () => {
+      if (status instanceof Error) throw status
+      return status as { status?: string } | null
+    }),
+    file: vi.fn(file),
+  })
+
+  it("files nothing when the login already has an application pending, or a store", async () => {
+    for (const status of ["pending", "approved"]) {
+      const s = steps({ status }, async () => ({}))
+      await expect(finishSellerSignUp(s)).resolves.toBe("already")
+      expect(s.file).not.toHaveBeenCalled()
+    }
+  })
+
+  it("succeeds only when the filing answers 2xx", async () => {
+    const s = steps({ status: "no_request" }, async () => ({ request: { id: "req_1" } }))
+    await expect(finishSellerSignUp(s)).resolves.toBe("filed")
+    expect(s.file).toHaveBeenCalledTimes(1)
+  })
+
+  it("still files when the status check fails", async () => {
+    const s = steps(new TypeError("Failed to fetch"), async () => ({}))
+    await expect(finishSellerSignUp(s)).resolves.toBe("filed")
+  })
+
+  it("fails with a message to show for any filing that does not answer 2xx", async () => {
+    const cases: Array<[unknown, RegExp]> = [
+      [failed(409, 'A store named "Sunny Farm" already exists. Choose another store name.'), /Choose another store name/],
+      [failed(429, "Too many requests"), /Wait a minute/],
+      [failed(400, "Seller name is required"), /Seller name is required/],
+      [failed(500, "Internal error"), /Press the button again to finish/],
+      [new TypeError("Failed to fetch"), /Press the button again to finish/],
+    ]
+    for (const [error, message] of cases) {
+      const s = steps({ status: "no_request" }, async () => {
+        throw error
+      })
+      await expect(finishSellerSignUp(s)).rejects.toThrow(message)
+    }
   })
 })
 
