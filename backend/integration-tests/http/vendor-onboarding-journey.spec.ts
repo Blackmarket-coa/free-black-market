@@ -37,7 +37,8 @@ jest.setTimeout(600 * 1000)
  *   listing type and the default was physical_product, which Service does
  *   not allow. An untyped product now takes the playbook's default.
  * - Products made through /vendor/seller-products had no shipping profile,
- *   and a body naming another store's seller_id linked the product there.
+ *   and a body naming another store's seller_id there, or in POST
+ *   /vendor/products, made the product in that store.
  * - The admin panel's Accept (POST /admin/requests/:id) answered approval
  *   refusals 500.
  * - The assign route refused resource keys registration accepts.
@@ -479,6 +480,22 @@ medusaIntegrationTestRunner({
       // A second product of the same type is linked too: the link was
       // one-to-one, and refused every product after a type's first.
       expect(steeredProduct.listing_type).toEqual(expect.objectContaining({ catalog_id: "physical_product" }))
+
+      // The same through POST /vendor/products (FBM's handler behind Mercur's
+      // validator, which takes draft or proposed): it made the product in the
+      // other store, with that store's shipping profile.
+      const viaProducts = await call(
+        api.post(
+          "/vendor/products",
+          { ...(await panelProductPayload(token, "Draft Honey")), status: "draft", additional_data: { seller_id: otherStore.id } },
+          bearer(token)
+        )
+      )
+      expect(viaProducts.status).toBe(200)
+      const draft = await productOf(viaProducts.data.product.id)
+      expect(await sellersOfProduct(draft.id)).toEqual([sellerId])
+      expect(draft.shipping_profile?.id).toBe(profileId)
+      expect(draft.listing_type).toEqual(expect.objectContaining({ catalog_id: "physical_product" }))
 
       // The wizard's publish step: an id that names no product, and another store's, are refused.
       for (const listing_id of ["prod_does_not_exist", otherProduct.id]) {

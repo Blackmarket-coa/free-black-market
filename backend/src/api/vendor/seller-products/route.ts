@@ -2,14 +2,12 @@ import { createLogger } from "../../../shared/logger"
 import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/seller-products")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { sellerIdForVendorActor } from "../../../shared/seller-actor"
 import { resolveAllowedListingType } from "../../../shared/listing-type-guard"
-import { LISTING_TYPE_MODULE } from "../../../modules/listing-type"
-import type { ListingTypeId } from "../../../modules/listing-type"
-import type ListingTypeService from "../../../modules/listing-type/service"
+import { linkProductListingType } from "../../../shared/listing-type-link"
 
 type VariantPrice = {
   amount?: number | string | null
@@ -78,43 +76,6 @@ function getErrorStatus(error) {
   return 500
 }
 
-/**
- * Link the product to its listing type's registry row
- * (`links/listing-type-product.ts`), which the storefront's product page,
- * the vendor page's service and digital grids, the playbook-switch preflight
- * and the one-of-a-kind and consignment paths read. Nothing wrote the link,
- * so the listing type a product was created with was checked and then lost.
- * Best effort, after the product exists: a missing registry row or a failed
- * write leaves the product untyped (read as a physical product) and is
- * logged, rather than answering an error for a product that was made.
- */
-async function linkListingType(
-  req: MedusaRequest,
-  productId: string,
-  listingTypeId: ListingTypeId
-) {
-  try {
-    const listingTypes = req.scope.resolve<ListingTypeService>(LISTING_TYPE_MODULE)
-    const [row] = await listingTypes.listListingTypes({ catalog_id: listingTypeId })
-    if (!row) {
-      log.warn(
-        `Product ${productId} left without a listing type: the listing-type registry has no "${listingTypeId}" row`
-      )
-      return
-    }
-    await req.scope.resolve(ContainerRegistrationKeys.LINK).create({
-      [Modules.PRODUCT]: { product_id: productId },
-      [LISTING_TYPE_MODULE]: { listing_type_id: row.id },
-    })
-  } catch (error) {
-    log.warn(
-      `Could not link product ${productId} to listing type "${listingTypeId}": ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    )
-  }
-}
-
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const sellerId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
@@ -172,7 +133,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const createdProduct = result[0]
 
-    await linkListingType(req, createdProduct.id, listingTypeId)
+    await linkProductListingType(req.scope, createdProduct.id, listingTypeId)
 
     const { data: products } = await query.graph({
       entity: "product",

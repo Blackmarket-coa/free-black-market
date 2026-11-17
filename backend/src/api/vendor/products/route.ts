@@ -2,55 +2,15 @@ import { createLogger } from "../../../shared/logger"
 import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/products")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
-import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 
-import { resolveSellerId } from "../../../shared/listing-type-guard"
-
-async function linkSellerInventoryItems(
-  req: MedusaRequest,
-  sellerId: string,
-  productId: string
-) {
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK)
-
-  const { data: variants } = await query.graph({
-    entity: "product_variant",
-    fields: ["inventory_items.inventory_item_id"],
-    filters: { product_id: productId },
-  })
-
-  const inventoryItemIds = [
-    ...new Set(
-      (variants || [])
-        .flatMap((variant) => variant.inventory_items || [])
-        .map((item) => item?.inventory_item_id)
-        .filter(Boolean)
-    ),
-  ]
-
-  await Promise.all(
-    inventoryItemIds.map(async (inventory_item_id) => {
-      try {
-        await remoteLink.create({
-          [SELLER_MODULE]: { seller_id: sellerId },
-          [Modules.INVENTORY]: { inventory_item_id },
-        })
-      } catch (error) {
-        const message = error?.message || ""
-        const isAlreadyLinked =
-          message.includes("already exists") || message.includes("duplicate")
-
-        if (!isAlreadyLinked) {
-          throw error
-        }
-      }
-    })
-  )
-}
+import {
+  resolveAllowedListingType,
+  resolveSellerId,
+} from "../../../shared/listing-type-guard"
+import { linkProductListingType } from "../../../shared/listing-type-link"
 
 export async function GET(
   req: MedusaRequest,
@@ -90,7 +50,6 @@ export async function POST(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK)
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
 
@@ -103,29 +62,30 @@ export async function POST(
   try {
     const { additional_data, ...productData } = req.body as { additional_data?: Record<string, unknown> } & Record<string, unknown>
 
-    // Create the product using Medusa workflow
+    // As /vendor/seller-products: the request's type or the playbook's
+    // default, linked below.
+    const listingTypeId = await resolveAllowedListingType(req.scope, {
+      sellerId: resolvedSellerId,
+      additionalData: additional_data,
+    })
+
+    // Create the product using Medusa workflow, for the caller's own store:
+    // Mercur's productsCreated hook links the product, its inventory items
+    // and the store's default shipping profile to `additional_data.seller_id`.
+    // The body's was passed through, so a body naming another store's
+    // seller_id made the product in that store, with its shipping profile
+    // (measured on Postgres), and the link this route then wrote for the
+    // caller did not hold.
     const { result } = await createProductsWorkflow(req.scope).run({
       input: {
         products: [productData as CreateProductWorkflowInputDTO],
-        additional_data,
+        additional_data: { ...additional_data, seller_id: resolvedSellerId },
       },
     })
 
     const createdProduct = result[0]
 
-    // Link product to seller
-    try {
-      await remoteLink.create({
-        [SELLER_MODULE]: { seller_id: resolvedSellerId },
-        [Modules.PRODUCT]: { product_id: createdProduct.id },
-      })
-
-      await linkSellerInventoryItems(req, resolvedSellerId, createdProduct.id)
-    } catch (linkError) {
-      log.warn(
-        `Could not create seller-product link for ${createdProduct.id}: ${linkError.message}`
-      )
-    }
+    await linkProductListingType(req.scope, createdProduct.id, listingTypeId)
 
     // Fetch the full product with relations
     const { data: products } = await query.graph({
@@ -143,7 +103,8 @@ export async function POST(
     })
   } catch (error) {
     log.error(`Error creating product for seller ${resolvedSellerId}:`, error)
-    res.status(500).json({
+    // A listing type the playbook does not allow is the caller's to fix.
+    res.status(error?.type === "invalid_data" ? 400 : 500).json({
       message: "Failed to create product",
       error: error.message,
     })
