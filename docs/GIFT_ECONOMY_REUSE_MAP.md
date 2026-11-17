@@ -70,6 +70,16 @@ operator sets, which the 3%-of-a-dollar problem never could.
 > whole surface is dark behind `FBM_CCR_CHECKOUT_LIVE` and
 > `FBM_CCR_CENTS_PER_CREDIT`, both operator config with no defaults.
 >
+> **Correction (2026-11-17):** that refusal ran at no checkout until SD-54
+> (the guard read a field Medusa's hook never passes), and never on the
+> storefront's main checkout, `POST /store/carts/:id/complete`, whose Mercur
+> workflow (`splitAndCompleteCartWorkflow`) does not call that hook, until
+> SD-72 (a) was closed with a middleware in front of the route. Before then a
+> reserved cart completed there at its full total with the credits left in
+> the cart escrow. Medusa's generic admin workflow runner can still run that
+> workflow directly, past the middleware. See `docs/AUDIT_DEBT.md` SD-54 and
+> SD-72.
+>
 > So this section's conclusion still holds: paying anyone in CCR before the
 > tender half exists recreates the shape it warns about.
 

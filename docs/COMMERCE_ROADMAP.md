@@ -73,6 +73,16 @@ deliberately bolted shut against any cart holding a reservation, and the
 surface is dark behind `FBM_CCR_CHECKOUT_LIVE`. A dated note recording both
 halves has been added to that document.
 
+*Correction (2026-11-17): that bolt did not hold for a long time. Until SD-54
+the reservation guard read a field Medusa's hook never passes and refused
+nothing at any checkout, and the storefront's main checkout,
+`POST /store/carts/:id/complete`, runs Mercur's `splitAndCompleteCartWorkflow`,
+which never calls that hook: until SD-72 (a) was closed, with a middleware in
+front of the route, a reserved cart completed there at its full total with
+the credits left in the cart escrow. It now refuses on every store route.
+Medusa's generic admin workflow runner can still run Mercur's workflow
+directly, past the middleware. See `docs/AUDIT_DEBT.md` SD-54 and SD-72.*
+
 ---
 
 ### 1a. The commission rule, as of 2026-09-02

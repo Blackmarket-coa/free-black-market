@@ -40,8 +40,10 @@ import { MathBN, MedusaError, TransactionState } from "@medusajs/framework/utils
  * before it creates its orders, so a hold may exist, and it lapses. Nothing
  * here touches the hawala ledger: Coalition Credits have no completion path
  * (`workflows/hooks/validate-ccr-reservation.ts` refuses a cart holding a
- * reservation before any order exists), so a refused completion cannot move
- * them.
+ * reservation before any order exists, inside `completeCartWorkflow`'s
+ * validate hook and, for Mercur's main checkout, in the middleware in front
+ * of its route, `api/middlewares/cart-completion-guards.ts`), so a refused
+ * completion cannot move them.
  */
 
 /** The `code` every refusal carries. Stable: clients and tests key on it. */

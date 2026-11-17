@@ -30,10 +30,13 @@ import { runCompleteCartGuards } from "./complete-cart-guards"
  *
  * The hook runs only on checkouts built on `completeCartWorkflow`. FBM's
  * main checkout, `POST /store/carts/:id/complete` (Mercur's
- * `splitAndCompleteCartWorkflow`), never calls it, so none of the first
- * four guards runs there (SD-54, open); the payment-amount refusal is made
- * for that route by a middleware in front of it
- * (`api/middlewares/cart-payment-refresh.ts`).
+ * `splitAndCompleteCartWorkflow`), never calls it, so middlewares in front of
+ * that route make its refusals instead: the tier, Coalition Credits and
+ * order-cycle guards from the same list (`runMainCheckoutGuards`,
+ * `api/middlewares/cart-completion-guards.ts`; SD-54, SD-72 (a)), and the
+ * payment-amount refusal (`api/middlewares/cart-payment-refresh.ts`). The
+ * rental guard does not run there, pending an operator decision
+ * (`NOT_RUN_ON_MAIN_CHECKOUT` in `complete-cart-guards.ts`).
  *
  * The hook's argument goes to the composition uncast. Before SD-54 the CCR
  * and order-cycle guards were called through `as any` while reading

@@ -119,15 +119,16 @@ export default async function orderPlacedHandler({
       // see. So a closed cycle recording a sale is the intended outcome on
       // THIS path.
       //
-      // What is genuinely still open is the other end: nothing re-validates
-      // the cycle between add-to-cart and order-placed, so a cart tagged
-      // with a cycle that closed hours earlier also records a sale, and
-      // that one is not a race — it is a missing check. Medusa v2 allows
-      // one handler per workflow hook and `completeCartWorkflow.hooks.validate`
-      // is already occupied by a composed FBM handler, so that check has to
-      // go inside `workflows/hooks/complete-cart-validate.ts` rather than
-      // beside it. Left to D9-3 because whether a cycle closing mid-checkout
-      // should fail the checkout is a policy question, not a patch.
+      // The other end is checked before payment, not here: a cart tagged
+      // with a cycle that is not open is refused at completion
+      // (`workflows/hooks/validate-order-cycle.ts`, D9-3), inside
+      // `completeCartWorkflow`'s validate hook and in front of Mercur's main
+      // checkout (`api/middlewares/cart-completion-guards.ts`). What still
+      // reaches this handler with a closed cycle is the race above, a cycle
+      // closed between that check and this event, and a line whose tag a
+      // client stripped or wrote onto the cart instead (Mercur copies line
+      // metadata onto its orders, never the cart's: such a line is checked
+      // under the cart's tag and recorded under none).
       try {
         await orderCycleService.retrieveOrderCycle(orderCycleId)
       } catch {
