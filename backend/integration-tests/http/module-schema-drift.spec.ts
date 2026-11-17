@@ -33,42 +33,15 @@ jest.setTimeout(300 * 1000)
 // Shrunk by SD-69 (garden's Migration20261115AddRawBigNumberColumns):
 // garden_membership, garden_plot and garden_soil_zone are whole again, leaving
 // 35 tables and 87 columns in 13 modules.
+// Shrunk by the SD-63 migrations (Migration20261117*RawBigNumberColumns, one
+// per module, 2026-11-17): 34 tables and 85 columns in 12 modules are whole
+// again. character_sheet is left to SD-50's own migration
+// (Migration20261115AddCharacterSheetRawBigNumberColumns, branch
+// fix/p0-sd50-progression-columns): adding its columns turns XP accrual on,
+// and that branch also fixes the order-XP scale the accrual would use, so its
+// timing is the operator's call (SD-50).
 const KNOWN_DRIFT: Record<string, string[]> = {
-  bargaining_group: ["raw_total_budget"],
-  bargaining_member: ["raw_budget"],
-  bargaining_proposal: ["raw_total_price", "raw_unit_price"],
-  buyer_network: ["raw_min_purchase_commitment", "raw_total_savings"],
   character_sheet: ["raw_capital_deployed_cents", "raw_food_produced_cents"],
-  collective_backing: ["raw_amount", "raw_payout_cap_amount", "raw_payout_released_amount"],
-  collective_campaign: ["raw_campaign_goal", "raw_funding_goal_override", "raw_investor_backed_amount", "raw_maker_fee", "raw_maker_fee_released_amount", "raw_maker_fee_subtotal", "raw_material_total", "raw_per_unit_backer_cost", "raw_platform_fee_subtotal", "raw_pre_order_backed_amount", "raw_return_cap_multiplier", "raw_shipping_per_unit", "raw_shipping_subtotal", "raw_total_backed_amount", "raw_yield_per_cycle"],
-  collective_material_line_item: ["raw_line_total_estimate", "raw_quantity_per_full_campaign", "raw_quantity_per_output_unit", "raw_unit_cost_at_listing"],
-  collective_productive_asset_token: ["raw_total_supply"],
-  collective_purchase_order: ["raw_actual_amount", "raw_budget_amount"],
-  collective_vendor_reputation: ["raw_campaign_cap"],
-  collective_yield_report: ["raw_measured_output", "raw_payout_pool_amount", "raw_projected_next_cycle_output"],
-  creator_deal: ["raw_total_attributed_cents", "raw_total_paid_out_cents"],
-  demand_bounty: ["raw_amount", "raw_amount_paid_out"],
-  demand_participant: ["raw_escrow_amount", "raw_price_willing_to_pay"],
-  demand_post: ["raw_final_total_price", "raw_final_unit_price", "raw_target_price", "raw_total_bounty_amount", "raw_total_escrowed"],
-  donation_disbursement: ["raw_amount"],
-  engagement_snapshot: ["raw_comments", "raw_likes", "raw_qualified_views", "raw_saves", "raw_shares", "raw_views", "raw_watch_time_seconds"],
-  enterprise_fee: ["raw_amount"],
-  hype_profile: ["raw_capital_need_amount"],
-  kitchen: ["raw_deposit_required", "raw_hourly_rate", "raw_monthly_membership_fee"],
-  kitchen_equipment: ["raw_current_value", "raw_purchase_price"],
-  kitchen_membership: ["raw_deposit_balance", "raw_hours_this_month", "raw_investment_balance", "raw_prepaid_hours_balance", "raw_total_hours_used", "raw_voting_power"],
-  kitchen_space: ["raw_daily_rate", "raw_hourly_rate", "raw_monthly_rate", "raw_weekly_rate"],
-  network_member: ["raw_total_savings"],
-  order_cycle_product: ["raw_override_price"],
-  order_subcontract: ["raw_total_cents"],
-  prediction_payout_entry: ["raw_payout_amount"],
-  prediction_position: ["raw_max_payout_amount", "raw_stake_amount"],
-  reward_payout: ["raw_amount_cents", "raw_qualified_views"],
-  reward_pool: ["raw_total_cents"],
-  service_contract: ["raw_total_paid_cents"],
-  share_box: ["raw_total_price"],
-  share_box_template: ["raw_base_price"],
-  supplier_proposal: ["raw_delivery_cost", "raw_unit_price"],
 }
 
 // A column the model declares nullable with no default, but the migrated
