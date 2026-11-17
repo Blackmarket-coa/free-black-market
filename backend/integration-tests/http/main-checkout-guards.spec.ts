@@ -8,6 +8,7 @@ import {
   CART_ALREADY_COMPLETED_AT_CHECKOUT_MESSAGE,
   CART_COMPLETION_CHECK_FAILED_MESSAGE,
 } from "../../src/api/middlewares/cart-completion-guards"
+import { CART_COMPLETION_INCOMPLETE_MESSAGE } from "../../src/lib/cart-completion"
 import { CART_PAYMENT_AMOUNT_MISMATCH } from "../../src/lib/cart-payment-amount"
 import { CCR_RESERVATION_METADATA_KEY } from "../../src/lib/ccr-checkout"
 import { ORDER_CYCLE_MODULE } from "../../src/modules/order-cycle"
@@ -16,7 +17,7 @@ import { upsertRentalConfigWorkflow } from "../../src/workflows/rental/upsert-re
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { cartCompletionStallRetry } from "./helpers/cart-completion-stall"
 import { trackSubscribers } from "./helpers/drain-subscribers"
-import { clearStalledWorkflows } from "./helpers/stalled-workflows"
+import { clearStalledWorkflows, stallNextCartCompletion } from "./helpers/stalled-workflows"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -33,8 +34,10 @@ jest.setTimeout(240 * 1000)
  * now runs the main checkout's list (`MAIN_CHECKOUT_GUARDS`: tier, CCR,
  * order cycle; not rental, by operator decision) in front of the route. It
  * answers two carts itself, with 409: one Medusa's own workflow completed
- * (`cart_already_completed`, never passed to Mercur, whose run on it cancels
- * that order's payment), and one it cannot check (`cart_completion_check_failed`).
+ * (never passed to Mercur, whose run on it cancels that order's payment;
+ * `cart_already_completed` with the order when FBM's judge passes that order,
+ * `cart_completion_incomplete` when the completion left it unpaid), and one
+ * it cannot check (`cart_completion_check_failed`).
  *
  * Everything here is real except Stripe, which is stubbed on the registered
  * provider instance (as in cart-completion-refuses.spec.ts): Mercur's route
@@ -605,6 +608,44 @@ medusaIntegrationTestRunner({
         expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
 
         await expectAnsweredAsCompleted(made, orderId, pak)
+      })
+
+      /**
+       * "Already placed" only for an order FBM's judge passes
+       * (`judgeCartCompletion`). A Medusa completion the engine stalls (SD-53,
+       * stalled here on purpose as helpers/stalled-workflows.ts does it) leaves
+       * the order, the cart's `order_cart` link and `completed_at` written, with
+       * no payment, the card never authorized and no event released, so no
+       * confirmation email: the judge calls that `order_unpaid`, and so does the
+       * answer. Jest's own `it`: the stall is this test's subject.
+       */
+      it("a cart whose Medusa completion the engine stalled (order, link and completed_at written, no payment) is answered 409 cart_completion_incomplete with no order id: nothing written, Stripe never called", async () => {
+        const made = await makeCart({ quantity: 2, cycle: { status: "open", available: 2, sold: 0 } })
+        const stall = stallNextCartCompletion(container)
+        const { result } = await completeCartWorkflow(container()).run({ input: { id: made.cart.id }, throwOnError: false })
+        expect(stall.stalled()).toBe(true)
+        expect((result as { id?: string } | undefined)?.id).toBeUndefined()
+        expect(await completedAt(made.cart.id)).toBeTruthy()
+        const left = await ordersOf(made.customer.id)
+        expect(left).toHaveLength(1)
+        expect(await paymentsOf(made.collection.id)).toEqual([])
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+
+        const response = await complete(made.cart.id, await newPak())
+        expectStatus(response, 409)
+        expect(response.data).toEqual({
+          code: "cart_completion_incomplete",
+          type: "cart_completion_incomplete",
+          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
+          reason: "order_unpaid",
+        })
+        expect(JSON.stringify(response.data)).not.toContain(left[0].id)
+        expect(await orderSetsOf(made.cart.id)).toEqual([])
+        expect((await ordersOf(made.customer.id)).map((o: { id: string }) => o.id)).toEqual([left[0].id])
+        expect(await paymentsOf(made.collection.id)).toEqual([])
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(await executionStates(made.cart.id)).toEqual([])
       })
 
       it("a cart that does not exist is left to Mercur's route, which fails reading it (500), as before: the middleware's own reads do not fail on it", async () => {
