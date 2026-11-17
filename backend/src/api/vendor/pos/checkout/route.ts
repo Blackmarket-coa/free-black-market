@@ -4,6 +4,15 @@ import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  // Deliberately still the actor, which behind the vendor gate is a member id,
+  // not the store (SD-145; every other route on the row now takes the store).
+  // `payer_vendor_id` names the hawala SELLER_EARNINGS account this debits.
+  // Earnings accrue under the store id, so as keyed the payer's account is not
+  // found and the payment fails before anything moves. Keyed by the store, it
+  // would move the store's earnings to another vendor's account under
+  // reference type VENDOR_PAYMENT, which is not a purchase context. Turning
+  // that on is an operator and counsel decision (Posture A,
+  // docs/POSTURE_A_COMPLIANCE.md), not part of a keying fix.
   const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
