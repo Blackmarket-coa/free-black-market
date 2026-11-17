@@ -102,6 +102,37 @@ const matches = (row: Row, filters: Record<string, unknown> = {}) =>
     Array.isArray(want) ? want.includes(row[key]) : row[key] === want
   )
 
+/**
+ * What the seller rule reads for a seller-id login: the login's emailpass
+ * address (auth module) and the live member of that store at it (one SQL
+ * query). The member answers only for its own store and its own address.
+ */
+const sellerLoginFor = (sellerId: string) => {
+  const authIdentityId = `authid_${sellerId}`
+  const address = `${sellerId}@sellers.test`
+  const memberId = `mem_${sellerId}`
+  return {
+    authIdentityId,
+    memberId,
+    auth: {
+      listAuthIdentities: async (filters: { id?: string[] }) =>
+        filters.id?.includes(authIdentityId)
+          ? [{ id: authIdentityId, provider_identities: [{ provider: "emailpass", entity_id: address }] }]
+          : [],
+    },
+    pg: {
+      raw: async (sql: string, bindings: unknown[]) => {
+        if (!/FROM member m/.test(sql) || !/LOWER\(TRIM\(m\.email\)\)/.test(sql)) {
+          strayLookups.push(`sql: ${sql.replace(/\s+/g, " ").slice(0, 80)}`)
+          throw new Error("unexpected SQL")
+        }
+        const [forSeller, atAddress] = bindings
+        return { rows: forSeller === sellerId && atAddress === address ? [{ id: memberId }] : [] }
+      },
+    },
+  }
+}
+
 const makeReq = (opts: {
   actor?: Actor
   params?: Record<string, string>
@@ -125,22 +156,33 @@ const makeReq = (opts: {
       return { data: opts.rows[entity].filter((row) => matches(row, filters)) }
     },
   }
+  // A seller-id actor acts for its store only through the live member at its
+  // login's own address (shared/seller-actor.ts, SD-144), and no vendor gate
+  // runs on /store. So a seller caller here is a real login: an emailpass
+  // address, and a live member of that store at it. Anything else the rule
+  // asks of the database is a stray lookup.
+  const seller = opts.actor?.type === "seller" && opts.actor.id.startsWith("sel_") ? opts.actor.id : null
+  const sellerLogin = seller ? sellerLoginFor(seller) : null
   return {
     params: opts.params ?? {},
     body: opts.body ?? {},
     query: {},
     url: opts.url ?? "/",
     ...(opts.actor
-      ? { auth_context: { actor_id: opts.actor.id, actor_type: opts.actor.type } }
+      ? {
+          auth_context: {
+            actor_id: opts.actor.id,
+            actor_type: opts.actor.type,
+            ...(sellerLogin ? { auth_identity_id: sellerLogin.authIdentityId } : {}),
+          },
+        }
       : {}),
     scope: {
       resolve: (key: string) => {
         if (key === ContainerRegistrationKeys.QUERY) return query
         if (opts.modules && key in opts.modules) return opts.modules[key]
-        // requireSellerId resolves these up front; a sel_ actor never uses them.
-        if (key === ContainerRegistrationKeys.PG_CONNECTION || key === Modules.AUTH) {
-          return undefined
-        }
+        if (key === ContainerRegistrationKeys.PG_CONNECTION) return sellerLogin?.pg
+        if (key === Modules.AUTH) return sellerLogin?.auth
         strayLookups.push(`container key: ${key}`)
         throw new Error(`unexpected container key: ${key}`)
       },
