@@ -4,7 +4,10 @@ import type { CompleteCartWorkflowInput } from "@medusajs/medusa/core-flows"
 /**
  * The composition registered on `completeCartWorkflow.hooks.validate`
  * (`complete-cart-guards.ts`): which guards run, in what order, and that none
- * runs on a cart that has already completed.
+ * runs on a cart that has already completed. And the main checkout's list,
+ * which the middleware in front of Mercur's `POST /store/carts/:id/complete`
+ * runs (`api/middlewares/cart-completion-guards.ts`): the same list less the
+ * guards excluded there by name, each with its reason.
  *
  * SD-54 follow-up: Medusa runs the hook on every run of the workflow, before it
  * looks at the cart's existing order. On a re-run of a completed cart the
@@ -22,7 +25,13 @@ jest.mock("../validate-ccr-reservation", () => ({ validateCcrReservation: jest.f
 jest.mock("../validate-order-cycle", () => ({ validateOrderCycleOnCompleteCart: jest.fn() }))
 jest.mock("../validate-cart-payment-amount", () => ({ validateCartPaymentAmount: jest.fn() }))
 
-import { runCompleteCartGuards } from "../complete-cart-guards"
+import {
+  COMPLETE_CART_GUARDS,
+  MAIN_CHECKOUT_GUARDS,
+  NOT_RUN_ON_MAIN_CHECKOUT,
+  runCompleteCartGuards,
+  runMainCheckoutGuards,
+} from "../complete-cart-guards"
 import { cartAlreadyCompleted } from "../complete-cart-validate-args"
 import { validateSlidingScaleTier } from "../validate-sliding-scale-tier"
 import { validateRentalOnCompleteCart } from "../../rental/hooks/validate-rental"
@@ -113,5 +122,75 @@ describe("cartAlreadyCompleted", () => {
     expect(cartAlreadyCompleted({ input: { id: "cart_1" } })).toBe(false)
     expect(cartAlreadyCompleted({ input: { id: "cart_1" }, cart: null })).toBe(false)
     expect(cartAlreadyCompleted(undefined)).toBe(false)
+  })
+})
+
+/**
+ * The main checkout (SD-54, SD-72 (a)). Mercur's `splitAndCompleteCartWorkflow`
+ * never calls Medusa's validate hook, so a middleware in front of its route
+ * runs `runMainCheckoutGuards`. One list feeds both seams: the main checkout's
+ * is `COMPLETE_CART_GUARDS` less the names in `NOT_RUN_ON_MAIN_CHECKOUT`. The
+ * exact names are pinned below, so a guard added to the full list fails here
+ * until whoever adds it decides, in this file, whether it runs at the main
+ * checkout (add it to `MAIN_THREE`) or not (give it a reason in
+ * `NOT_RUN_ON_MAIN_CHECKOUT`).
+ */
+const MAIN_THREE = ["sliding-scale", "ccr", "order-cycle"]
+
+describe("the guard lists", () => {
+  it("lists every guard once, in the hook's order", () => {
+    expect(COMPLETE_CART_GUARDS.map((g) => g.name)).toEqual([
+      "sliding-scale-tier",
+      "rental",
+      "ccr-reservation",
+      "order-cycle",
+      "payment-amount",
+    ])
+  })
+
+  it("the main checkout runs the tier, Coalition Credits and order-cycle guards, and no other", () => {
+    expect(MAIN_CHECKOUT_GUARDS.map((g) => g.name)).toEqual(["sliding-scale-tier", "ccr-reservation", "order-cycle"])
+  })
+
+  it("leaves out exactly the rental guard (operator decision pending) and the payment-amount guard (its own middleware on that route), each with a reason", () => {
+    expect(Object.keys(NOT_RUN_ON_MAIN_CHECKOUT)).toEqual(["rental", "payment-amount"])
+    expect(NOT_RUN_ON_MAIN_CHECKOUT.rental).toMatch(/decision/i)
+    expect(NOT_RUN_ON_MAIN_CHECKOUT["payment-amount"]).toMatch(/refuseCompletionOnPaymentAmountMismatch/)
+    // An exclusion names a guard that exists: a renamed guard would otherwise
+    // slip back onto the main checkout with its stale exclusion left behind.
+    const names = COMPLETE_CART_GUARDS.map((g) => g.name as string)
+    for (const name of Object.keys(NOT_RUN_ON_MAIN_CHECKOUT)) expect(names).toContain(name)
+  })
+
+  it("is one list: the main checkout's entries are the full list's own, in its order, less the exclusions", () => {
+    expect(MAIN_CHECKOUT_GUARDS).toEqual(COMPLETE_CART_GUARDS.filter((g) => !(g.name in NOT_RUN_ON_MAIN_CHECKOUT)))
+    for (const guard of MAIN_CHECKOUT_GUARDS) expect(COMPLETE_CART_GUARDS).toContain(guard)
+  })
+})
+
+describe("runMainCheckoutGuards", () => {
+  it("runs the three, in order, on a cart that has not completed, each with the middleware's argument and its context; never the rental or payment-amount guard", async () => {
+    const args: MedusaValidateArgs = { input: { id: "cart_1" }, cart: { id: "cart_1", completed_at: null } }
+    await runMainCheckoutGuards(args, CONTEXT)
+    expect(calls().map((c) => c.guard)).toEqual(MAIN_THREE)
+    for (const call of calls()) {
+      expect(call.args).toBe(args)
+      expect(call.context).toBe(CONTEXT)
+    }
+    expect(GUARDS.rental).not.toHaveBeenCalled()
+    expect(GUARDS["payment-amount"]).not.toHaveBeenCalled()
+  })
+
+  it("runs none of them on a cart that has completed (the same check as the hook's)", async () => {
+    const args: MedusaValidateArgs = { input: { id: "cart_1" }, cart: { id: "cart_1", completed_at: "2026-11-17T12:00:00.000Z" } }
+    await expect(runMainCheckoutGuards(args, CONTEXT)).resolves.toBeUndefined()
+    expect(calls()).toEqual([])
+  })
+
+  it("stops at the first refusal and hands it back", async () => {
+    const refusal = new MedusaError(MedusaError.Types.NOT_ALLOWED, "ccr refused")
+    GUARDS.ccr.mockRejectedValueOnce(refusal)
+    await expect(runMainCheckoutGuards({ input: { id: "cart_1" }, cart: { id: "cart_1", completed_at: null } }, CONTEXT)).rejects.toBe(refusal)
+    expect(calls().map((c) => c.guard)).toEqual(["sliding-scale", "ccr"])
   })
 })
