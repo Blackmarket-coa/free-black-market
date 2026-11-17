@@ -123,9 +123,12 @@ describe("backfillApprovedSellerPlaybooks", () => {
   })
 
   it("counts an assignment made between its read and its write as refused, not as a failure", async () => {
-    mockRun.mockRejectedValueOnce(
-      new Error('assign-playbook: seller sel_1 already has a playbook assignment ("hub"); nothing was changed')
-    )
+    // A failed workflow run rejects with the step's error as a plain object,
+    // not an Error (measured on Postgres).
+    mockRun.mockRejectedValueOnce({
+      name: "Error",
+      message: 'assign-playbook: seller sel_1 already has a playbook assignment ("hub"); nothing was changed',
+    })
 
     const summary = await backfillApprovedSellerPlaybooks(container(), { apply: true })
 

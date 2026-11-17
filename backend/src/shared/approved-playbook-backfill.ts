@@ -65,8 +65,15 @@ export type ApprovedPlaybookBackfillSummary = {
   review: ApprovedPlaybookEntry[]
 }
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error)
+/**
+ * A failed workflow run rejects with the step's error serialized to a plain
+ * object, not an Error, so its message is read off either.
+ */
+const messageOf = (error: unknown): string => {
+  if (error instanceof Error) return error.message
+  const message = (error as { message?: unknown } | null)?.message
+  return typeof message === "string" ? message : String(error)
+}
 
 export async function backfillApprovedSellerPlaybooks(
   container: MedusaContainer,
