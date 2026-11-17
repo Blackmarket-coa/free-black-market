@@ -24,7 +24,7 @@ jest.setTimeout(240 * 1000)
 
 /**
  * A member removed from a store, or a member of a store that was closed, acts
- * for no store (SD-NEW-removed-member-access), on the real server and a real
+ * for no store (SD-144), on the real server and a real
  * migrated database.
  *
  * Mercur's deleteMemberStep soft-deletes a removed member and leaves the
