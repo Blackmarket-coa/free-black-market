@@ -520,13 +520,15 @@ describe("SDK clients in the panel's source", () => {
     expect(offenders).toEqual([])
   })
 
-  it("makes SDK clients only in lib/client, each with JWT auth", () => {
-    // A file can make a client through the SDK's default export, a namespace
-    // import of it, or its Client class, and can hand any of those on: a
-    // re-export, `export *`, or a dynamic import or require of the package.
-    const SDK = "@medusajs/js-sdk"
-    const isSdk = (node: ts.Node | undefined) =>
-      !!node && ts.isStringLiteral(node) && node.text === SDK
+  const SDK = "@medusajs/js-sdk"
+  const isSdk = (node: ts.Node | undefined) =>
+    !!node && ts.isStringLiteral(node) && node.text === SDK
+  /**
+   * The bindings through which each file can make an SDK client: the SDK's
+   * default export, a namespace import of it, or its Client class, imported
+   * statically, through `import =`, or dynamically.
+   */
+  const constructorBindings = () => {
     const makers = new Map<string, string[]>()
     const add = (file: string, name: string) =>
       makers.set(file, [...(makers.get(file) ?? []), name])
@@ -551,24 +553,6 @@ describe("SDK clients in the panel's source", () => {
           }
         }
         if (
-          ts.isExportDeclaration(statement) &&
-          isSdk(statement.moduleSpecifier)
-        ) {
-          if (statement.isTypeOnly) continue
-          const clause = statement.exportClause
-          if (!clause || ts.isNamespaceExport(clause)) add(file, "export *")
-          else
-            for (const element of clause.elements) {
-              const exported = (element.propertyName ?? element.name).text
-              if (
-                !element.isTypeOnly &&
-                (exported === "default" || exported === "Client")
-              ) {
-                add(file, `export ${exported}`)
-              }
-            }
-        }
-        if (
           ts.isImportEqualsDeclaration(statement) &&
           ts.isExternalModuleReference(statement.moduleReference) &&
           isSdk(statement.moduleReference.expression)
@@ -588,6 +572,18 @@ describe("SDK clients in the panel's source", () => {
         }
       })
     }
+    return makers
+  }
+  /** `new X(...)` or `new X.Y(...)`, with `node` as X. */
+  const isNewCallee = (node: ts.Identifier) =>
+    (ts.isNewExpression(node.parent) && node.parent.expression === node) ||
+    (ts.isPropertyAccessExpression(node.parent) &&
+      node.parent.expression === node &&
+      ts.isNewExpression(node.parent.parent) &&
+      node.parent.parent.expression === node.parent)
+
+  it("makes SDK clients only in lib/client, each with JWT auth", () => {
+    const makers = constructorBindings()
     expect([...makers.keys()]).toEqual(["lib/client/client.ts"])
 
     const constructors = makers.get("lib/client/client.ts") ?? []
@@ -611,6 +607,89 @@ describe("SDK clients in the panel's source", () => {
     // `sdk` (token in localStorage, read per request) and `publicAuthSdk`
     // (sign-in, token in memory, handed to setAuthToken).
     expect(authTypes).toEqual(["jwt", "jwt"])
+  })
+
+  it("re-exports nothing from the SDK, in any file, lib/client included", () => {
+    // A re-export would hand the constructor to files that import no SDK:
+    // `export { default as MedusaSdk } from "@medusajs/js-sdk"` in lib/client,
+    // then `new MedusaSdk({ ... jwtTokenStorageKey: "farm_token" })` on a page
+    // is a second token store. Types alone cannot make a client.
+    const reexports: string[] = []
+    for (const { file, ast } of sources) {
+      for (const statement of ast.statements) {
+        if (
+          !ts.isExportDeclaration(statement) ||
+          !isSdk(statement.moduleSpecifier)
+        )
+          continue
+        if (statement.isTypeOnly) continue
+        const clause = statement.exportClause
+        if (
+          clause &&
+          ts.isNamedExports(clause) &&
+          clause.elements.every((e) => e.isTypeOnly)
+        )
+          continue
+        reexports.push(`${file}:${lineOf(ast, statement)}`)
+      }
+    }
+    expect(reexports).toEqual([])
+  })
+
+  it("hands no SDK constructor on from lib/client: it only ever follows new", () => {
+    const constructors = constructorBindings().get("lib/client/client.ts") ?? []
+    const client = sources.find(({ file }) => file === "lib/client/client.ts")!
+    const otherUses: string[] = []
+    visit(client.ast, (node) => {
+      if (!ts.isIdentifier(node) || !constructors.includes(node.text)) return
+      if (
+        ts.isImportClause(node.parent) ||
+        ts.isNamespaceImport(node.parent) ||
+        ts.isImportSpecifier(node.parent)
+      ) {
+        return
+      }
+      if (!isNewCallee(node))
+        otherUses.push(`${node.text} at line ${lineOf(client.ast, node)}`)
+    })
+    expect(constructors.length).toBeGreaterThan(0)
+    expect(otherUses).toEqual([])
+  })
+
+  it("constructs nothing imported from lib/client, whose exports are instances", () => {
+    const LIB_CLIENT = [
+      join(SRC, "lib", "client"),
+      join(SRC, "lib", "client", "index"),
+      join(SRC, "lib", "client", "client"),
+    ]
+    const constructed: string[] = []
+    for (const { abs, file, ast } of sources) {
+      const names = new Set<string>()
+      for (const declaration of importsOf(ast)) {
+        const to = target(abs, declaration.moduleSpecifier.text)
+        const clause = declaration.importClause
+        if (!to || !LIB_CLIENT.includes(to) || !clause || clause.isTypeOnly)
+          continue
+        if (clause.name) names.add(clause.name.text)
+        const bindings = clause.namedBindings
+        if (bindings && ts.isNamespaceImport(bindings))
+          names.add(bindings.name.text)
+        if (bindings && ts.isNamedImports(bindings)) {
+          for (const element of bindings.elements) names.add(element.name.text)
+        }
+      }
+      if (names.size === 0) continue
+      visit(ast, (node) => {
+        if (
+          ts.isIdentifier(node) &&
+          names.has(node.text) &&
+          isNewCallee(node)
+        ) {
+          constructed.push(`${file}:${lineOf(ast, node)}`)
+        }
+      })
+    }
+    expect(constructed).toEqual([])
   })
 
   it("uses the tokenless sign-in client only for sign-in", () => {
