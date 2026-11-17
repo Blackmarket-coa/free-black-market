@@ -125,7 +125,7 @@ function makeCtx(opts: { orgs?: Array<Partial<OrgRow> & { key: string; name: str
   return { scope, resolved, dir, ledger }
 }
 
-type ReqShape = { params?: Record<string, string>; body?: unknown; headers?: Record<string, string>; auth_context?: { actor_id: string }; _seller_id?: string }
+type ReqShape = { params?: Record<string, string>; body?: unknown; headers?: Record<string, string>; auth_context?: { actor_id: string }; _seller_id?: string; _sellerContextResolved?: boolean }
 
 async function call(handler: Handler, ctx: Ctx, req: ReqShape) {
   const res = createRes()
