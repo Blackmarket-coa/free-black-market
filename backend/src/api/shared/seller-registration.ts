@@ -19,6 +19,7 @@ import {
   CreateSellerRegistrationInput,
 } from "../vendor/register/validators"
 import { maskEmail } from "../../shared/seller-approval-service"
+import { resolveLinkedStore } from "../../shared/linked-store"
 
 /**
  * The login a vendor application is filed for: the caller's own, read from a
@@ -136,12 +137,22 @@ export const handleSellerRegistration = async (
 
     // A login that already has a store applies for no other: approving a
     // second application relinked the login and re-ran the metadata and
-    // playbook steps over the existing store (SD-127 review).
-    const linkedSeller = (authIdentity.app_metadata as Record<string, unknown> | undefined)?.seller_id
-    if (typeof linkedSeller === "string" && linkedSeller) {
+    // playbook steps over the existing store (SD-127 review). One linked to a
+    // store that was closed cannot apply here either, and is told why.
+    const linked = await resolveLinkedStore(
+      req.scope,
+      authIdentity.app_metadata as Record<string, unknown> | undefined
+    )
+    if (linked.kind === "live") {
       return res.status(409).json({
         type: "conflict",
         message: "This account already has a store. Sign in to the vendor panel to manage it.",
+      })
+    }
+    if (linked.kind === "closed") {
+      return res.status(409).json({
+        type: "conflict",
+        message: "This account is linked to a store that was closed. Contact support to reopen it or to apply again.",
       })
     }
 
