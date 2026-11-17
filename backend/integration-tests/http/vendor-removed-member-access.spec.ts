@@ -1,8 +1,11 @@
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
+import { authenticate } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { createSellerWorkflow, deleteMemberWorkflow } from "@mercurjs/b2c-core/workflows"
+import { ensureSellerContext } from "../../src/api/vendor/_middlewares"
+import { ACCOUNTS_RECEIVABLE_MODULE } from "../../src/modules/accounts-receivable"
 import { PLAYBOOK_MODULE } from "../../src/modules/playbook"
 import { REQUEST_MODULE } from "../../src/modules/request"
 import backfillSellerAuth from "../../src/scripts/backfill-seller-auth"
@@ -14,7 +17,7 @@ import {
 } from "../../src/shared/seller-actor"
 import { REFUSED_SELLER_ID_LINKS_SQL } from "../../src/shared/seller-auth-backfill"
 import { requireSellerId } from "../../src/shared/auth-helpers"
-import { createAuthenticatedSeller } from "./helpers/seller-auth"
+import { assignSellerPlan, createAuthenticatedSeller } from "./helpers/seller-auth"
 import { newTestPassword } from "./helpers/test-password"
 
 jest.setTimeout(240 * 1000)
@@ -48,13 +51,25 @@ jest.setTimeout(240 * 1000)
  * owner, whoever held it: an invited member given the seller id acted as the
  * owner, and kept every read after being removed (follow-up review, P1).
  *
- * Members are removed with Mercur's own deleteMemberWorkflow. Spends 14 of the
- * auth limiter's 20 a minute (seller register and real sign-ins; the other
- * tokens carry the claims Medusa mints).
+ * A seller session cookie sent with a bearer token is refused when the two
+ * name different logins, and the gate validates the bearer's actor, which is
+ * what every handler after it then sees (follow-up re-review, R-c). Mercur's
+ * checkSellerApproved reads only the bearer and accepts any seller token with
+ * an actor; Mercur's authenticate prefers the session, so the gate validated
+ * the session's actor; a route-level authenticate("seller", "bearer") then put
+ * the bearer's back, unvalidated. Measured before the fix: a removed member's
+ * bearer with a live seller's cookie read the store's invoices and wrote one,
+ * and listed the store's promotions through Mercur's fetchSellerByAuthActorId.
+ *
+ * Members are removed with Mercur's own deleteMemberWorkflow. Spends 16 of the
+ * auth limiter's 20 a minute (seller register, real sign-ins and two sessions;
+ * the other tokens carry the claims Medusa mints).
  */
 
 medusaIntegrationTestRunner({
   inApp: true,
+  // /vendor/invoices answers 404 with its kill switch off.
+  env: { FF_INVOICING_V1: "true" },
   testSuite: ({ api, getContainer }) => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const container = () => getContainer() as any
@@ -181,6 +196,46 @@ medusaIntegrationTestRunner({
     /** What approval writes, and what the seller-auth backfill used to write for any member. */
     const linkBySellerId = async (who: { authIdentityId: string }, sellerId: string) =>
       container().resolve(Modules.AUTH).updateAuthIdentities([{ id: who.authIdentityId, app_metadata: { seller_id: sellerId } }])
+
+    /** An order of the store, shipped to a customer's address. */
+    async function orderFor(store: { id: string }) {
+      const [order] = await container()
+        .resolve(Modules.ORDER)
+        .createOrders([
+          {
+            currency_code: "usd",
+            email: "buyer@example.com",
+            customer_id: `cus_${uid()}`,
+            shipping_address: { first_name: "Ada", last_name: "Lovelace", address_1: ADDRESS, city: "Detroit", postal_code: "48201", country_code: "us" },
+            items: [{ title: "Jam", quantity: 1, unit_price: 10 }],
+          },
+        ])
+      await link().create({ [SELLER_MODULE]: { seller_id: store.id }, [Modules.ORDER]: { order_id: order.id } })
+      return order as { id: string }
+    }
+
+    /** A promotion of the store, as Mercur's vendor promotions routes list them. */
+    async function promotionFor(store: { id: string }) {
+      const code = `SECRET${uid().toUpperCase()}`
+      const [promotion] = await container()
+        .resolve(Modules.PROMOTION)
+        .createPromotions([
+          { code, type: "standard", status: "draft", application_method: { type: "percentage", target_type: "order", allocation: "across", value: 10 } },
+        ])
+      await link().create({ [SELLER_MODULE]: { seller_id: store.id }, [Modules.PROMOTION]: { promotion_id: promotion.id } })
+      return { id: promotion.id as string, code }
+    }
+
+    /** A session cookie from Medusa's own POST /auth/session for this token. Spends one of the limiter. */
+    async function sessionCookie(token: string) {
+      const session = await api.post("/auth/session", {}, bearer(token))
+      const cookie = (session.headers["set-cookie"] as string[]).map((c) => c.split(";")[0]).join("; ")
+      expect(cookie).toMatch(/connect\.sid=/)
+      return cookie
+    }
+    const withSession = (token: string, cookie: string) => ({ headers: { authorization: `Bearer ${token}`, cookie } })
+    const invoicesOf = async (memberId: string) =>
+      container().resolve(ACCOUNTS_RECEIVABLE_MODULE).listInvoices({ seller_id: memberId })
 
     afterEach(() => {
       jest.restoreAllMocks()
@@ -527,6 +582,200 @@ medusaIntegrationTestRunner({
             [shut.owner.authIdentityId, "closed_store"],
           ].sort()
         )
+      })
+    })
+
+    describe("a seller session cookie sent with a bearer token", () => {
+      it("a removed member's bearer with a live seller's cookie is refused on every route, and nothing is written", async () => {
+        // The re-review's R-c. The gate validated the session's actor, and a
+        // route-level authenticate("seller", "bearer") then handed the
+        // handlers the bearer's: the removed member's. Measured before the
+        // fix: GET /vendor/invoices 200 with the store's invoice, POST 201
+        // under the removed member's id, and Mercur's promotions list (behind
+        // /vendor/promotion*) found the store through the removed member.
+        const { owner, ownerMemberId, store } = await storeOf(`Session Farm ${uid()}`)
+        const order = await orderFor(store)
+        const promotion = await promotionFor(store)
+        const removed = await teamMember(store, "removed")
+        const invoices = container().resolve(ACCOUNTS_RECEIVABLE_MODULE)
+        await invoices.createDraft({ sellerId: removed.memberId, customerId: "cus_secret", totalCents: 1500, memo: "S customer invoice" })
+        await deleteMemberWorkflow.run({ container: container(), input: removed.memberId })
+        // A member of a store that was closed, the same way.
+        const shut = await storeOf(`Shut Session Farm ${uid()}`)
+        const shutMember = await teamMember(shut.store, "shut")
+        await invoices.createDraft({ sellerId: shutMember.memberId, customerId: "cus_shut_secret", totalCents: 900, memo: "closed store invoice" })
+        await container().resolve(SELLER_MODULE).softDeleteSellers([shut.store.id])
+
+        const elsewhere = await storeOf(`Elsewhere Farm ${uid()}`)
+        // Every store here may invoice, so only the gate can refuse.
+        for (const id of [store.id, shut.store.id, elsewhere.store.id]) {
+          await assignSellerPlan(container(), id, "internal")
+        }
+        const cookie = await sessionCookie(tokenFor(elsewhere.owner, elsewhere.ownerMemberId))
+        const removedBearer = tokenFor(removed, removed.memberId)
+
+        // Each alone is refused: Mercur's guard needs a bearer, and the gate refuses this one.
+        expect((await call(api.get("/vendor/invoices", { headers: { cookie } }))).status).toBe(401)
+        expect((await call(api.get("/vendor/invoices", bearer(removedBearer)))).status).toBe(401)
+
+        // Every answer is collected first, so a failure shows them all.
+        const secrets = ["cus_secret", "cus_shut_secret", ADDRESS, promotion.code, store.id, shut.store.id]
+        const reads = ["/vendor/invoices", "/vendor/orders", `/vendor/orders/${order.id}`, "/vendor/promotions", "/vendor/sellers/me", "/vendor/sellers/me/onboarding", "/vendor/me"]
+        const answers: Array<{ who: string; call: string; status: number; leaks: string[] }> = []
+        const ask = async (who: string, label: string, request: Promise<any>) => {
+          const res = await call(request)
+          const body = JSON.stringify(res.data ?? {})
+          answers.push({ who, call: label, status: res.status, leaks: secrets.filter((s) => body.includes(s)) })
+        }
+        const pairs = [
+          ["removed member", withSession(removedBearer, cookie)],
+          ["closed store's member", withSession(tokenFor(shutMember, shutMember.memberId), cookie)],
+          // A live seller's own bearer with another login's cookie: the
+          // request names two logins, and nothing says which one is asking.
+          ["live owner", withSession(tokenFor(owner, ownerMemberId), cookie)],
+        ] as const
+        for (const [who, pair] of pairs) {
+          for (const path of reads) {
+            await ask(who, `GET ${path}`, api.get(path, pair))
+          }
+          await ask(who, "POST /vendor/invoices", api.post("/vendor/invoices", { total: 999, customer_id: "cus_mallory", issue: false }, pair))
+        }
+        const written = {
+          removed: (await invoicesOf(removed.memberId)).length,
+          closed: (await invoicesOf(shutMember.memberId)).length,
+          owner: (await invoicesOf(ownerMemberId)).length,
+          cookieHolder: (await invoicesOf(elsewhere.ownerMemberId)).length,
+        }
+
+        expect({ answers, written }).toEqual({
+          answers: pairs.flatMap(([who]) =>
+            [...reads.map((path) => `GET ${path}`), "POST /vendor/invoices"].map((label) => ({ who, call: label, status: 401, leaks: [] }))
+          ),
+          written: { removed: 1, closed: 1, owner: 0, cookieHolder: 0 },
+        })
+      })
+
+      it("a session and a bearer of the same login act as the bearer's member, and read and write", async () => {
+        // A login's session can predate a change of its link: here it was made
+        // while the login acted as the owner of one store, and the bearer acts
+        // as its member of another.
+        const first = await storeOf(`First Farm ${uid()}`)
+        const second = await storeOf(`Second Farm ${uid()}`)
+        const [secondMember] = await container()
+          .resolve(SELLER_MODULE)
+          .createMembers([{ seller_id: second.store.id, name: "Owner", email: first.owner.email, role: "member" }])
+        const order = await orderFor(second.store)
+        await assignSellerPlan(container(), second.store.id, "internal")
+        const cookie = await sessionCookie(tokenFor(first.owner, first.ownerMemberId))
+        await container().resolve(Modules.AUTH).updateAuthIdentities([{ id: first.owner.authIdentityId, app_metadata: { seller_id: secondMember.id } }])
+        const both = withSession(tokenFor(first.owner, secondMember.id), cookie)
+
+        // Collected first, so a failure shows every route's answer.
+        const me = await call(api.get("/vendor/me", both))
+        const profile = await call(api.get("/vendor/sellers/me", both))
+        const orders = await call(api.get("/vendor/orders", both))
+        const created = await call(api.post("/vendor/invoices", { total: 700, issue: false }, both))
+        const listed = await call(api.get("/vendor/invoices", both))
+        expect({
+          member: [me.status, me.data?.member?.id, me.data?.member?.seller_id],
+          store: [profile.status, profile.data?.seller?.id],
+          orders: [orders.status, (orders.data?.orders ?? []).map((o: { id: string }) => o.id)],
+          created: [created.status, created.data?.invoice?.seller_id],
+          listed: [listed.status, (listed.data?.invoices ?? []).map((i: { id: string }) => i.id)],
+          underTheSessionsMember: (await invoicesOf(first.ownerMemberId)).length,
+        }).toEqual({
+          member: [200, secondMember.id, second.store.id],
+          store: [200, second.store.id],
+          orders: [200, [order.id]],
+          created: [201, secondMember.id],
+          listed: [200, [created.data?.invoice?.id]],
+          underTheSessionsMember: 0,
+        })
+      })
+
+      it("an owner and a member still on the team, with a bearer alone, read and write invoices and orders", async () => {
+        const { owner, ownerMemberId, store } = await storeOf(`Bearer Farm ${uid()}`)
+        const order = await orderFor(store)
+        await assignSellerPlan(container(), store.id, "internal")
+        const active = await teamMember(store, "active")
+
+        for (const [token, memberId, who] of [
+          [tokenFor(owner, ownerMemberId), ownerMemberId, "owner"],
+          [tokenFor(active, active.memberId), active.memberId, "member"],
+        ] as const) {
+          const created = await call(api.post("/vendor/invoices", { total: 500, issue: false }, bearer(token)))
+          expect({ who, status: created.status }).toEqual({ who, status: 201 })
+          expect({ who, keyedTo: created.data.invoice.seller_id }).toEqual({ who, keyedTo: memberId })
+          const listed = await call(api.get("/vendor/invoices", bearer(token)))
+          expect({ who, status: listed.status, ids: listed.data.invoices.map((i: { id: string }) => i.id) }).toEqual({
+            who,
+            status: 200,
+            ids: [created.data.invoice.id],
+          })
+          const orders = await call(api.get("/vendor/orders", bearer(token)))
+          expect({ who, status: orders.status, ids: orders.data.orders.map((o: { id: string }) => o.id) }).toEqual({ who, status: 200, ids: [order.id] })
+        }
+      })
+
+      it("once the gate lets a request through, a later authenticate that reads another login's token does not change who it acts as", async () => {
+        // Medusa's authenticate replaces req.auth_context wholesale. Nothing
+        // after the gate on /vendor reads another credential today (the
+        // route-level matchers re-read the bearer the gate validated), so this
+        // drives the gate and then Medusa's own authenticate directly, with the
+        // header swapped between them.
+        const { owner, ownerMemberId, store } = await storeOf(`Pinned Farm ${uid()}`)
+        const other = await storeOf(`Other Pinned Farm ${uid()}`)
+        const otherBearer = `Bearer ${tokenFor(other.owner, other.ownerMemberId)}`
+        const resStub = () => {
+          const res: any = { statusCode: 200 }
+          res.status = (code: number) => ((res.statusCode = code), res)
+          res.json = (body: unknown) => ((res.body = body), res)
+          return res
+        }
+        const through = async (token: string) => {
+          const req: any = {
+            method: "GET",
+            originalUrl: "/vendor/invoices",
+            url: "/vendor/invoices",
+            path: "/vendor/invoices",
+            headers: { authorization: `Bearer ${token}` },
+            scope: container(),
+            session: {},
+          }
+          const res = resStub()
+          let passed = false
+          await ensureSellerContext(req, res, () => {
+            passed = true
+          })
+          expect({ passed, status: res.statusCode }).toEqual({ passed: true, status: 200 })
+          return req
+        }
+        const expected = { actor_id: ownerMemberId, auth_identity_id: owner.authIdentityId }
+
+        for (const [token, which] of [[tokenFor(owner, ownerMemberId), "member id"], [tokenFor(owner, store.id), "seller id"]] as const) {
+          const req = await through(token)
+          expect({ which, ctx: req.auth_context }).toEqual({ which, ctx: expect.objectContaining(expected) })
+
+          // The same token read again: a seller id still acts as its member.
+          let again = false
+          await authenticate("seller", "bearer")(req, resStub(), () => {
+            again = true
+          })
+          expect({ which, again, ctx: req.auth_context }).toEqual({ which, again: true, ctx: expect.objectContaining(expected) })
+
+          // Another login's token: Medusa accepts it and assigns its context, which does not take.
+          req.headers.authorization = otherBearer
+          let swapped = false
+          await authenticate("seller", "bearer")(req, resStub(), () => {
+            swapped = true
+          })
+          expect({ which, swapped, ctx: req.auth_context }).toEqual({ which, swapped: true, ctx: expect.objectContaining(expected) })
+
+          // Nor does writing the fields.
+          req.auth_context.actor_id = other.ownerMemberId
+          req.auth_context.auth_identity_id = other.owner.authIdentityId
+          expect({ which, ctx: req.auth_context }).toEqual({ which, ctx: expect.objectContaining(expected) })
+        }
       })
     })
 
