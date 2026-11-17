@@ -14,6 +14,11 @@ import { Button } from "@/components/atoms"
 import { StripeContext } from "../../organisms/PaymentContainer/StripeWrapper"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
 import { cardChargeMatchesCartTotal } from "@/lib/helpers/card-charge"
+import {
+  listNames,
+  type OfferedOption,
+  shippingCoverage,
+} from "@/lib/helpers/seller-shipping"
 import { toast } from "@/lib/helpers/toast"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 import { completeSubscriptionCheckout } from "@/lib/data/subscriptions"
@@ -26,6 +31,12 @@ import {
 type PaymentButtonProps = {
   cart: HttpTypes.StoreCart
   "data-testid": string
+  /**
+   * The shipping options Mercur lists for the cart (the checkout page's
+   * `listCartShippingMethods`), for naming the sellers still without a
+   * method. Without them the button still counts methods against sellers.
+   */
+  shippingOptions?: ReadonlyArray<OfferedOption> | null
 }
 
 // Ticket line items carry seat metadata (stamped by the ticket purchase
@@ -73,9 +84,36 @@ const SubscriptionCheckoutNote = ({ cart }: { cart: HttpTypes.StoreCart }) => {
   )
 }
 
+/**
+ * Said beside Place order while a seller in the cart has no shipping method.
+ * Mercur's checkout refuses such a cart with "Seller shipping method not
+ * found!", and only after it has authorized the card, so the button waits.
+ */
+const ShippingIncompleteNote = ({
+  cart,
+  shippingOptions,
+}: {
+  cart: HttpTypes.StoreCart
+  shippingOptions?: ReadonlyArray<OfferedOption> | null
+}) => {
+  const coverage = shippingCoverage(cart, shippingOptions)
+  if (coverage.complete) return null
+  const names = coverage.toChoose.map((seller) => seller.name).filter(Boolean)
+  return (
+    <p className="mb-2 text-sm text-secondary" data-testid="shipping-incomplete-note">
+      {names.length
+        ? `Choose a delivery option for ${listNames(names)} before placing your order.`
+        : coverage.noOptions.length
+          ? "A seller in your cart has no delivery option for this address. Go back to Delivery to see which, and remove their items to place your order."
+          : "Choose a delivery option for every seller in your cart before placing your order."}
+    </p>
+  )
+}
+
 const PaymentButton: React.FC<PaymentButtonProps> = (props) => (
   <>
     <SubscriptionCheckoutNote cart={props.cart} />
+    <ShippingIncompleteNote cart={props.cart} shippingOptions={props.shippingOptions} />
     <PaymentButtonForProvider {...props} />
   </>
 )
@@ -83,13 +121,15 @@ const PaymentButton: React.FC<PaymentButtonProps> = (props) => (
 const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   cart,
   "data-testid": dataTestId,
+  shippingOptions,
 }) => {
+  // One shipping method per seller, not one in all (see ShippingIncompleteNote).
   const notReady =
     !cart ||
     !cart.shipping_address ||
     !cart.billing_address ||
     !cart.email ||
-    (cart.shipping_methods?.length ?? 0) < 1
+    !shippingCoverage(cart, shippingOptions).complete
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
 
