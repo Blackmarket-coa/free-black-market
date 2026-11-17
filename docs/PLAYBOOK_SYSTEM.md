@@ -208,11 +208,26 @@ type PlaybookRecipe = {
 }
 ```
 
-Recipes are seeded at first boot via
-`backend/src/scripts/seed-playbooks.ts`. Editing a recipe requires a
-migration if the change affects denormalized caches (commission_rate,
-allow_credits_payout) or a non-breaking re-seed if it only changes display
-copy.
+The `playbook` table is seeded on every boot by the playbook module's loader
+(`backend/src/modules/playbook/loaders/seed-registry.ts`; the listing-type
+module seeds `listing_type` the same way). It inserts the recipes the table
+lacks, matched by `recipe_id` (a soft-deleted row counts as present), and never
+changes a row that is there, so an operator's edit survives restarts. Until
+2026-11-17 nothing ran the seed: the only writer was
+`backend/src/scripts/seed-playbooks.ts`, which neither the start script nor
+the seed calls, so a fresh database had no playbooks, approval silently
+dropped the applicant's playbook and `POST /vendor/playbook/assign` answered
+500. Medusa 2.14 runs module loaders, not the project's `src/loaders/`
+directory, which is why this lives in the module.
+
+Check it: `SELECT count(*) FROM playbook WHERE deleted_at IS NULL;` should be
+11 (one per recipe) after the backend has started once.
+
+Editing a recipe in code reaches a database that already has the row only
+through `medusa exec ./src/scripts/seed-playbooks.ts`, which overwrites every
+row with the code's values (operator edits included). A change that affects
+denormalized caches (commission_rate, allow_credits_payout) also needs a
+migration.
 
 ## VendorFeatures extension key defaults
 

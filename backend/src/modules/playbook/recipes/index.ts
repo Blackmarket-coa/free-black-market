@@ -1,9 +1,11 @@
 /**
  * Playbook recipe catalog.
  *
- * Code is the source of truth for the ten playbook recipes. The
- * `playbook` table is seeded from this catalog at boot via
- * `backend/src/scripts/seed-playbooks.ts`.
+ * Code is the source of truth for the playbook recipes. The `playbook`
+ * table is seeded from this catalog at boot by the module's loader
+ * (`../loaders/seed-registry.ts`, missing rows only);
+ * `backend/src/scripts/seed-playbooks.ts` pushes code changes over rows
+ * that already exist.
  */
 
 import { STALL } from "./stall"
