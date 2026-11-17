@@ -322,10 +322,17 @@ export const LotGradeLabels: Record<LotGrade, string> = {
 
 /**
  * Lot Allocation Enum
+ *
+ * Exactly the backend's: the `lot_allocation_enum` Postgres type that the
+ * agriculture module's migration creates, and `LotAllocation` in
+ * backend/src/modules/agriculture/models/lot.ts. A value outside it fails the
+ * lot's insert. The panel had "kitchen" (no backend equivalent) and
+ * "restaurant" (lower case), and its form defaulted to `RETAIL`, which it did
+ * not define.
  */
 export enum LotAllocation {
-  KITCHEN = "kitchen",
-  RESTAURANT = "restaurant",
+  RETAIL = "RETAIL",
+  RESTAURANT = "RESTAURANT",
   WHOLESALE = "WHOLESALE",
   CSA = "CSA",
   COOPERATIVE = "COOPERATIVE",
@@ -334,7 +341,7 @@ export enum LotAllocation {
 }
 
 export const LotAllocationLabels: Record<LotAllocation, string> = {
-  [LotAllocation.KITCHEN]: "Kitchen",
+  [LotAllocation.RETAIL]: "Retail (direct to consumer)",
   [LotAllocation.RESTAURANT]: "Restaurant (B2B)",
   [LotAllocation.WHOLESALE]: "Wholesale",
   [LotAllocation.CSA]: "CSA Share",

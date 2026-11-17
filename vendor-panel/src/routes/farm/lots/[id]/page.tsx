@@ -252,7 +252,7 @@ const LotDetailPage = () => {
               )}
             </div>
             <Text className="text-ui-fg-subtle mt-1">
-              {LotAllocationLabels[lot.allocation_type]}
+              {LotAllocationLabels[lot.allocation_type] ?? lot.allocation_type}
               {lot.size_class && ` • ${lot.size_class}`}
               {lot.batch_date && ` • Batch ${new Date(lot.batch_date).toLocaleDateString()}`}
             </Text>
