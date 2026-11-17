@@ -9,7 +9,7 @@ import {
   MedusaResponse,
 } from "@medusajs/framework/http"
 import type { AuthIdentityDTO, ConfigModule } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys, Modules, toHandle } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../../modules/request"
 import RequestModuleService from "../../modules/request/service"
 import { RequestStatus } from "../../modules/request/models"
@@ -20,6 +20,7 @@ import {
 } from "../vendor/register/validators"
 import { maskEmail } from "../../shared/seller-approval-service"
 import { resolveLinkedStore } from "../../shared/linked-store"
+import { STORE_NAME_NEEDS_LATIN, storeHandleFor } from "../../shared/store-handle"
 
 /**
  * The login a vendor application is filed for: the caller's own, read from a
@@ -138,7 +139,10 @@ export const handleSellerRegistration = async (
     // A login that already has a store applies for no other: approving a
     // second application relinked the login and re-ran the metadata and
     // playbook steps over the existing store (SD-127 review). One linked to a
-    // store that was closed cannot apply here either, and is told why.
+    // store that was closed cannot apply here either, and is told why. A
+    // login whose link names a member removed from a store that is still open
+    // has no store, and applies like any other: it used to be told its store
+    // "was closed" while the store was live.
     const linked = await resolveLinkedStore(
       req.scope,
       authIdentity.app_metadata as Record<string, unknown> | undefined
@@ -158,8 +162,17 @@ export const handleSellerRegistration = async (
 
     // The store's handle is toHandle(name), as Mercur's createSellerStep makes
     // it, and handles are unique. Refused now with something the applicant can
-    // act on, rather than an approval that cannot create the store.
-    const handle = toHandle(body.name)
+    // act on, rather than an approval that cannot create the store. A name
+    // whose handle has no letter or digit is refused first: every such name
+    // makes the same handle, so it would read as taken by the first store
+    // that got one.
+    const handle = storeHandleFor(body.name)
+    if (!handle) {
+      return res.status(400).json({
+        type: "invalid_data",
+        message: STORE_NAME_NEEDS_LATIN,
+      })
+    }
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
     const { data: sameHandle } = await query.graph({
       entity: "seller",

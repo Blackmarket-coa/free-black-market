@@ -1,10 +1,13 @@
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { Modules, toHandle } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, toHandle } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
-import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
+import { createSellerWorkflow, deleteMemberWorkflow } from "@mercurjs/b2c-core/workflows"
 import { REQUEST_MODULE } from "../../src/modules/request"
 import { SELLER_EXTENSION_MODULE } from "../../src/modules/seller-extension"
+import { listSellerMetadataRecords } from "../../src/modules/seller-extension/metadata-service"
+import { PLAYBOOK_MODULE } from "../../src/modules/playbook"
+import { STORE_NAME_NEEDS_LATIN } from "../../src/shared/store-handle"
 
 jest.setTimeout(240 * 1000)
 
@@ -22,8 +25,16 @@ jest.setTimeout(240 * 1000)
  * refuses a row that seller registration would not have written: filed by a
  * login other than the one it names, or under another address.
  *
+ * Resuming needs the store to be the one an approval of this application
+ * made (its first member is the applicant's owner, and no other application
+ * of the login was approved), so an invite into a same-named store, as owner
+ * too, is refused. A link to a member removed from a store that is still open
+ * is no link: the login files and is approved onto a store of its own. A
+ * store name with no Latin letter or digit is refused, at filing and at
+ * approval, because its handle would have none.
+ *
  * Approvals go through POST /admin/requests/:id/approve with an admin token;
- * the filings spend 6 of the auth limiter's 20 a minute.
+ * the filings spend 12 of the auth limiter's 20 a minute.
  */
 
 medusaIntegrationTestRunner({
@@ -71,12 +82,12 @@ medusaIntegrationTestRunner({
     async function application(
       applicant: { email: string; authIdentityId: string },
       storeName: string,
-      overrides: { submitter_id?: string; memberEmail?: string } = {}
+      overrides: { submitter_id?: string; memberEmail?: string; status?: string } = {}
     ) {
       const [request] = await container().resolve(REQUEST_MODULE).createRequests([
         {
           type: "seller",
-          status: "pending",
+          status: overrides.status ?? "pending",
           submitter_id: overrides.submitter_id ?? applicant.authIdentityId,
           data: {
             auth_identity_id: applicant.authIdentityId,
@@ -101,11 +112,19 @@ medusaIntegrationTestRunner({
     const stubMail = () =>
       jest.spyOn(container().resolve(Modules.NOTIFICATION), "createNotifications").mockResolvedValue([] as any)
 
-    /** The two writes Mercur's acceptMemberInvitesWorkflow makes: a member row, and the login linked to it. */
-    async function acceptInvite(invitee: { email: string; authIdentityId: string }, store: { id: string }) {
+    /**
+     * The two writes Mercur's acceptMemberInvitesWorkflow makes: a member row
+     * with the invite's address and role, and the login linked to it. Mercur's
+     * invite takes role "owner", and nothing checks who sends one.
+     */
+    async function acceptInvite(
+      invitee: { email: string; authIdentityId: string },
+      store: { id: string },
+      role: "owner" | "admin" | "member" = "member"
+    ) {
       const [member] = await container()
         .resolve(SELLER_MODULE)
-        .createMembers([{ seller_id: store.id, name: "Invitee", email: invitee.email, role: "member" }])
+        .createMembers([{ seller_id: store.id, name: "Invitee", email: invitee.email, role }])
       await container()
         .resolve(Modules.AUTH)
         .updateAuthIdentities([{ id: invitee.authIdentityId, app_metadata: { seller_id: member.id } }])
@@ -116,21 +135,28 @@ medusaIntegrationTestRunner({
     const registrationToken = (who: { authIdentityId: string }) =>
       sign({ actor_id: "", actor_type: "seller", auth_identity_id: who.authIdentityId, app_metadata: {}, user_metadata: {} })
 
-    const file = (who: { email: string; authIdentityId: string }, storeName: string) =>
+    const file = (who: { email: string; authIdentityId: string }, storeName: string, token = registrationToken(who)) =>
       call(
         api.post(
           "/auth/seller/register-request",
           { name: storeName, member: { name: "Applicant", email: who.email } },
-          bearer(registrationToken(who))
+          bearer(token)
         )
       )
+
+    /** What signing in hands a login whose link names a member: that member as the actor. */
+    const memberToken = (who: { authIdentityId: string }, memberId: string) =>
+      sign({ actor_id: memberId, actor_type: "seller", auth_identity_id: who.authIdentityId, app_metadata: { seller_id: memberId }, user_metadata: {} })
+    const registrationStatus = async (token: string) =>
+      (await call(api.get("/auth/seller/registration-status", bearer(token)))).data
 
     const sellersWithHandle = async (name: string) =>
       container().resolve(SELLER_MODULE).listSellers({ handle: toHandle(name) })
     const metadataOf = async (sellerId: string) =>
-      // `listSellerMetadata`: Medusa's pluralize leaves "Metadata" as it is, whatever the
-      // generated types say (modules/seller-extension/metadata-service.ts works around the same).
-      container().resolve(SELLER_EXTENSION_MODULE).listSellerMetadata({ seller_id: sellerId })
+      listSellerMetadataRecords(container().resolve(SELLER_EXTENSION_MODULE), { seller_id: sellerId })
+    const playbookOf = async (sellerId: string) =>
+      container().resolve(PLAYBOOK_MODULE).listPlaybookAssignments({ seller_id: sellerId })
+    const pg = () => container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
 
     afterEach(() => {
       jest.restoreAllMocks()
@@ -140,11 +166,7 @@ medusaIntegrationTestRunner({
       it("an application under another store's name links nothing, changes nothing, and stays pending", async () => {
         const victim = await login("victim")
         const store = await storeFor(victim, `Victim Farm ${uid()}`)
-        // `listSellerMetadata`: Medusa's pluralize leaves "Metadata" as it is, whatever the
-        // generated types say (modules/seller-extension/metadata-service.ts works around the same).
-        const metadataBefore = await container()
-          .resolve(SELLER_EXTENSION_MODULE)
-          .listSellerMetadata({ seller_id: store.id })
+        const metadataBefore = await metadataOf(store.id)
         const applicant = await login("applicant")
         const filed = await application(applicant, store.name)
         const mail = stubMail()
@@ -155,10 +177,7 @@ medusaIntegrationTestRunner({
 
         expect(await requestStatus(filed.id)).toBe("pending")
         expect(await linkedSeller(applicant.authIdentityId)).toBeUndefined()
-        const metadataAfter = await container()
-          .resolve(SELLER_EXTENSION_MODULE)
-          .listSellerMetadata({ seller_id: store.id })
-        expect(metadataAfter).toEqual(metadataBefore)
+        expect(await metadataOf(store.id)).toEqual(metadataBefore)
         expect(mail).not.toHaveBeenCalled()
       })
 
@@ -262,6 +281,78 @@ medusaIntegrationTestRunner({
         expect(mail).not.toHaveBeenCalled()
       })
 
+      it("an applicant invited as owner into a store that has since taken her application's name is refused: nothing linked or written", async () => {
+        // The follow-up review's probe. She files "Sunny Farm" while no store
+        // has the name; another store takes it; she is invited into that store
+        // as owner (Mercur's invite takes role "owner" from anyone). The handle
+        // matches and an owner with her address is the member her login names,
+        // which is all resuming used to ask: approved, relinked onto that
+        // store, and its metadata written from her answers.
+        const applicant = await login("applicant")
+        const storeName = `Sunny Farm ${uid()}`
+        stubMail()
+        const filed = await file(applicant, storeName)
+        expect(filed.status).toBe(201)
+        jest.restoreAllMocks()
+
+        const owner = await login("owner")
+        const ownerStore = await storeFor(owner, storeName)
+        const member = await acceptInvite(applicant, ownerStore, "owner")
+        const metadataBefore = await metadataOf(ownerStore.id)
+        const mail = stubMail()
+
+        const refused = await approve(filed.data.request.id)
+        expect(refused.status).toBe(409)
+        expect(refused.data.message).toMatch(/already has a store/)
+        expect(await requestStatus(filed.data.request.id)).toBe("pending")
+        expect(await linkedSeller(applicant.authIdentityId)).toBe(member.id)
+        expect(await metadataOf(ownerStore.id)).toEqual(metadataBefore)
+        expect(await playbookOf(ownerStore.id)).toEqual([])
+        expect(await sellersWithHandle(storeName)).toEqual([expect.objectContaining({ id: ownerStore.id, name: storeName })])
+        expect(mail).not.toHaveBeenCalled()
+      })
+
+      it("a retried approval resumes onto the store whose seller id the login holds", async () => {
+        // What an approval leaves when it links the seller id and a later step fails.
+        const applicant = await login("applicant")
+        const store = await storeFor(applicant, `Linked Farm ${uid()}`)
+        await container()
+          .resolve(Modules.AUTH)
+          .updateAuthIdentities([{ id: applicant.authIdentityId, app_metadata: { seller_id: store.id } }])
+        const filed = await application(applicant, store.name)
+        stubMail()
+
+        const approved = await approve(filed.id)
+        expect(approved.status).toBe(200)
+        expect(approved.data.seller.id).toBe(store.id)
+        expect(await requestStatus(filed.id)).toBe("accepted")
+        expect(await linkedSeller(applicant.authIdentityId)).toBe(store.id)
+      })
+
+      it("an application under the name of the store another approved application made is refused: that store is finished", async () => {
+        // Same login, same name: the store's first member is hers, but an
+        // approval already finished it, and resuming would rerun the metadata,
+        // playbook and node-operator steps over it with this row's answers.
+        const applicant = await login("applicant")
+        const store = await storeFor(applicant, `Done Farm ${uid()}`)
+        await container()
+          .resolve(Modules.AUTH)
+          .updateAuthIdentities([{ id: applicant.authIdentityId, app_metadata: { seller_id: store.id } }])
+        await application(applicant, store.name, { status: "accepted" })
+        const second = await application(applicant, store.name)
+        const metadataBefore = await metadataOf(store.id)
+        const mail = stubMail()
+
+        const refused = await approve(second.id)
+        expect(refused.status).toBe(409)
+        expect(refused.data.message).toMatch(/already has a store/)
+        expect(await requestStatus(second.id)).toBe("pending")
+        expect(await linkedSeller(applicant.authIdentityId)).toBe(store.id)
+        expect(await metadataOf(store.id)).toEqual(metadataBefore)
+        expect(await playbookOf(store.id)).toEqual([])
+        expect(mail).not.toHaveBeenCalled()
+      })
+
       it("a login linked to a store that was closed is told so, at approval and at filing", async () => {
         const applicant = await login("applicant")
         const closed = await storeFor(applicant, `Closed Farm ${uid()}`)
@@ -276,6 +367,88 @@ medusaIntegrationTestRunner({
         const refiled = await file(applicant, `Other Farm ${uid()}`)
         expect(refiled.status).toBe(409)
         expect(refiled.data.message).toMatch(/linked to a store that was closed/)
+      })
+
+      it("a member removed from a store that is still open files, is approved onto a store of its own, and its login names that store", async () => {
+        // Mercur's deleteMemberStep soft-deletes the member and leaves the
+        // login's link naming it. Filing and approval used to call that "a
+        // store that was closed" while the store was live, and the status
+        // check called it approved for that store, so the vendor panel's
+        // sign-up skipped filing altogether.
+        const owner = await login("owner")
+        const liveStore = await storeFor(owner, `Live Farm ${uid()}`)
+        const removed = await login("removed")
+        const member = await acceptInvite(removed, liveStore)
+        await deleteMemberWorkflow.run({ container: container(), input: member.id })
+        const { rows: memberRows } = await pg().raw(`SELECT deleted_at FROM member WHERE id = ?`, [member.id])
+        expect(memberRows[0].deleted_at).not.toBeNull()
+        expect(await linkedSeller(removed.authIdentityId)).toBe(member.id)
+        const metadataBefore = await metadataOf(liveStore.id)
+        const token = memberToken(removed, member.id)
+
+        expect(await registrationStatus(token)).toMatchObject({ status: "no_request" })
+
+        stubMail()
+        const storeName = `Own Farm ${uid()}`
+        const filed = await file(removed, storeName, token)
+        expect(filed.status).toBe(201)
+        expect(await registrationStatus(token)).toMatchObject({ status: "pending", request_id: filed.data.request.id })
+
+        const approved = await approve(filed.data.request.id)
+        expect(approved.status).toBe(200)
+        const ownStore = approved.data.seller
+        expect(ownStore).toMatchObject({ name: storeName, handle: toHandle(storeName) })
+        expect(ownStore.id).not.toBe(liveStore.id)
+        expect(await requestStatus(filed.data.request.id)).toBe("accepted")
+        expect(await linkedSeller(removed.authIdentityId)).toBe(ownStore.id)
+        expect(await registrationStatus(token)).toMatchObject({ status: "approved", seller_id: ownStore.id })
+
+        // The store it was removed from is as it was.
+        expect(await sellersWithHandle(liveStore.name)).toEqual([expect.objectContaining({ id: liveStore.id })])
+        expect(await metadataOf(liveStore.id)).toEqual(metadataBefore)
+      })
+
+      it("a member removed from a store that was then closed is still told the store was closed", async () => {
+        const owner = await login("owner")
+        const store = await storeFor(owner, `Shut Farm ${uid()}`)
+        const removed = await login("removed")
+        const member = await acceptInvite(removed, store)
+        await deleteMemberWorkflow.run({ container: container(), input: member.id })
+        await container().resolve(SELLER_MODULE).softDeleteSellers([store.id])
+        const filed = await application(removed, `Next Farm ${uid()}`)
+
+        const refused = await approve(filed.id)
+        expect(refused.status).toBe(409)
+        expect(refused.data.message).toMatch(/linked to a store that was closed/)
+        expect(await requestStatus(filed.id)).toBe("pending")
+        expect(await linkedSeller(removed.authIdentityId)).toBe(member.id)
+
+        const refiled = await file(removed, `Other Farm ${uid()}`)
+        expect(refiled.status).toBe(409)
+        expect(refiled.data.message).toMatch(/linked to a store that was closed/)
+      })
+
+      it("a store name with no Latin letter or digit is refused at approval, and nothing is created", async () => {
+        // Rows filed before the filing check. The first used to be approved
+        // with handle "-", the second refused as a clash with it, and the
+        // third approved with handle "".
+        for (const storeName of ["Ферма Один", "Ферма Два", "日本の農場"]) {
+          const applicant = await login("applicant")
+          const filed = await application(applicant, storeName)
+          const mail = stubMail()
+
+          const refused = await approve(filed.id)
+          expect({ storeName, status: refused.status }).toEqual({ storeName, status: 400 })
+          expect(refused.data).toMatchObject({ type: "invalid_data" })
+          expect(refused.data.message).toContain(STORE_NAME_NEEDS_LATIN)
+          expect(refused.data.message).toMatch(/Nothing was created or linked/)
+          expect(await requestStatus(filed.id)).toBe("pending")
+          expect(await linkedSeller(applicant.authIdentityId)).toBeUndefined()
+          expect(mail).not.toHaveBeenCalled()
+          jest.restoreAllMocks()
+        }
+        const { rows } = await pg().raw(`SELECT handle FROM seller WHERE handle IN ('-', '')`)
+        expect(rows).toEqual([])
       })
 
       it("after a name clash, the application is rejected and the applicant files again under another name", async () => {
@@ -326,6 +499,18 @@ medusaIntegrationTestRunner({
         expect(refused.status).toBe(409)
         expect(refused.data.message).toMatch(/Choose another store name/)
         expect(await container().resolve(REQUEST_MODULE).listRequests({})).toHaveLength(0)
+      })
+
+      it("a store name with no Latin letter or digit is refused with a message that says why, and nothing is filed", async () => {
+        const mail = stubMail()
+        for (const storeName of ["Ферма Один", "Ферма Два", "日本の農場"]) {
+          const applicant = await login("applicant")
+          const refused = await file(applicant, storeName)
+          expect({ storeName, status: refused.status }).toEqual({ storeName, status: 400 })
+          expect(refused.data).toEqual({ type: "invalid_data", message: STORE_NAME_NEEDS_LATIN })
+        }
+        expect(await container().resolve(REQUEST_MODULE).listRequests({})).toHaveLength(0)
+        expect(mail).not.toHaveBeenCalled()
       })
 
       it("a login that already has a store cannot file another application", async () => {

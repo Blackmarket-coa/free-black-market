@@ -26,11 +26,14 @@ async function resolveToSellerId(req: MedusaRequest, id: string | null | undefin
   if (id.startsWith("mem_")) {
     try {
       const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
+      // A removed member (Mercur soft-deletes it and leaves the login's link)
+      // resolves to no store: this used to answer "approved" for the store it
+      // was removed from, so the vendor panel's sign-up skipped filing.
       const result = await pgConnection.raw(
         `
         SELECT seller_id
         FROM member
-        WHERE id = ?
+        WHERE id = ? AND deleted_at IS NULL
         `,
         [id]
       )
@@ -373,11 +376,13 @@ async function handleAcceptedRequest(
       if (!email) {
         return null
       }
+      // Not through a membership that was removed: that would relink the
+      // login to the store it was removed from.
       const memberResult = await pgConnection.raw(
         `
         SELECT seller_id
         FROM member
-        WHERE LOWER(email) = LOWER(?)
+        WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL
         ORDER BY created_at DESC
         LIMIT 1
         `,

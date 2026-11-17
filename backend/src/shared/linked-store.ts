@@ -1,5 +1,11 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { REQUEST_MODULE } from "../modules/request"
+import type RequestModuleService from "../modules/request/service"
+import { RequestStatus } from "../modules/request/models"
+import { isSellerRequestType } from "../modules/request/validators"
+
+type Seller = { id: string; name: string; handle: string }
 
 /**
  * The store a login is already linked to as a seller, read from
@@ -10,16 +16,19 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
  * - `none`: the login has no seller link.
  * - `live`: the store exists. `memberId` is the member the link names, or
  *   null for a seller-id link.
- * - `closed`: the link names a store or member that is gone, or an id of
- *   neither kind.
+ * - `removed`: the link names a member removed from a store that is still
+ *   open. Mercur's deleteMemberStep soft-deletes the member and leaves the
+ *   login's link pointing at it. The link names no member of the store, so
+ *   filing and approval treat the login as having no store; approval clears
+ *   the link before creating one.
+ * - `closed`: the link names a store that is gone (a removed member's
+ *   included), a member that is gone without a trace, or an id of neither
+ *   kind.
  */
 export type LinkedStore =
   | { kind: "none" }
-  | {
-      kind: "live"
-      seller: { id: string; name: string; handle: string }
-      memberId: string | null
-    }
+  | { kind: "live"; seller: Seller; memberId: string | null }
+  | { kind: "removed"; seller: Seller; actor: string }
   | { kind: "closed"; actor: string }
 
 type Rows<T> = { rows?: T[] }
@@ -35,14 +44,17 @@ export async function resolveLinkedStore(
 
   const pg = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
   let sellerId: string | null = null
-  let memberId: string | null = null
+  let memberRemoved = false
   if (actor.startsWith("mem_")) {
-    const member: Rows<{ seller_id: string | null }> = await pg.raw(
-      `SELECT seller_id FROM member WHERE id = ? AND deleted_at IS NULL`,
+    // Soft-deleted rows too: a removed member still names its store, which
+    // decides between `removed` (the store is open) and `closed`.
+    const member: Rows<{ seller_id: string | null; deleted_at: Date | null }> = await pg.raw(
+      `SELECT seller_id, deleted_at FROM member WHERE id = ?`,
       [actor]
     )
-    sellerId = member.rows?.[0]?.seller_id ?? null
-    memberId = sellerId ? actor : null
+    const row = member.rows?.[0]
+    sellerId = row?.seller_id ?? null
+    memberRemoved = Boolean(row?.deleted_at)
   } else if (actor.startsWith("sel_")) {
     sellerId = actor
   }
@@ -50,42 +62,79 @@ export async function resolveLinkedStore(
     return { kind: "closed", actor }
   }
 
-  const seller: Rows<{ id: string; name: string; handle: string }> = await pg.raw(
+  const seller: Rows<Seller> = await pg.raw(
     `SELECT id, name, handle FROM seller WHERE id = ? AND deleted_at IS NULL`,
     [sellerId]
   )
   const found = seller.rows?.[0]
-  return found ? { kind: "live", seller: found, memberId } : { kind: "closed", actor }
+  if (!found) {
+    return { kind: "closed", actor }
+  }
+  if (memberRemoved) {
+    return { kind: "removed", seller: found, actor }
+  }
+  return { kind: "live", seller: found, memberId: actor.startsWith("mem_") ? actor : null }
 }
+
+const sameAddress = (a: string, b: string): boolean =>
+  a.trim().toLowerCase() === b.trim().toLowerCase()
 
 /**
  * Whether the store a login is linked to is the one an approval of this
  * application created and then failed to finish, so approval may resume onto
- * it.
+ * it. All of these must hold:
  *
- * Its handle must be the one the application's store name makes, and its
- * owner member, the one Mercur created with the applicant's address, must be
- * the member the login is linked to (or, for a seller-id link, exist). A store
- * the login was invited into fails the second test even when its name matches:
- * an accepted invite leaves the invite's member, not an owner with this
- * address.
+ * - Its handle is the one the application's store name makes.
+ * - Its first member, the owner createSellerWorkflow creates right after the
+ *   store and before anyone can invite anyone into it, was made for this
+ *   applicant: an owner with the applicant's address, not since deleted, and
+ *   the member a member-id link names. Soft-deleted members count when
+ *   finding the first, so no later member can stand in for it. An invite
+ *   needs a member of the store to send it, so whoever accepts one is never
+ *   the first member, whatever role the invite gave them: Mercur's invite
+ *   accepts "owner" and nothing checks who sends it (SD-127 follow-up,
+ *   reproduced on Postgres).
+ * - No other seller application of this login has been approved. If one has,
+ *   the store is that approval's finished result, and approving this one
+ *   would rerun the metadata, playbook and node-operator steps over it.
  */
 export async function isUnfinishedApprovalOf(
   container: MedusaContainer,
   linked: Extract<LinkedStore, { kind: "live" }>,
-  handle: string,
-  applicantEmail: string
+  application: { requestId: string; loginId: string; handle: string; applicantEmail: string }
 ): Promise<boolean> {
-  if (linked.seller.handle !== handle) {
+  if (linked.seller.handle !== application.handle) {
     return false
   }
+
   const pg = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-  const owners: Rows<{ id: string }> = await pg.raw(
-    `SELECT id FROM member
-      WHERE seller_id = ? AND deleted_at IS NULL AND role = 'owner'
-        AND LOWER(email) = LOWER(?)`,
-    [linked.seller.id, applicantEmail]
+  const first: Rows<{ id: string; role: string; email: string | null; deleted_at: Date | null }> =
+    await pg.raw(
+      `SELECT id, role, email, deleted_at FROM member
+        WHERE seller_id = ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1`,
+      [linked.seller.id]
+    )
+  const owner = first.rows?.[0]
+  if (
+    !owner ||
+    owner.deleted_at ||
+    owner.role !== "owner" ||
+    !owner.email ||
+    !sameAddress(owner.email, application.applicantEmail) ||
+    (linked.memberId !== null && linked.memberId !== owner.id)
+  ) {
+    return false
+  }
+
+  const finished = await container
+    .resolve<RequestModuleService>(REQUEST_MODULE)
+    .listRequests({
+      submitter_id: application.loginId,
+      status: [RequestStatus.ACCEPTED, RequestStatus.COMPLETED],
+    })
+  return !finished.some(
+    (request) => request.id !== application.requestId && isSellerRequestType(request.type)
   )
-  const ownerIds = (owners.rows ?? []).map((row) => row.id)
-  return linked.memberId ? ownerIds.includes(linked.memberId) : ownerIds.length > 0
 }

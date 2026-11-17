@@ -4,6 +4,7 @@ import { MedusaContainer } from "@medusajs/framework/types"
 import { Modules, ContainerRegistrationKeys, toHandle } from "@medusajs/framework/utils"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
 import { isUnfinishedApprovalOf, resolveLinkedStore } from "./linked-store"
+import { STORE_NAME_NEEDS_LATIN, storeHandleFor } from "./store-handle"
 import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadata"
 import { assignPlaybookWorkflow } from "../workflows/assign-playbook"
 import {
@@ -379,7 +380,12 @@ export class SellerApprovalService {
     // this application created and linked before a later step failed.
     const resumeOnto =
       linked.kind === "live" &&
-      (await isUnfinishedApprovalOf(this.container, linked, handle, data.member.email))
+      (await isUnfinishedApprovalOf(this.container, linked, {
+        requestId,
+        loginId: data.auth_identity_id,
+        handle,
+        applicantEmail: data.member.email,
+      }))
         ? linked.seller
         : null
     if (linked.kind === "live" && !resumeOnto) {
@@ -387,6 +393,32 @@ export class SellerApprovalService {
         409,
         `This login already has a store ("${linked.seller.name}"), so this application cannot be approved. Nothing was created or linked. Reject it.`
       )
+    }
+    // A store is made with handle toHandle(name), and every name with no
+    // Latin letter or digit makes the same "-" or "": the first such store got
+    // it and every later one failed as a name clash it was not.
+    if (!resumeOnto && !storeHandleFor(data.seller.name)) {
+      throw new SellerApprovalRefusedError(
+        400,
+        `${STORE_NAME_NEEDS_LATIN} "${data.seller.name}" has none, so this application cannot be approved. Nothing was created or linked. Reject it, then ask the applicant to apply again with a store name that has one.`
+      )
+    }
+    // After every refusal that needs no store made, so none of them changes
+    // anything (a name clash, which only the workflow finds, refuses with the
+    // link already cleared). A link to a member removed from a store that is
+    // still open names no store of this login's, and Mercur's
+    // setAuthAppMetadataStep refuses any login whose seller_id is set ("Key
+    // seller_id already exists in app metadata"). Approval used to refuse it
+    // as "linked to a store that was closed" while the store was live.
+    // `undefined` removes the key: the auth module merges app_metadata, so
+    // leaving the key out keeps it, and null keeps it set (measured).
+    if (linked.kind === "removed") {
+      log.warn(
+        `[SellerApproval] Login ${data.auth_identity_id} is linked to member ${linked.actor}, removed from store ${linked.seller.id}; clearing that link before creating its own store (request ${requestId})`
+      )
+      await authModule.updateAuthIdentities([
+        { id: data.auth_identity_id, app_metadata: { seller_id: undefined } },
+      ])
     }
 
     let createdSeller: { id: string; name: string; handle?: string } | null = null
