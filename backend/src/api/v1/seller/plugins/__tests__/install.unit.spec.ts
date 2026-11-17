@@ -52,13 +52,16 @@ const makeHarness = (meta: MetaRow | null, opts?: { pluginExists?: boolean }) =>
   const updated: Record<string, unknown>[] = []
   const created: Record<string, unknown>[] = []
 
+  // The names the module has at runtime. The generated types declare plural
+  // names (`listSellerMetadatas`, ...) that do not exist, so a double that
+  // mocked those passed while production threw (SD-141).
   const sellerExt = {
-    listSellerMetadatas: async () => (meta ? [meta] : []),
-    updateSellerMetadatas: async (data: Record<string, unknown>) => {
+    listSellerMetadata: async () => (meta ? [meta] : []),
+    updateSellerMetadata: async (data: Record<string, unknown>) => {
       updated.push(data)
       return data
     },
-    createSellerMetadatas: async (data: Record<string, unknown>) => {
+    createSellerMetadata: async (data: Record<string, unknown>) => {
       created.push(data)
       return data
     },

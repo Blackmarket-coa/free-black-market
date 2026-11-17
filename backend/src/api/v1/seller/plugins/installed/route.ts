@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { SellerAuthRequest } from "../../../../middlewares/seller-context-v1"
 import { SELLER_EXTENSION_MODULE } from "../../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../../modules/seller-extension/service"
+import { listSellerMetadataRecords } from "../../../../../modules/seller-extension/metadata-service"
 import { PLUGIN_REGISTRY_MODULE } from "../../../../../modules/plugin-registry"
 import type PluginRegistryService from "../../../../../modules/plugin-registry/service"
 
@@ -19,7 +20,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const sellerExt = req.scope.resolve<SellerExtensionService>(
     SELLER_EXTENSION_MODULE
   )
-  const [meta] = await sellerExt.listSellerMetadatas({ seller_id: sellerId })
+  const [meta] = await listSellerMetadataRecords(sellerExt, { seller_id: sellerId })
   const installed = Array.isArray(meta?.enabled_extensions)
     ? (meta!.enabled_extensions as string[])
     : []

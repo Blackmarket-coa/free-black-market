@@ -15,7 +15,10 @@ import {
 import type PlaybookService from "../../../../modules/playbook/service"
 import type SellerExtensionService from "../../../../modules/seller-extension/service"
 import { SELLER_EXTENSION_MODULE } from "../../../../modules/seller-extension"
-import { updateSellerMetadataRecord } from "../../../../modules/seller-extension/metadata-service"
+import {
+  listSellerMetadataRecords,
+  updateSellerMetadataRecord,
+} from "../../../../modules/seller-extension/metadata-service"
 import {
   defaultFeatureKeysForPlaybook,
   pluginSlugsFrom,
@@ -292,7 +295,7 @@ export async function POST(
     if (roles) {
       try {
         const sellerExtensionService = req.scope.resolve<SellerExtensionService>(SELLER_EXTENSION_MODULE)
-        const [meta] = await sellerExtensionService.listSellerMetadatas({
+        const [meta] = await listSellerMetadataRecords(sellerExtensionService, {
           seller_id: sellerId,
         })
         if (meta) {

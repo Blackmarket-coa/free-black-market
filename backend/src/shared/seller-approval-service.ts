@@ -19,7 +19,10 @@ import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-cust
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
 import { SELLER_EXTENSION_MODULE } from "../modules/seller-extension"
 import type SellerExtensionService from "../modules/seller-extension/service"
-import { updateSellerMetadataRecord } from "../modules/seller-extension/metadata-service"
+import {
+  listSellerMetadataRecords,
+  updateSellerMetadataRecord,
+} from "../modules/seller-extension/metadata-service"
 import { GOVERNANCE_POWER_LEVEL } from "./matrix-service"
 import { getChatProvider } from "./chat"
 import { REQUEST_MODULE } from "../modules/request"
@@ -627,7 +630,7 @@ export class SellerApprovalService {
             const sellerExtension = this.container.resolve<SellerExtensionService>(
               SELLER_EXTENSION_MODULE
             )
-            const [meta] = await sellerExtension.listSellerMetadatas({
+            const [meta] = await listSellerMetadataRecords(sellerExtension, {
               seller_id: seller.id,
             })
             if (meta && !meta.node_operator_opt_in) {

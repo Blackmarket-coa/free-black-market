@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_EXTENSION_MODULE } from "../../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../../modules/seller-extension/service"
+import { listSellerMetadataRecords } from "../../../../../modules/seller-extension/metadata-service"
 import { REVIEWS_MODULE } from "../../../../../modules/reviews"
 import type ReviewsService from "../../../../../modules/reviews/service"
 
@@ -21,7 +22,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const filter: Record<string, unknown> = { vendor_type: "creator" }
   if (verifiedOnly) filter.verified = true
 
-  const creators = await service.listSellerMetadatas(filter, {
+  const creators = await listSellerMetadataRecords(service, filter, {
     take: limit,
     skip: offset,
     order: { created_at: "DESC" },

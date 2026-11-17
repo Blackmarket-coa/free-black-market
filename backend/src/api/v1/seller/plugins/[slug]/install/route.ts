@@ -2,6 +2,11 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { SellerAuthRequest } from "../../../../../middlewares/seller-context-v1"
 import { SELLER_EXTENSION_MODULE } from "../../../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../../../modules/seller-extension/service"
+import {
+  createSellerMetadataRecord,
+  listSellerMetadataRecords,
+  updateSellerMetadataRecord,
+} from "../../../../../../modules/seller-extension/metadata-service"
 import { PLUGIN_REGISTRY_MODULE } from "../../../../../../modules/plugin-registry"
 import type PluginRegistryService from "../../../../../../modules/plugin-registry/service"
 import {
@@ -45,7 +50,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const sellerExt = req.scope.resolve<SellerExtensionService>(
     SELLER_EXTENSION_MODULE
   )
-  const [meta] = await sellerExt.listSellerMetadatas({ seller_id: sellerId })
+  const [meta] = await listSellerMetadataRecords(sellerExt, { seller_id: sellerId })
   // A `null` column means "use my archetype defaults". Appending a slug to `[]`
   // would persist a slug-only array, which the panel resolves as "every feature
   // off" — so materialise the defaults first and append to those instead.
@@ -57,20 +62,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const next = [...current, slug]
   if (meta) {
-    await (
-      sellerExt as unknown as {
-        updateSellerMetadatas(data: Record<string, unknown>): Promise<unknown>
-      }
-    ).updateSellerMetadatas({
+    await updateSellerMetadataRecord(sellerExt, {
       id: meta.id,
       enabled_extensions: next,
     })
   } else {
-    await (
-      sellerExt as unknown as {
-        createSellerMetadatas(data: Record<string, unknown>): Promise<unknown>
-      }
-    ).createSellerMetadatas({
+    await createSellerMetadataRecord(sellerExt, {
       seller_id: sellerId,
       enabled_extensions: next,
     })
@@ -144,7 +141,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const sellerExt = req.scope.resolve<SellerExtensionService>(
     SELLER_EXTENSION_MODULE
   )
-  const [meta] = await sellerExt.listSellerMetadatas({ seller_id: sellerId })
+  const [meta] = await listSellerMetadataRecords(sellerExt, { seller_id: sellerId })
   const current = materializeExtensionsForAppend(meta?.enabled_extensions, meta)
 
   if (!current.includes(slug)) {
@@ -155,22 +152,14 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
 
   const next = current.filter((entry) => entry !== slug)
   if (meta) {
-    await (
-      sellerExt as unknown as {
-        updateSellerMetadatas(data: Record<string, unknown>): Promise<unknown>
-      }
-    ).updateSellerMetadatas({
+    await updateSellerMetadataRecord(sellerExt, {
       id: meta.id,
       enabled_extensions: next,
     })
   } else {
     // No metadata row but the slug was materialized from defaults — persist
     // the defaults-minus-slug selection.
-    await (
-      sellerExt as unknown as {
-        createSellerMetadatas(data: Record<string, unknown>): Promise<unknown>
-      }
-    ).createSellerMetadatas({
+    await createSellerMetadataRecord(sellerExt, {
       seller_id: sellerId,
       enabled_extensions: next,
     })

@@ -48,11 +48,14 @@ const createRes = () => {
 const makeHarness = (storedExtensions: unknown) => {
   const updated: Record<string, unknown>[] = []
 
+  // The names the module has at runtime. The generated types declare plural
+  // names (`listSellerMetadatas`, ...) that do not exist, so a double that
+  // mocked those passed while production threw (SD-141).
   const sellerExt = {
-    listSellerMetadatas: async () => [
+    listSellerMetadata: async () => [
       { id: "smeta_1", seller_id: "sel_123", enabled_extensions: storedExtensions },
     ],
-    updateSellerMetadatas: async (data: Record<string, unknown>) => {
+    updateSellerMetadata: async (data: Record<string, unknown>) => {
       updated.push(Array.isArray(data) ? data[0] : data)
       return data
     },
