@@ -21,32 +21,16 @@ import {
  * sellers in with JWTs. Mercur's vendor gate reads only the bearer, so every
  * `/vendor` call those screens made was refused.
  *
- * The fixed client must send the token the rest of the panel sends, from the
- * panel's one store, and treat a 401 as `fetchQuery` does: drop the token,
- * after which the protected layout sends the seller to sign in.
+ * The fixed client must send what `fetchQuery` sends (the token from the
+ * panel's one store, and none to the routes `isPublicAuthRoute` exempts) and
+ * treat a failure as `fetchQuery` does: a 401 drops the token it refused, after
+ * which the protected layout sends the seller to sign in, and nothing else
+ * touches it.
  */
 
-// lib/client decides once, when it loads, whether it runs in a browser, and
-// the SDK reads `window.localStorage` on every request, so the browser's
-// storage exists before any import below is evaluated.
-const browser = vi.hoisted(() => {
-  const store = new Map<string, string>()
-  const localStorage = {
-    getItem: (key: string) =>
-      store.has(key) ? (store.get(key) as string) : null,
-    setItem: (key: string, value: string) => {
-      store.set(key, String(value))
-    },
-    removeItem: (key: string) => {
-      store.delete(key)
-    },
-    clear: () => store.clear(),
-  }
-  const g = globalThis as { window?: unknown }
-  const previousWindow = g.window
-  g.window = { localStorage, location: { origin: "http://panel.test" } }
-  return { store, previousWindow }
-})
+const browser = await vi.hoisted(async () =>
+  (await import("../__tests__/browser-storage")).installBrowserStorage()
+)
 
 // Where the protected layout sends the seller: <Navigate> records its target.
 // The layout reads the location only to pass it along, so no router is needed.
@@ -99,17 +83,14 @@ const TOKEN_KEY = "medusa_auth_token"
 
 type Sent = { path: string; method: string; headers: Headers; body: unknown }
 const sent: Sent[] = []
-let reply = () =>
-  new Response(JSON.stringify({ ok: true }), {
-    status: 200,
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
     headers: { "content-type": "application/json" },
   })
+let reply: () => Response | Promise<Response> = () => json(200, { ok: true })
 const answer = (status: number, body: Record<string, unknown>) => {
-  reply = () =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json" },
-    })
+  reply = () => json(status, body)
 }
 const fetchMock = vi.fn(
   async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -122,6 +103,12 @@ const fetchMock = vi.fn(
     return reply()
   }
 )
+
+/** The two clients, called the same way. */
+const clients = [
+  ["fetchQuery", (path: string) => fetchQuery(path, { method: "GET" })],
+  ["lib/sdk", (path: string) => sdk.client.fetch(path)],
+] as const
 
 /** Render the protected layout once and return where it navigated, if anywhere. */
 const protectedLayoutNavigates = () => {
@@ -144,9 +131,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
 })
-afterAll(() => {
-  ;(globalThis as { window?: unknown }).window = browser.previousWindow
-})
+afterAll(() => browser.restore())
 
 describe("lib/sdk sends the panel's token", () => {
   it("sends the token the panel stored at sign-in as a bearer", async () => {
@@ -204,6 +189,48 @@ describe("lib/sdk sends the panel's token", () => {
       reason: "duplicate",
     })
   })
+
+  it("sends no token to a route isPublicAuthRoute exempts, as fetchQuery sends none", async () => {
+    setAuthToken("tok-stale")
+    await fetchQuery("/auth/seller/emailpass", {
+      method: "POST",
+      body: { email: "a@b.c" },
+    })
+    await sdk.client.fetch("/auth/seller/emailpass", {
+      method: "POST",
+      body: { email: "a@b.c" },
+    })
+    await sdk.client.fetch("/vendor/verify-email", {
+      method: "POST",
+      body: { token: "t" },
+    })
+
+    expect(sent.map((s) => s.headers.has("authorization"))).toEqual([
+      false,
+      false,
+      false,
+    ])
+  })
+
+  it("lets a caller's own Authorization header win, as fetchQuery does", async () => {
+    setAuthToken("tok-stored")
+    const headers = { Authorization: "Bearer tok-fresh" }
+    await fetchQuery("/auth/seller/register-request", {
+      method: "POST",
+      body: {},
+      headers,
+    })
+    await sdk.client.fetch("/auth/seller/register-request", {
+      method: "POST",
+      body: {},
+      headers,
+    })
+
+    expect(sent.map((s) => s.headers.get("authorization"))).toEqual([
+      "Bearer tok-fresh",
+      "Bearer tok-fresh",
+    ])
+  })
 })
 
 describe("lib/sdk on a 401", () => {
@@ -245,20 +272,20 @@ describe("lib/sdk on a 401", () => {
     expect(protectedLayoutNavigates()).toEqual(["/login"])
   })
 
-  // fetchQuery drops the token on a 401 from any route isPublicAuthRoute does
-  // not exempt (sign-in and email verification), and on nothing else: a 403
-  // from a guard or a 500 is not a bad token.
+  // fetchQuery sends no token to a route isPublicAuthRoute exempts (sign-in and
+  // email verification) and drops the token on a 401 from any other route, and
+  // on nothing else: a 403 from a guard or a 500 is not a bad token.
   it.each([
-    [401, "/vendor/invoices", ""],
-    [401, "/admin/digital-products", ""],
-    [403, "/vendor/invoices", "tok"],
-    [404, "/vendor/farm/harvests/har_gone", "tok"],
-    [500, "/vendor/pos/config", "tok"],
-    [401, "/auth/seller/emailpass", "tok"],
-    [401, "/vendor/verify-email", "tok"],
+    [401, "/vendor/invoices", "Bearer tok", ""],
+    [401, "/admin/digital-products", "Bearer tok", ""],
+    [403, "/vendor/invoices", "Bearer tok", "tok"],
+    [404, "/vendor/farm/harvests/har_gone", "Bearer tok", "tok"],
+    [500, "/vendor/pos/config", "Bearer tok", "tok"],
+    [401, "/auth/seller/emailpass", null, "tok"],
+    [401, "/vendor/verify-email", null, "tok"],
   ])(
-    "a %i from %s leaves the stored token as fetchQuery leaves it",
-    async (status, path, expected) => {
+    "a %i from %s: both clients send the same header and leave the same token",
+    async (status, path, header, stored) => {
       answer(status, { message: "refused" })
 
       setAuthToken("tok")
@@ -269,8 +296,82 @@ describe("lib/sdk on a 401", () => {
       await expect(sdk.client.fetch(path)).rejects.toMatchObject({ status })
       const afterSdk = getAuthToken()
 
-      expect(afterFetchQuery).toBe(expected)
-      expect(afterSdk).toBe(afterFetchQuery)
+      expect(sent).toHaveLength(2)
+      expect(sent[0].headers.get("authorization")).toBe(header)
+      expect(sent[1].headers.get("authorization")).toBe(header)
+      expect(afterFetchQuery).toBe(stored)
+      expect(afterSdk).toBe(stored)
+    }
+  )
+})
+
+describe("failures that are not a 401 leave the token stored", () => {
+  it.each([
+    [
+      "a network error",
+      () => Promise.reject(new TypeError("Failed to fetch")),
+      TypeError,
+    ],
+    [
+      "an abort",
+      () =>
+        Promise.reject(
+          new DOMException("The operation was aborted.", "AbortError")
+        ),
+      DOMException,
+    ],
+    [
+      "a 204, which the SDK cannot parse as JSON",
+      () => new Response(null, { status: 204 }),
+      SyntaxError,
+    ],
+  ])("%s", async (_, failure, errorType) => {
+    for (const [, call] of clients) {
+      reply = failure
+      setAuthToken("tok")
+      await expect(call("/vendor/farm/lots/lot_1")).rejects.toBeInstanceOf(
+        errorType
+      )
+      expect(getAuthToken()).toBe("tok")
+    }
+    expect(sent.map((s) => s.headers.get("authorization"))).toEqual([
+      "Bearer tok",
+      "Bearer tok",
+    ])
+  })
+})
+
+describe("a 401 that arrives after a newer sign-in", () => {
+  it.each(clients)("%s keeps the newer token", async (_, call) => {
+    let release: (response: Response) => void = () => undefined
+    reply = () => new Promise<Response>((resolve) => (release = resolve))
+    setAuthToken("tok-old")
+
+    const pending = call("/vendor/invoices").catch((e: unknown) => e)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(sent[0].headers.get("authorization")).toBe("Bearer tok-old")
+
+    // The seller signs in again while the old request is in flight.
+    setAuthToken("tok-new")
+    release(json(401, { message: "Unauthorized" }))
+    await pending
+
+    expect(getAuthToken()).toBe("tok-new")
+  })
+
+  it.each(clients)(
+    "%s still drops the token when it was not replaced",
+    async (_, call) => {
+      let release: (response: Response) => void = () => undefined
+      reply = () => new Promise<Response>((resolve) => (release = resolve))
+      setAuthToken("tok-old")
+
+      const pending = call("/vendor/invoices").catch((e: unknown) => e)
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      release(json(401, { message: "Unauthorized" }))
+      await pending
+
+      expect(getAuthToken()).toBe("")
     }
   )
 })

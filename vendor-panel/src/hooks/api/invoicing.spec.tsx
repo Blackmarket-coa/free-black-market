@@ -18,27 +18,9 @@ import {
  * no token, so the vendor gate refused every one of these requests.
  */
 
-// lib/client decides once, when it loads, whether it runs in a browser, and
-// the SDK reads `window.localStorage` on every request, so the browser's
-// storage exists before any import below is evaluated.
-const browser = vi.hoisted(() => {
-  const store = new Map<string, string>()
-  const localStorage = {
-    getItem: (key: string) =>
-      store.has(key) ? (store.get(key) as string) : null,
-    setItem: (key: string, value: string) => {
-      store.set(key, String(value))
-    },
-    removeItem: (key: string) => {
-      store.delete(key)
-    },
-    clear: () => store.clear(),
-  }
-  const g = globalThis as { window?: unknown }
-  const previousWindow = g.window
-  g.window = { localStorage, location: { origin: "http://panel.test" } }
-  return { store, previousWindow }
-})
+const browser = await vi.hoisted(async () =>
+  (await import("../../__tests__/browser-storage")).installBrowserStorage()
+)
 
 import { getAuthToken, setAuthToken } from "../../lib/client"
 import {
@@ -136,9 +118,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
 })
-afterAll(() => {
-  ;(globalThis as { window?: unknown }).window = browser.previousWindow
-})
+afterAll(() => browser.restore())
 
 describe("invoicing hooks send the seller's token", () => {
   it("useInvoices reads GET /vendor/invoices with the stored token as a bearer", async () => {

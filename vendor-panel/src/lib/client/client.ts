@@ -225,7 +225,10 @@ export const fetchQuery = async (
       devLogger.error("[Vendor fetchQuery] Request failed", errorDetails)
     }
 
-    if (!isPublic && response.status === 401) {
+    // Drop the token only if it is still the one this request carried: a
+    // sign-in that finished while the request was in flight stored a newer
+    // token, which this 401 says nothing about.
+    if (!isPublic && response.status === 401 && getAuthToken() === token) {
       clearAuthToken()
     }
     const baseMessage = errorData.message || errorText || "Unknown server error"
