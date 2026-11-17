@@ -11,6 +11,7 @@ import {
   sanitizeInput,
 } from "../../../../shared/seller-approval-service"
 import { requireAdminId } from "../../../../shared/auth-helpers"
+import { approvalErrorResponse } from "../approval-refusal"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -128,6 +129,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
+      return
+    }
+
+    // An approval refused before anything was created or linked, answered
+    // as /approve answers it (409 or 400): this used to fall through to 500.
+    const refusal = approvalErrorResponse(error)
+    if (refusal) {
+      res.status(refusal.status).json(refusal.body)
       return
     }
 

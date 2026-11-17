@@ -4,11 +4,9 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { REQUEST_MODULE } from "../../../../../modules/request"
 import RequestModuleService from "../../../../../modules/request/service"
 import { isSellerRequestType } from "../../../../../modules/request/validators"
-import {
-  getSellerApprovalService,
-  SellerApprovalRefusedError,
-} from "../../../../../shared/seller-approval-service"
+import { getSellerApprovalService } from "../../../../../shared/seller-approval-service"
 import { requireAdminId } from "../../../../../shared/auth-helpers"
+import { approvalErrorResponse } from "../../approval-refusal"
 
 /**
  * POST /admin/requests/:id/approve
@@ -70,12 +68,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       })
     }
   } catch (error) {
-    // Refused before anything was created or linked; the request is unchanged.
-    if (error instanceof SellerApprovalRefusedError) {
-      res.status(error.status).json({
-        message: error.message,
-        type: error.status === 409 ? "conflict" : "invalid_data",
-      })
+    // Refused before anything was created or linked; the request is
+    // unchanged. Shared with POST /admin/requests/:id (the panel's Accept).
+    const refusal = approvalErrorResponse(error)
+    if (refusal) {
+      res.status(refusal.status).json(refusal.body)
       return
     }
 
@@ -86,11 +83,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     if (error.message?.includes("already been")) {
-      res.status(400).json({ message: error.message })
-      return
-    }
-
-    if (error.message?.includes("Invalid request data")) {
       res.status(400).json({ message: error.message })
       return
     }
