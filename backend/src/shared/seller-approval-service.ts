@@ -94,7 +94,7 @@ export interface RequestRejectionInput {
 /**
  * Seller request data structure
  */
-interface SellerRequestData {
+export interface SellerRequestData {
   auth_identity_id: string
   member: {
     name: string
@@ -144,9 +144,12 @@ export function maskName(name: string): string {
 }
 
 /**
- * Validates seller request data structure
+ * Validates seller request data structure, and returns the fields approval
+ * reads from it. A field left out here reaches approval as undefined:
+ * `node_operator_opt_in` was, so every applicant who ticked "Sign me up to
+ * carry deliveries" was approved with the flag off and never provisioned.
  */
-function validateSellerRequestData(data: unknown): SellerRequestData {
+export function validateSellerRequestData(data: unknown): SellerRequestData {
   if (!data || typeof data !== "object") {
     throw new Error("Invalid request data: expected object")
   }
@@ -189,6 +192,8 @@ function validateSellerRequestData(data: unknown): SellerRequestData {
       name: seller.name,
     },
     vendor_type: typeof d.vendor_type === "string" ? d.vendor_type : undefined,
+    // Only a stored `true` opts in: registration writes a boolean.
+    node_operator_opt_in: d.node_operator_opt_in === true,
     playbook: typeof d.playbook === "string" ? d.playbook : undefined,
     roles: Array.isArray(d.roles)
       ? d.roles.filter((r): r is string => typeof r === "string")
@@ -656,6 +661,18 @@ export class SellerApprovalService {
         // A logistics seller also becomes a Blackstar node operator. Best
         // effort: the bridge retries on its own, and an outage over there must
         // never fail or roll back an approval over here.
+        //
+        // The secret this returns is dropped: approval has no one to show it
+        // to (no response field, no mail). Issuing revokes any earlier
+        // credential and stores this one encrypted, readable by no route. The
+        // plaintext leaves only inside the `node.operator.approved` delivery,
+        // whose envelope `emitBlackstar` stores as is in
+        // marketplace_webhook_delivery.payload (listed by
+        // GET /admin/blackstar/deliveries), and only when BLACKSTAR_WEBHOOK_SECRET
+        // and BLACKSTAR_API_BASE are set. Without them nothing is queued, the
+        // result still says `emitted`, and no one holds the secret. The vendor
+        // gets one to keep from Settings, where POST /vendor/node-operator
+        // re-issues and shows it once.
         const provisioned = await provisionNodeOperator(this.container, {
           sellerId: seller.id,
           sellerName: seller.name,
