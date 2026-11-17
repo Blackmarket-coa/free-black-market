@@ -3,6 +3,7 @@ import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
+import { PRODUCER_MODULE } from "../../src/modules/producer"
 import { assignSellerPlan } from "./helpers/seller-auth"
 import { newTestPassword } from "./helpers/test-password"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
@@ -95,6 +96,50 @@ medusaIntegrationTestRunner({
     const lotRow = async (lotId: string) =>
       (await pg().raw(`SELECT id, storage_location, surplus_flag, deleted_at FROM lot WHERE id = ?`, [lotId])).rows[0]
 
+    /** A product of the store, one variant. */
+    async function storeProduct(storeId: string) {
+      const [product] = await container()
+        .resolve(Modules.PRODUCT)
+        .createProducts([
+          {
+            title: `Tomato box ${uid()}`,
+            handle: `tomato-box-${uid()}`,
+            status: "published",
+            options: [{ title: "Size", values: ["Box"] }],
+            variants: [{ title: "Box", options: { Size: "Box" } }],
+          },
+        ])
+      await link().create({ [SELLER_MODULE]: { seller_id: storeId }, [Modules.PRODUCT]: { product_id: product.id } })
+      return product as { id: string; variants: Array<{ id: string }> }
+    }
+
+    /** The variant's inventory item, stocked at a location of the store. */
+    async function stockAt(storeId: string, variantId: string, quantity: number) {
+      const inventory = container().resolve(Modules.INVENTORY)
+      const [item] = await inventory.createInventoryItems([{ sku: `sku-${uid()}` }])
+      await link().create({ [Modules.PRODUCT]: { variant_id: variantId }, [Modules.INVENTORY]: { inventory_item_id: item.id } })
+      const [location] = await container().resolve(Modules.STOCK_LOCATION).createStockLocations([{ name: `Barn ${uid()}` }])
+      await link().create({ [SELLER_MODULE]: { seller_id: storeId }, [Modules.STOCK_LOCATION]: { stock_location_id: location.id } })
+      await inventory.createInventoryLevels([{ inventory_item_id: item.id, location_id: location.id, stocked_quantity: quantity }])
+      return { inventoryItemId: item.id as string, locationId: location.id as string }
+    }
+
+    const stockedOf = async (inventoryItemId: string, locationId: string) => {
+      const [level] = await container()
+        .resolve(Modules.INVENTORY)
+        .listInventoryLevels({ inventory_item_id: inventoryItemId, location_id: locationId })
+      return Number(level?.stocked_quantity)
+    }
+
+    /** A harvest and one lot of it, through the routes. */
+    async function harvestWithLot(token: string, quantity: number) {
+      const harvest = await call(api.post("/vendor/farm/harvests", { crop_name: `Crop ${uid()}`, year: 2026 }, bearer(token)))
+      expect({ status: harvest.status, body: harvest.data }).toMatchObject({ status: 201 })
+      const lot = await call(api.post(`/vendor/farm/harvests/${harvest.data.harvest.id}/lots`, { quantity_total: quantity, unit: "lb" }, bearer(token)))
+      expect({ status: lot.status, body: lot.data }).toMatchObject({ status: 201 })
+      return { harvestId: harvest.data.harvest.id as string, lotId: lot.data.lot.id as string }
+    }
+
     afterEach(() => {
       jest.restoreAllMocks()
     })
@@ -106,6 +151,8 @@ medusaIntegrationTestRunner({
 
         const producer = await farmProfile(a.member)
         expect(producer.seller_id).toBe(a.store.id)
+        // Created not public, and made public once linked.
+        expect((producer as { public_profile_enabled?: boolean }).public_profile_enabled).toBe(true)
         expect(await linkRowsOf(producer.id)).toEqual([a.store.id])
         const { data: links } = await query().graph({ entity: "seller_producer", fields: ["seller_id", "producer_id"], filters: { seller_id: a.store.id } })
         expect(links.map((l: { producer_id: string }) => l.producer_id)).toEqual([producer.id])
@@ -144,6 +191,48 @@ medusaIntegrationTestRunner({
         const retried = await farmProfile(c.member, handle)
         expect(await linkRowsOf(retried.id)).toEqual([c.store.id])
         expect((await api.get("/store/producers", pak)).data.producers.map((p: { handle: string }) => p.handle)).toContain(handle)
+      })
+      it("a handle another farm uses, and a store that already has a profile, each get 409 with their own message, also when creates race", async () => {
+        const a = await team(`Handle Farm ${uid()}`)
+        const b = await team(`Copy Farm ${uid()}`)
+        const taken = await farmProfile(a.owner)
+
+        const handleClash = await call(api.post("/vendor/farm/profile", { name: "Copy", handle: taken.handle }, bearer(b.owner)))
+        expect({ status: handleClash.status, message: handleClash.data?.message }).toEqual({ status: 409, message: "That farm handle is already taken" })
+
+        // Two creates for one store racing past the check: the second meets
+        // the producer's unique seller_id, and is told the store has a profile.
+        const producers = container().resolve(PRODUCER_MODULE)
+        const raced = jest.spyOn(producers, "listProducers").mockResolvedValueOnce([])
+        const second = await call(api.post("/vendor/farm/profile", { name: "Again", handle: `again-${uid()}` }, bearer(a.member)))
+        expect(raced).toHaveBeenCalledTimes(1)
+        expect({ status: second.status, message: second.data?.message }).toEqual({ status: 409, message: "This store already has a farm profile" })
+        expect((await pg().raw(`SELECT count(*)::int AS n FROM producer WHERE seller_id = ?`, [a.store.id])).rows[0].n).toBe(1)
+      })
+
+      it("when the undo fails too, the answer says a producer was left, and it is not public", async () => {
+        const c = await team(`Stuck Farm ${uid()}`)
+        const pak = pakHeaders(await createPublishableKeyToken(getContainer))
+        const handle = `stuck-farm-${uid()}`
+        jest.spyOn(link(), "create").mockRejectedValueOnce(new Error("link refused for the test"))
+        const undo = jest.spyOn(container().resolve(PRODUCER_MODULE), "deleteProducers").mockRejectedValueOnce(new Error("delete refused for the test"))
+
+        const failed = await call(api.post("/vendor/farm/profile", { name: "Stuck Farm", handle }, bearer(c.owner)))
+        expect(undo).toHaveBeenCalledTimes(1)
+        const [left] = (await pg().raw(`SELECT id, public_profile_enabled FROM producer WHERE handle = ?`, [handle])).rows
+        expect({ status: failed.status, body: failed.data }).toEqual({
+          status: 500,
+          body: {
+            message:
+              "Failed to create farm profile. A producer record was left behind, unlinked and not public; contact support to remove it.",
+            producer_id: left.id,
+            error: "link refused for the test",
+            undo_error: "delete refused for the test",
+          },
+        })
+        expect(left.public_profile_enabled).toBe(false)
+        expect(await linkRowsOf(left.id)).toEqual([])
+        expect((await api.get("/store/producers", pak)).data.producers.map((p: { handle: string }) => p.handle)).not.toContain(handle)
       })
     })
 
@@ -235,13 +324,84 @@ medusaIntegrationTestRunner({
         expect(listedWindows.data.linked_products.map((w: { id: string }) => w.id)).toEqual([offered.data.availability_window.id])
       })
 
-      it("DELETE answers 200 with Medusa's deletion body, not an empty 204", async () => {
+      it("link-product refuses another store's variant or stock location and leaves their inventory as it was; the store's own sync works", async () => {
+        const a = await team(`Sync Farm ${uid()}`)
+        const b = await team(`Stock Shop ${uid()}`)
+        await farmProfile(a.owner)
+        const { lotId } = await harvestWithLot(a.owner, 3)
+        const own = await storeProduct(a.store.id)
+        const ownStock = await stockAt(a.store.id, own.variants[0].id, 20)
+        const theirs = await storeProduct(b.store.id)
+        const theirStock = await stockAt(b.store.id, theirs.variants[0].id, 50)
+        const windowsOf = async () => (await query().graph({ entity: "availability_window", fields: ["id"], filters: { lot_id: lotId } })).data
+
+        // The review's case: A's product, B's variant and B's location.
+        for (const [label, body] of [
+          ["B's variant and location", { variant_id: theirs.variants[0].id, location_id: theirStock.locationId }],
+          ["B's location", { variant_id: own.variants[0].id, location_id: theirStock.locationId }],
+          ["B's variant", { variant_id: theirs.variants[0].id, location_id: ownStock.locationId }],
+        ] as const) {
+          const res = await call(
+            api.post(`/vendor/farm/lots/${lotId}/link-product`, { product_id: own.id, sync_inventory: true, ...body }, bearer(a.member))
+          )
+          expect({ label, status: res.status, body: res.data }).toEqual({ label, status: 403, body: FORBIDDEN })
+        }
+        expect(await stockedOf(theirStock.inventoryItemId, theirStock.locationId)).toBe(50)
+        expect(await stockedOf(ownStock.inventoryItemId, ownStock.locationId)).toBe(20)
+        expect(await windowsOf()).toEqual([])
+
+        // The store's own variant at its own location: linked, and synced to the lot.
+        const synced = await call(
+          api.post(
+            `/vendor/farm/lots/${lotId}/link-product`,
+            { product_id: own.id, variant_id: own.variants[0].id, location_id: ownStock.locationId, sync_inventory: true },
+            bearer(a.member)
+          )
+        )
+        expect({ status: synced.status, message: synced.data?.message }).toEqual({ status: 201, message: "Product linked successfully" })
+        expect(await stockedOf(ownStock.inventoryItemId, ownStock.locationId)).toBe(3)
+        expect(await stockedOf(theirStock.inventoryItemId, theirStock.locationId)).toBe(50)
+      })
+
+      it("an availability window takes only the store's own product", async () => {
+        const a = await team(`Window Farm ${uid()}`)
+        const b = await team(`Window Shop ${uid()}`)
+        await farmProfile(a.owner)
+        const { lotId } = await harvestWithLot(a.owner, 8)
+        const own = await storeProduct(a.store.id)
+        const theirs = await storeProduct(b.store.id)
+
+        const foreign = await call(api.post(`/vendor/farm/lots/${lotId}/availability`, { product_id: theirs.id, unit_price: 4 }, bearer(a.member)))
+        expect({ status: foreign.status, body: foreign.data }).toEqual({ status: 403, body: FORBIDDEN })
+        expect((await query().graph({ entity: "availability_window", fields: ["id"], filters: { lot_id: lotId } })).data).toEqual([])
+
+        const ownWindow = await call(api.post(`/vendor/farm/lots/${lotId}/availability`, { product_id: own.id, unit_price: 4 }, bearer(a.owner)))
+        expect({ status: ownWindow.status, product: ownWindow.data?.availability_window?.product_id }).toEqual({ status: 201, product: own.id })
+        const bare = await call(api.post(`/vendor/farm/lots/${lotId}/availability`, { unit_price: 4 }, bearer(a.member)))
+        expect(bare.status).toBe(201)
+      })
+
+      it("DELETE answers 200 with Medusa's deletion body; a lot takes its windows and their product links with it, and a harvest its lots and its producer link", async () => {
         const a = await team(`Delete Farm ${uid()}`)
         await farmProfile(a.owner)
-        const harvest = await call(api.post("/vendor/farm/harvests", { crop_name: "Garlic", year: 2026 }, bearer(a.owner)))
-        const harvestId: string = harvest.data.harvest.id
-        const lot = await call(api.post(`/vendor/farm/harvests/${harvestId}/lots`, { quantity_total: 5, unit: "lb" }, bearer(a.owner)))
-        const lotId: string = lot.data.lot.id
+        const product = await storeProduct(a.store.id)
+        const { harvestId, lotId } = await harvestWithLot(a.owner, 5)
+        const second = await call(api.post(`/vendor/farm/harvests/${harvestId}/lots`, { quantity_total: 7, unit: "lb" }, bearer(a.owner)))
+        const secondLotId: string = second.data.lot.id
+        const offer = async (id: string) => {
+          const res = await call(api.post(`/vendor/farm/lots/${id}/link-product`, { product_id: product.id, unit_price: 2 }, bearer(a.owner)))
+          expect({ status: res.status, body: res.data }).toMatchObject({ status: 201 })
+          return res.data.availability_window.id as string
+        }
+        const firstWindow = await offer(lotId)
+        const secondWindow = await offer(secondLotId)
+        const productLinksOf = async (windowId: string) =>
+          (await query().graph({ entity: "product_availability_window", fields: ["availability_window_id"], filters: { availability_window_id: windowId } })).data
+        const windowsOf = async (id: string) => (await query().graph({ entity: "availability_window", fields: ["id"], filters: { lot_id: id } })).data
+        const harvestLinksOf = async () =>
+          (await query().graph({ entity: "producer_harvest", fields: ["harvest_id"], filters: { harvest_id: harvestId } })).data
+        expect((await productLinksOf(firstWindow)).length).toBe(1)
+        expect((await harvestLinksOf()).length).toBe(1)
 
         const lotDeleted = await call(api.delete(`/vendor/farm/lots/${lotId}`, bearer(a.member)))
         expect({ status: lotDeleted.status, body: lotDeleted.data, json: String(lotDeleted.headers["content-type"]).includes("application/json") }).toEqual({
@@ -249,16 +409,23 @@ medusaIntegrationTestRunner({
           body: { id: lotId, object: "lot", deleted: true },
           json: true,
         })
-        const { data: lotsLeft } = await query().graph({ entity: "lot", fields: ["id"], filters: { id: lotId } })
-        expect(lotsLeft).toEqual([])
+        expect((await query().graph({ entity: "lot", fields: ["id"], filters: { id: lotId } })).data).toEqual([])
+        expect(await windowsOf(lotId)).toEqual([])
+        expect(await productLinksOf(firstWindow)).toEqual([])
+        expect((await productLinksOf(secondWindow)).length).toBe(1)
 
         const harvestDeleted = await call(api.delete(`/vendor/farm/harvests/${harvestId}`, bearer(a.owner)))
         expect({ status: harvestDeleted.status, body: harvestDeleted.data }).toEqual({
           status: 200,
           body: { id: harvestId, object: "harvest", deleted: true },
         })
-        const { data: harvestsLeft } = await query().graph({ entity: "harvest", fields: ["id"], filters: { id: harvestId } })
-        expect(harvestsLeft).toEqual([])
+        expect((await query().graph({ entity: "harvest", fields: ["id"], filters: { id: harvestId } })).data).toEqual([])
+        // The database deletes the harvest's lots and their windows
+        // (ON DELETE CASCADE); the route dismisses their link rows.
+        expect((await query().graph({ entity: "lot", fields: ["id"], filters: { id: secondLotId } })).data).toEqual([])
+        expect(await windowsOf(secondLotId)).toEqual([])
+        expect(await productLinksOf(secondWindow)).toEqual([])
+        expect(await harvestLinksOf()).toEqual([])
       })
     })
   },
