@@ -3,7 +3,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { REQUEST_MODULE } from "../../../modules/request"
 import RequestModuleService from "../../../modules/request/service"
 import {
-  isSellerRequestType,
+  namesSellerRequestType,
   SELLER_REQUEST_TYPE_REFUSAL,
 } from "../../../modules/request/validators"
 import { requireCustomerId } from "../../../shared"
@@ -18,7 +18,7 @@ const createRequestSchema = z.object({
   type: z
     .string()
     .min(1, "Request type is required")
-    .refine((type) => !isSellerRequestType(type), { message: SELLER_REQUEST_TYPE_REFUSAL }),
+    .refine((type) => !namesSellerRequestType(type), { message: SELLER_REQUEST_TYPE_REFUSAL }),
   data: z.record(z.string(), z.unknown()).default({}),
   reviewer_note: z.string().optional(),
 })

@@ -226,6 +226,16 @@ export function isSellerRequestType(type: string): boolean {
 }
 
 /**
+ * The generic request routes' test for a seller registration type, in any
+ * case and with any padding. Nothing acts on "Seller" or " seller" today
+ * (approval and the admin routes match the exact names), but a refusal a
+ * capital letter steps around would be waiting for the first loose match.
+ */
+export function namesSellerRequestType(type: string): boolean {
+  return isSellerRequestType(type.trim().toLowerCase())
+}
+
+/**
  * Why `POST /store/requests` and `POST /vendor/requests` refuse a seller
  * registration type. Approving one creates a seller for whatever login and
  * address its data names (approveSeller reads `data.auth_identity_id`), so

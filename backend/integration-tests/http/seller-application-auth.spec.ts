@@ -322,7 +322,8 @@ medusaIntegrationTestRunner({
       // (approveSeller reads data.auth_identity_id): measured, a customer's
       // made a seller with another person's email, on the customer's login,
       // and mailed that person.
-      const sellerTypes = [REQUEST_TYPES.SELLER, REQUEST_TYPES.SELLER_CREATION]
+      // In any case and padding, too: the refusal is not an exact-match deny-list.
+      const sellerTypes = [REQUEST_TYPES.SELLER, REQUEST_TYPES.SELLER_CREATION, " Seller", "SELLER_CREATION "]
 
       it("POST /store/requests refuses a seller application, and still takes other requests", async () => {
         const shopper = await shopperViaModule()

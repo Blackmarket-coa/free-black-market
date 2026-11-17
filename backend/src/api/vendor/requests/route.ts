@@ -6,7 +6,7 @@ import { REQUEST_MODULE } from "../../../modules/request"
 import RequestModuleService from "../../../modules/request/service"
 import { RequestStatus } from "../../../modules/request/models"
 import {
-  isSellerRequestType,
+  namesSellerRequestType,
   SELLER_REQUEST_TYPE_REFUSAL,
 } from "../../../modules/request/validators"
 import { requireSellerId } from "../../../shared/auth-helpers"
@@ -22,7 +22,7 @@ const createRequestSchema = z.object({
     type: z
       .string()
       .min(1, "Request type is required")
-      .refine((type) => !isSellerRequestType(type), { message: SELLER_REQUEST_TYPE_REFUSAL }),
+      .refine((type) => !namesSellerRequestType(type), { message: SELLER_REQUEST_TYPE_REFUSAL }),
     data: z.record(z.string(), z.unknown()).default({}),
   }),
 })
