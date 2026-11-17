@@ -4,6 +4,7 @@ import type { MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import jwt from "jsonwebtoken"
 import { config } from "./config"
+import { liveSellerIdOfMember } from "./seller-actor"
 
 /**
  * Authentication context from MedusaJS
@@ -135,6 +136,13 @@ export function extractAdminId(
 
 /**
  * Require seller ID - returns null if not authenticated and sends response
+ *
+ * A member id resolves only while the member and its store are live
+ * (shared/seller-actor.ts): a removed member, which Mercur soft-deletes and
+ * leaves linked, resolved to the store it was removed from. A `sel_*` id is
+ * taken as it is: on `/vendor/**` the seller-context guard has already refused
+ * one whose store is closed, and rewrites the actor to the store's member.
+ *
  * @param req - The authenticated request
  * @param res - The response object to send error if not authenticated
  * @returns The seller ID or null if not authenticated
@@ -151,18 +159,10 @@ export async function requireSellerId(
   const decodedToken = token ? decodeAuthToken(token) : null
 
   const resolveSellerIdFromMember = async (memberId: string): Promise<string | null> => {
-    if (!pgConnection) {
+    if (!pgConnection || !req.scope) {
       return null
     }
-    const result = await pgConnection.raw(
-      `
-      SELECT seller_id
-      FROM member
-      WHERE id = ?
-      `,
-      [memberId]
-    )
-    return result.rows?.[0]?.seller_id ?? null
+    return liveSellerIdOfMember(req.scope as Parameters<typeof liveSellerIdOfMember>[0], memberId)
   }
 
   const resolveLinkedSellerId = async (id?: string | null): Promise<string | null> => {

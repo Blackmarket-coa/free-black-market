@@ -5,26 +5,12 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { updateProductsWorkflow } from "@medusajs/medusa/core-flows"
 import type { ProductStatus } from "@medusajs/framework/types"
-
-async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<string | undefined> {
-  if (!actorId) return undefined
-  if (!actorId.startsWith("mem_")) return actorId
-  try {
-    const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-    const memberResult = await pgConnection.raw(
-      `SELECT seller_id FROM member WHERE id = ? LIMIT 1`,
-      [actorId]
-    )
-    return memberResult.rows?.[0]?.seller_id || actorId
-  } catch {
-    return actorId
-  }
-}
+import { sellerIdForVendorActor } from "../../../../../shared/seller-actor"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await resolveSellerId(req, actorId)
+  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
   const { id } = req.params
 
   if (!sellerId) {

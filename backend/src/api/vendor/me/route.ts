@@ -61,12 +61,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       role: string | null
     } | null = null
 
+    // Members that are still on the team, of stores that are still open: a
+    // removed member's token named a row that is soft-deleted, not gone.
     if (memberId) {
       const result = await pgConnection.raw(
         `
-        SELECT id, seller_id, name, email, photo, bio, phone, role
-        FROM member
-        WHERE id = ?
+        SELECT m.id, m.seller_id, m.name, m.email, m.photo, m.bio, m.phone, m.role
+        FROM member m
+        JOIN seller s ON s.id = m.seller_id
+        WHERE m.id = ? AND m.deleted_at IS NULL AND s.deleted_at IS NULL
         `,
         [memberId]
       )
@@ -74,10 +77,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     } else if (sellerId) {
       const result = await pgConnection.raw(
         `
-        SELECT id, seller_id, name, email, photo, bio, phone, role
-        FROM member
-        WHERE seller_id = ?
-        ORDER BY created_at ASC
+        SELECT m.id, m.seller_id, m.name, m.email, m.photo, m.bio, m.phone, m.role
+        FROM member m
+        JOIN seller s ON s.id = m.seller_id
+        WHERE m.seller_id = ? AND m.deleted_at IS NULL AND s.deleted_at IS NULL
+        ORDER BY m.created_at ASC, m.id ASC
         LIMIT 1
         `,
         [sellerId]

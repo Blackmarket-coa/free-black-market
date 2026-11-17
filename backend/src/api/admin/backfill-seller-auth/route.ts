@@ -31,6 +31,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         m.email as member_email
       FROM seller s
       INNER JOIN member m ON m.seller_id = s.id
+      -- Only members still on the team, of stores still open: linking a login
+      -- through a removed member would give it back the store it left.
+      WHERE m.deleted_at IS NULL AND s.deleted_at IS NULL
       ORDER BY s.created_at DESC
     `)
 

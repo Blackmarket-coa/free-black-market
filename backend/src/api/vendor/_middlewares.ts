@@ -17,6 +17,7 @@ const log = createLogger("api/vendor/_middlewares")
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { decodeAuthTokenFromAuthorization } from "../../shared/auth-helpers"
+import { firstLiveMemberIdOf, liveSellerIdOfMember } from "../../shared/seller-actor"
 import { handleSellerRegistration } from "../shared/seller-registration"
 
 export async function ensureSellerContext(
@@ -120,12 +121,8 @@ export async function ensureSellerContext(
     // fetchSellerByAuthActorId (via scripts/patch-mercurjs.js) now handles
     // sel_* IDs as a fallback, so this conversion is best-effort.
     try {
-      const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      const memberResult = await pgConnection.raw(
-        `SELECT id FROM member WHERE seller_id = ? ORDER BY created_at ASC LIMIT 1`,
-        [authContext.actor_id]
-      )
-      const memberId = memberResult.rows?.[0]?.id
+      // A removed member is never the one a seller id acts as.
+      const memberId = await firstLiveMemberIdOf(req.scope, authContext.actor_id)
       if (memberId) {
         const originalSellerId = authContext.actor_id
         authContext.member_id = memberId
@@ -171,16 +168,17 @@ export async function ensureSellerContext(
     // Use pre-resolved seller ID if available (from sel_* to mem_* conversion above)
     let sellerId = (req as VendorRequest)._seller_id || authContext.actor_id
     if (sellerId.startsWith("mem_")) {
-      const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      const memberResult = await pgConnection.raw(
-        `
-        SELECT seller_id
-        FROM member
-        WHERE id = ?
-        `,
-        [sellerId]
-      )
-      const resolvedSellerId = memberResult.rows?.[0]?.seller_id
+      // Only a member that is still on the team, of a store that is still
+      // open. Mercur's deleteMemberStep soft-deletes a removed member and
+      // leaves the login's link naming it, and signing in mints that member as
+      // the actor again; read without `deleted_at`, a removed member's tokens
+      // kept reading the store's orders and customers' addresses and could
+      // write. It is now refused like a member that no longer exists. Mercur's
+      // own guards cannot do this for us: storeActiveGuard lets every GET
+      // through and finds the store through a removed member anyway
+      // (fetchSellerByAuthActorId filters `members.id`, which matches
+      // soft-deleted rows).
+      const resolvedSellerId = await liveSellerIdOfMember(req.scope, sellerId)
       if (!resolvedSellerId) {
         res.status(401).json({
           message: "Seller not found for authenticated member",

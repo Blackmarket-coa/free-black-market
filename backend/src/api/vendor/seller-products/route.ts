@@ -6,6 +6,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
+import { sellerIdForVendorActor } from "../../../shared/seller-actor"
 
 type VariantPrice = {
   amount?: number | string | null
@@ -126,19 +127,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(401).json({ message: "Unauthorized" })
   }
 
-  // Resolve actual seller ID if we have a member ID
-  let resolvedSellerId = sellerId
-  if (sellerId.startsWith("mem_")) {
-    try {
-      const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      const memberResult = await pgConnection.raw(
-        `SELECT seller_id FROM member WHERE id = ? LIMIT 1`,
-        [sellerId]
-      )
-      resolvedSellerId = memberResult.rows?.[0]?.seller_id || sellerId
-    } catch {
-      // Continue with original ID
-    }
+  // A member id resolves to its store only while the member and the store are
+  // live (shared/seller-actor.ts); a removed member's id used to be used as is.
+  const resolvedSellerId = await sellerIdForVendorActor(req.scope, sellerId)
+  if (!resolvedSellerId) {
+    return res.status(401).json({ message: "Unauthorized" })
   }
 
   try {
