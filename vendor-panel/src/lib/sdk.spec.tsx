@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { readFileSync, readdirSync, statSync } from "fs"
-import { join, relative, sep } from "path"
+import { dirname, join, relative, resolve, sep } from "path"
 import { renderToStaticMarkup } from "react-dom/server"
 import ts from "typescript"
 import {
@@ -378,9 +378,10 @@ describe("a 401 that arrives after a newer sign-in", () => {
 
 /**
  * A walk over the panel's source, read as TypeScript so that comments and
- * strings do not count: no file can import a session-type client, because
- * none is configured, and SDK clients are made in one place, lib/client,
- * where each is a JWT client reading the panel's store.
+ * strings do not count. No file can import a session-type client, because
+ * none is configured; SDK clients are made in one place, lib/client, where
+ * each is a JWT client reading the panel's store; and no request bypasses the
+ * panel's two clients without the bearer.
  */
 describe("SDK clients in the panel's source", () => {
   const SRC = join(__dirname, "..")
@@ -392,7 +393,9 @@ describe("SDK clients in the panel's source", () => {
   const files = walk(SRC)
     .filter((file) => /\.(ts|tsx)$/.test(file))
     .filter((file) => !/\.spec\.tsx?$/.test(file) && !file.endsWith(".d.ts"))
+    .filter((file) => !file.split(sep).includes("__tests__"))
   const sources = files.map((file) => ({
+    abs: file,
     file: relative(SRC, file).split(sep).join("/"),
     ast: ts.createSourceFile(
       file,
@@ -432,26 +435,70 @@ describe("SDK clients in the panel's source", () => {
       (s): s is ts.ImportDeclaration & { moduleSpecifier: ts.StringLiteral } =>
         ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)
     )
+  const lineOf = (ast: ts.SourceFile, node: ts.Node) =>
+    ast.getLineAndCharacterOfPosition(node.getStart()).line + 1
 
-  it("walks the whole source tree, the seventeen former session importers among it", () => {
+  /** Where an import of lib/sdk points: relative, or through the @lib or @ aliases. */
+  const LIB_SDK = join(SRC, "lib", "sdk")
+  const target = (abs: string, specifier: string) =>
+    specifier.startsWith(".")
+      ? resolve(dirname(abs), specifier)
+      : specifier.startsWith("@lib/")
+        ? join(SRC, "lib", specifier.slice("@lib/".length))
+        : specifier.startsWith("@/")
+          ? join(SRC, specifier.slice("@/".length))
+          : undefined
+  const sdkImportsOf = (abs: string, ast: ts.SourceFile) =>
+    importsOf(ast).filter((s) => {
+      const to = target(abs, s.moduleSpecifier.text)
+      return (
+        to === LIB_SDK ||
+        (to !== undefined && /(^|\/)lib\/sdk$/.test(s.moduleSpecifier.text))
+      )
+    })
+
+  /** The files that import lib/sdk: the seventeen that imported the session client. */
+  const SDK_IMPORTERS = [
+    "hooks/api/invoicing.ts",
+    "hooks/api/pos.ts",
+    "routes/bug-report/page.tsx",
+    "routes/cottage-food/_shared.tsx",
+    "routes/cottage-food/labels/page.tsx",
+    "routes/cottage-food/sales/page.tsx",
+    "routes/digital-products/components/create-digital-product-form/create-digital-product-modal.tsx",
+    "routes/digital-products/page.tsx",
+    "routes/farm/harvests/[id]/lots/create/page.tsx",
+    "routes/farm/harvests/[id]/page.tsx",
+    "routes/farm/harvests/create/page.tsx",
+    "routes/farm/harvests/page.tsx",
+    "routes/farm/lots/[id]/availability/create/page.tsx",
+    "routes/farm/lots/[id]/components/lot-product-linking.tsx",
+    "routes/farm/lots/[id]/page.tsx",
+    "routes/farm/page.tsx",
+    "routes/farm/profile/page.tsx",
+  ]
+
+  it("lists exactly the seventeen files that import lib/sdk, each of which reaches it but the digital-products modal", () => {
     expect(sources.length).toBeGreaterThan(500)
     const importers = sources
-      .filter(({ ast }) =>
-        importsOf(ast).some((s) =>
-          /^\.\.?\/(?:.*\/)?sdk$/.test(s.moduleSpecifier.text)
+      .filter(({ abs, ast }) => sdkImportsOf(abs, ast).length > 0)
+      .map(({ file }) => file)
+      .sort()
+    expect(importers).toEqual(SDK_IMPORTERS)
+
+    // The digital-products modal was moved one directory down without its
+    // imports: its "../../../lib/sdk" points under src/routes and resolves to
+    // nothing, so the page cannot be bundled (recorded as dead code, SD-146).
+    const unresolved = sources
+      .filter(({ abs, ast }) =>
+        sdkImportsOf(abs, ast).some(
+          (s) => target(abs, s.moduleSpecifier.text) !== LIB_SDK
         )
       )
       .map(({ file }) => file)
-    expect(importers.length).toBeGreaterThanOrEqual(17)
-    expect(importers).toEqual(
-      expect.arrayContaining([
-        "hooks/api/invoicing.ts",
-        "hooks/api/pos.ts",
-        "routes/bug-report/page.tsx",
-        "routes/cottage-food/_shared.tsx",
-        "routes/farm/page.tsx",
-      ])
-    )
+    expect(unresolved).toEqual([
+      "routes/digital-products/components/create-digital-product-form/create-digital-product-modal.tsx",
+    ])
   })
 
   it("configures no session-type SDK client anywhere", () => {
@@ -474,28 +521,72 @@ describe("SDK clients in the panel's source", () => {
   })
 
   it("makes SDK clients only in lib/client, each with JWT auth", () => {
-    // A file can make a client only through the SDK's default export, a
-    // namespace import of it, or its Client class.
+    // A file can make a client through the SDK's default export, a namespace
+    // import of it, or its Client class, and can hand any of those on: a
+    // re-export, `export *`, or a dynamic import or require of the package.
+    const SDK = "@medusajs/js-sdk"
+    const isSdk = (node: ts.Node | undefined) =>
+      !!node && ts.isStringLiteral(node) && node.text === SDK
     const makers = new Map<string, string[]>()
+    const add = (file: string, name: string) =>
+      makers.set(file, [...(makers.get(file) ?? []), name])
     for (const { file, ast } of sources) {
-      for (const declaration of importsOf(ast)) {
-        const clause = declaration.importClause
-        if (declaration.moduleSpecifier.text !== "@medusajs/js-sdk" || !clause)
-          continue
-        if (clause.isTypeOnly) continue
-        const names: string[] = clause.name ? [clause.name.text] : []
-        const bindings = clause.namedBindings
-        if (bindings && ts.isNamespaceImport(bindings))
-          names.push(bindings.name.text)
-        if (bindings && ts.isNamedImports(bindings)) {
-          for (const element of bindings.elements) {
-            const imported = (element.propertyName ?? element.name).text
-            if (!element.isTypeOnly && imported === "Client")
-              names.push(element.name.text)
+      for (const statement of ast.statements) {
+        if (
+          ts.isImportDeclaration(statement) &&
+          isSdk(statement.moduleSpecifier)
+        ) {
+          const clause = statement.importClause
+          if (!clause || clause.isTypeOnly) continue
+          if (clause.name) add(file, clause.name.text)
+          const bindings = clause.namedBindings
+          if (bindings && ts.isNamespaceImport(bindings))
+            add(file, bindings.name.text)
+          if (bindings && ts.isNamedImports(bindings)) {
+            for (const element of bindings.elements) {
+              const imported = (element.propertyName ?? element.name).text
+              if (!element.isTypeOnly && imported === "Client")
+                add(file, element.name.text)
+            }
           }
         }
-        if (names.length) makers.set(file, names)
+        if (
+          ts.isExportDeclaration(statement) &&
+          isSdk(statement.moduleSpecifier)
+        ) {
+          if (statement.isTypeOnly) continue
+          const clause = statement.exportClause
+          if (!clause || ts.isNamespaceExport(clause)) add(file, "export *")
+          else
+            for (const element of clause.elements) {
+              const exported = (element.propertyName ?? element.name).text
+              if (
+                !element.isTypeOnly &&
+                (exported === "default" || exported === "Client")
+              ) {
+                add(file, `export ${exported}`)
+              }
+            }
+        }
+        if (
+          ts.isImportEqualsDeclaration(statement) &&
+          ts.isExternalModuleReference(statement.moduleReference) &&
+          isSdk(statement.moduleReference.expression)
+        ) {
+          add(file, statement.name.text)
+        }
       }
+      visit(ast, (node) => {
+        if (
+          ts.isCallExpression(node) &&
+          (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+            (ts.isIdentifier(node.expression) &&
+              node.expression.text === "require")) &&
+          isSdk(node.arguments[0])
+        ) {
+          add(file, "dynamic import")
+        }
+      })
     }
     expect([...makers.keys()]).toEqual(["lib/client/client.ts"])
 
@@ -520,5 +611,92 @@ describe("SDK clients in the panel's source", () => {
     // `sdk` (token in localStorage, read per request) and `publicAuthSdk`
     // (sign-in, token in memory, handed to setAuthToken).
     expect(authTypes).toEqual(["jwt", "jwt"])
+  })
+
+  it("uses the tokenless sign-in client only for sign-in", () => {
+    // publicAuthSdk keeps its token in memory and sends none from the store:
+    // a vendor call through it would be the session client's bug again.
+    const users = new Set<string>()
+    for (const { file, ast } of sources) {
+      visit(ast, (node) => {
+        if (ts.isIdentifier(node) && node.text === "publicAuthSdk")
+          users.add(file)
+      })
+    }
+    expect([...users].sort()).toEqual([
+      "hooks/api/auth.tsx",
+      "lib/client/client.ts",
+    ])
+  })
+
+  /** `fetch(...)`, `window.fetch(...)`, `globalThis.fetch(...)` or `self.fetch(...)`. */
+  const isRawFetch = (node: ts.Node): node is ts.CallExpression =>
+    ts.isCallExpression(node) &&
+    ((ts.isIdentifier(node.expression) && node.expression.text === "fetch") ||
+      (ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "fetch" &&
+        ts.isIdentifier(node.expression.expression) &&
+        ["window", "globalThis", "self"].includes(
+          node.expression.expression.text
+        )))
+  /** Whether a fetch's options name an Authorization header anywhere. */
+  const carriesAuthorization = (init: ts.Expression | undefined) => {
+    let found = false
+    if (init) {
+      visit(init, (node) => {
+        if (
+          (ts.isPropertyAssignment(node) ||
+            ts.isShorthandPropertyAssignment(node)) &&
+          nameOf(node.name)?.toLowerCase() === "authorization"
+        ) {
+          found = true
+        }
+      })
+    }
+    return found
+  }
+
+  /** The name of the function a node sits in: a declaration, or a const it is assigned to. */
+  const enclosingFunction = (node: ts.Node): string => {
+    for (let scope = node.parent; scope; scope = scope.parent) {
+      if (ts.isFunctionDeclaration(scope) && scope.name) return scope.name.text
+      if (
+        (ts.isArrowFunction(scope) || ts.isFunctionExpression(scope)) &&
+        ts.isVariableDeclaration(scope.parent) &&
+        ts.isIdentifier(scope.parent.name)
+      ) {
+        return scope.parent.name.text
+      }
+    }
+    return "?"
+  }
+
+  it("lets no lib/sdk importer call fetch itself", () => {
+    const bypasses: string[] = []
+    for (const { file, ast } of sources.filter(({ file }) =>
+      SDK_IMPORTERS.includes(file)
+    )) {
+      visit(ast, (node) => {
+        if (isRawFetch(node)) bypasses.push(`${file}:${lineOf(ast, node)}`)
+      })
+    }
+    expect(bypasses).toEqual([])
+  })
+
+  it("sends no raw fetch without an Authorization header, but fetchQuery's and the dead digital-products form's", () => {
+    const withoutBearer: string[] = []
+    for (const { file, ast } of sources) {
+      visit(ast, (node) => {
+        if (!isRawFetch(node) || carriesAuthorization(node.arguments[1])) return
+        // fetchQuery sets the bearer through a spread; the specs above pin it.
+        withoutBearer.push(`${file} (${enclosingFunction(node)})`)
+      })
+    }
+    expect(withoutBearer.sort()).toEqual([
+      "lib/client/client.ts (fetchQuery)",
+      // Unrouted dead code calling admin-only routes (SD-146 (c)).
+      "routes/digital-products/components/create-digital-product-form/index.tsx (onSubmit)",
+      "routes/digital-products/components/create-digital-product-form/index.tsx (uploadMediaFiles)",
+    ])
   })
 })
