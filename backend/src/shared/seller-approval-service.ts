@@ -522,7 +522,10 @@ export class SellerApprovalService {
         })
         log.info(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}${enabledExtensions ? ` (+${enabledExtensions.length} union features)` : ""}`)
       } catch (metadataError: any) {
-        // Non-critical: subscriber will create with default type
+        // Non-critical, but nothing creates the row later on its own: the
+        // sellerCreated subscriber listens for an event nothing emits (see
+        // the reconcile below). A route that writes seller metadata creates
+        // the row when it first needs one.
         log.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
       }
 
@@ -652,11 +655,16 @@ export class SellerApprovalService {
         })
 
         // Reconcile the metadata flag with what actually happened. Step 5 sets
-        // it at creation, but the sellerCreated subscriber can win that race
-        // and create the row first with defaults — and vendor_type === logistics
-        // provisions without the survey flag at all. Either way the settings
-        // page would read back "off" for a seller who holds a credential, and
-        // the next toggle would try to issue a second one.
+        // it when it creates the row, but step 5 can fail, or find a row
+        // already there (seller_id is unique: an approval resumed onto its
+        // store, or a route that wrote one first, keeps its defaults), and
+        // vendor_type === logistics provisions without the survey flag at all.
+        // Either way the settings page would read back "off" for a seller who
+        // holds a credential, and the next toggle would try to issue a second
+        // one. Not the sellerCreated subscriber, which this used to blame: it
+        // listens for an event named "sellerCreated" that nothing emits
+        // (Mercur's createSellerWorkflow declares a workflow hook of that name,
+        // not an event), so it never runs.
         if (provisioned.emitted) {
           try {
             const sellerExtension = this.container.resolve<SellerExtensionService>(
