@@ -40,7 +40,17 @@ export type AssignPlaybookInput = {
    */
   stranded_listing_count?: number
   metadata?: Record<string, any>
+  /**
+   * Refuse, rather than update, a seller who already has an assignment. For
+   * backfills, which must never replace a choice the vendor made: the check
+   * runs in the step, and a row written between the check and the insert is
+   * refused by the unique `seller_id` instead of overwritten.
+   */
+  only_if_unassigned?: boolean
 }
+
+/** The message a refused `only_if_unassigned` assignment throws with. */
+export const ALREADY_ASSIGNED_MESSAGE = "already has a playbook assignment"
 
 type AssignCompensation = {
   assignmentId?: string
@@ -65,6 +75,11 @@ const assignPlaybookStep = createStep(
     const [existing] = await playbookService.listPlaybookAssignments({
       seller_id: input.seller_id,
     })
+    if (existing && input.only_if_unassigned) {
+      throw new Error(
+        `assign-playbook: seller ${input.seller_id} ${ALREADY_ASSIGNED_MESSAGE} ("${existing.recipe_id}"); nothing was changed`
+      )
+    }
 
     const overridden = Boolean(
       input.recommended_recipe_id &&

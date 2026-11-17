@@ -229,6 +229,13 @@ row with the code's values (operator edits included). A change that affects
 denormalized caches (commission_rate, allow_credits_payout) also needs a
 migration.
 
+Sellers approved while the registry was empty have no assignment (their
+multi-role features were written regardless).
+`medusa exec ./src/scripts/backfill-approved-seller-playbooks.ts` lists each
+approved application, the store it made and the playbook it recorded, and
+writes with `apply`; it refuses a seller who already has an assignment, so a
+second run writes nothing.
+
 ## VendorFeatures extension key defaults
 
 The 14 keys defined on `vendor-type-provider/vendor-type-context.tsx` carry

@@ -207,6 +207,42 @@ export function validateSellerRequestData(data: unknown): SellerRequestData {
 }
 
 /**
+ * The playbook assignment an approved application records: its primary
+ * playbook (or the legacy vendor_type's, or stall), the full role set, what
+ * the quiz recommended, and the resources it reported; plus, for a seller
+ * with more than one role, the union of the roles' features that approval
+ * writes to the seller's metadata. Approval assigns this, and
+ * `shared/approved-playbook-backfill.ts` assigns the same thing to sellers
+ * approved while the playbook registry was empty.
+ */
+export function playbookAssignmentFor(data: SellerRequestData): {
+  recipe_id: PlaybookId
+  recommended_recipe_id?: PlaybookId
+  metadata: { roles: PlaybookId[]; resources?: string[] }
+  enabled_extensions: string[] | null
+} {
+  const isPlaybookId = (value: unknown): value is PlaybookId =>
+    typeof value === "string" && (PLAYBOOK_IDS as string[]).includes(value)
+  const vendorType = data.vendor_type || VendorType.GENERAL
+  const primary: PlaybookId = isPlaybookId(data.playbook)
+    ? data.playbook
+    : LEGACY_VENDOR_TYPE_TO_PLAYBOOK[vendorType] ?? "stall"
+  const selectedRoles = Array.isArray(data.roles) ? data.roles.filter(isPlaybookId) : []
+  const roles = Array.from(new Set<PlaybookId>([primary, ...selectedRoles]))
+  return {
+    recipe_id: primary,
+    recommended_recipe_id: isPlaybookId(data.recommended_playbook)
+      ? data.recommended_playbook
+      : undefined,
+    metadata: {
+      roles,
+      ...(data.resources?.length ? { resources: data.resources } : {}),
+    },
+    enabled_extensions: roles.length > 1 ? unionFeatureKeys(roles) : null,
+  }
+}
+
+/**
  * Sanitizes input to prevent XSS and injection attacks
  * Removes HTML tags and trims whitespace
  */
@@ -511,18 +547,8 @@ export class SellerApprovalService {
 
       // Resolve the primary playbook + the full role set the seller chose,
       // plus the feature-union override applied for multi-role sellers.
-      const primaryPlaybook: PlaybookId =
-        data.playbook && (PLAYBOOK_IDS as string[]).includes(data.playbook)
-          ? (data.playbook as PlaybookId)
-          : LEGACY_VENDOR_TYPE_TO_PLAYBOOK[vendorType] ?? "stall"
-      const selectedRoles: PlaybookId[] = Array.isArray(data.roles)
-        ? (data.roles.filter((r) => (PLAYBOOK_IDS as string[]).includes(r)) as PlaybookId[])
-        : []
-      const roles: PlaybookId[] = Array.from(
-        new Set<PlaybookId>([primaryPlaybook, ...selectedRoles])
-      )
-      const enabledExtensions: string[] | null =
-        roles.length > 1 ? unionFeatureKeys(roles) : null
+      const playbook = playbookAssignmentFor(data)
+      const enabledExtensions = playbook.enabled_extensions
 
       // Step 5: Create seller metadata with vendor_type
       try {
@@ -553,25 +579,16 @@ export class SellerApprovalService {
       // on the assignment. Non-blocking: a vendor without an assignment is
       // offered the picker during onboarding.
       try {
-        const recommendedPlaybook: PlaybookId | undefined =
-          data.recommended_playbook &&
-          (PLAYBOOK_IDS as string[]).includes(data.recommended_playbook)
-            ? (data.recommended_playbook as PlaybookId)
-            : undefined
-
         await assignPlaybookWorkflow.run({
           container: this.container,
           input: {
             seller_id: seller.id,
-            recipe_id: primaryPlaybook,
-            recommended_recipe_id: recommendedPlaybook,
-            metadata: {
-              roles,
-              ...(data.resources?.length ? { resources: data.resources } : {}),
-            },
+            recipe_id: playbook.recipe_id,
+            recommended_recipe_id: playbook.recommended_recipe_id,
+            metadata: playbook.metadata,
           },
         })
-        log.info(`[SellerApproval] Playbook assigned: ${primaryPlaybook} (roles: ${roles.join(", ")})`)
+        log.info(`[SellerApproval] Playbook assigned: ${playbook.recipe_id} (roles: ${playbook.metadata.roles.join(", ")})`)
       } catch (playbookError: any) {
         // Non-critical: vendor can pick a playbook during onboarding.
         log.warn(`[SellerApproval] Playbook assignment failed (onboarding picker will handle it): ${playbookError.message}`)
