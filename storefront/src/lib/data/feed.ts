@@ -2,6 +2,7 @@
 import { logger } from "@/lib/logger"
 
 import { listProducts } from "./products"
+import { PRODUCT_FEED_FIELDS } from "./product-query"
 import { HttpTypes } from "@medusajs/types"
 import { SellerProps } from "@/types/seller"
 
@@ -59,6 +60,8 @@ export async function getProductFeed({
       queryParams: {
         limit,
         order: getSortOrder(mode),
+        // A feed item also shows the seller's avatar and the description.
+        fields: PRODUCT_FEED_FIELDS,
       },
       forceCache: mode === "trending" || mode === "featured",
     })

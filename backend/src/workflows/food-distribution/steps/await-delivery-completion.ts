@@ -59,7 +59,10 @@ export const confirmDeliveryStep = createStep(
   async (input: ConfirmDeliveryInput, { container }) => {
     const foodDistribution = container.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
 
-    // Record proof of delivery
+    // Record proof of delivery. The service refuses a submission that does
+    // not meet the delivery's requirement or lacks the named type's evidence
+    // (`proofOfDeliveryError`), so this step cannot record an unchecked PIN
+    // as "PIN_CODE proof".
     await foodDistribution.recordProofOfDelivery(input.delivery_id, input.proof_type, {
       photoUrl: input.proof_data?.photo_url,
       signatureUrl: input.proof_data?.signature_url,

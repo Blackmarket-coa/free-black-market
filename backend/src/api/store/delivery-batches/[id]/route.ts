@@ -11,6 +11,8 @@ import {
   publicCourierView,
   redactDeliveries,
 } from "../../../../modules/food-distribution/public-view"
+import { nullIfNotFound } from "../../../../shared/null-if-not-found"
+import { deliveriesActorMayBatch } from "../batchable-deliveries"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -40,13 +42,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
-  const batch = await foodDistribution.retrieveDeliveryBatch(id)
-
   // D10-5. A batch is a courier's run: the account that planned it and the
   // courier driving it. Everyone else is refused, and refused identically
   // whether the batch is missing or merely not theirs — batch ids are
   // enumerable and the payload is a list of people's delivery addresses.
   //
+  // `nullIfNotFound`: the module's retrieve throws for a missing batch, so
+  // read bare it answered 404 where a real batch answered 403, and the
+  // `!batch` below was never reached.
+  const batch = await nullIfNotFound(foodDistribution.retrieveDeliveryBatch(id))
+
   // `actorOwnsResource`, not the `actorMayManage` the write verbs below use:
   // that one grandfathers a null `owner_id` so pre-ownership batches stay
   // manageable, which is defensible for a write behind the authenticated
@@ -96,6 +101,42 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // PUT /delivery-batches/:id
+//
+// The three write verbs below refuse a batch that does not exist exactly as
+// they refuse someone else's (SD-107). Each read the batch bare, which throws
+// for a missing id, so a signed-in stranger got 404 for a missing batch and
+// 403 "This batch is not yours to manage" for a real one.
+//
+// Two things this verb did beyond the batch itself:
+//   - `optimized_route` wrote a sequence and an arrival time onto whatever
+//     delivery id each entry named, in this batch or not, and answered 200
+//     for a real id and 404 for a missing one. Every entry must now name a
+//     delivery in this batch.
+//   - `courier_id` decides who else reads the batch: its courier's owner is
+//     served every address in it by the GET above.
+//
+// And on a batch with no owner on record, which `actorMayManage` lets any
+// signed-in account write (grandfathered), nothing here tells that account
+// about the deliveries in it. The GET above refuses them the batch, and this
+// verb was their way round it (each seen on Postgres, SD-110 (iii)):
+//   - the 200 echoed the batch row, whose `optimized_route` lists the id of
+//     every delivery in the run. The row is echoed to the recorded owner
+//     only; a write let through on an unknown owner is acknowledged with
+//     `{ id, status }`, as the producer-order PUT acknowledges one.
+//   - a route entry answered 200 for a delivery in the batch and 403 for one
+//     outside it, which is a read of what the batch holds, and rewrote the
+//     sequence and arrival time of deliveries the caller may not read. Route
+//     entries are the recorded owner's, and are refused before the batch's
+//     deliveries are looked at.
+//   - naming their own courier made them a reader of the run. A courier is
+//     assigned by the recorded owner only.
+// Those three are reads, and a read takes the strict rule whatever is ruled
+// about writes; adding a delivery (POST below) is a fourth. What is left open
+// on such a batch is status and notes here, answered with `{ id, status }`,
+// and DELETE below, answered with `{ success, id }` or a 400 that it is in
+// progress: its status, and nothing of what it holds. Whether a row with no
+// owner stays writable by any signed-in account is the operator's ruling,
+// for couriers and producers as for batches, and is not made here.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -106,15 +147,24 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    // Check batch exists
-    const existing = await foodDistribution.retrieveDeliveryBatch(id)
-    if (!existing) {
-      res.status(404).json({ message: "Batch not found" })
-      return
+    const existing = await nullIfNotFound(foodDistribution.retrieveDeliveryBatch(id))
+    const ownerId = (existing as { owner_id?: string | null } | null)?.owner_id
+    if (!existing || !actorMayManage(req, ownerId)) {
+      return forbidden(res)
     }
-    if (!actorMayManage(req, (existing as any).owner_id)) {
-      res.status(403).json({ message: "This batch is not yours to manage" })
-      return
+    const isRecordedOwner = actorOwnsResource(req, ownerId)
+    if ((data.courier_id || data.optimized_route) && !isRecordedOwner) {
+      return forbidden(res)
+    }
+    if (data.optimized_route) {
+      const inBatch = new Set(
+        (await foodDistribution.listFoodDeliveries({ batch_id: id }, { select: ["id"] })).map(
+          (delivery) => delivery.id
+        )
+      )
+      if (data.optimized_route.some((item) => !inBatch.has(item.delivery_id))) {
+        return forbidden(res)
+      }
     }
 
     // Update batch
@@ -154,7 +204,9 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     
     const batch = await foodDistribution.updateDeliveryBatches(updateData)
     
-    res.json({ batch })
+    res.json({
+      batch: isRecordedOwner ? batch : { id: batch.id, status: batch.status },
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
@@ -167,6 +219,21 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 // ===========================================
 // POST /delivery-batches/:id/deliveries
 // Add deliveries to batch
+//
+// Same interim rule as creating a batch: only deliveries the caller may
+// already read, a missing one refused as someone else's is, and nothing is
+// written until every delivery named has passed (the loop used to write each
+// delivery before it looked at the next).
+//
+// And only by the batch's recorded owner. On a batch with no owner on record
+// any signed-in account with one delivery of its own to add (a recipient has
+// one) was told how many deliveries the run holds, twice: in
+// `total_deliveries` here, and in the `batch_sequence` written onto its own
+// delivery, which it reads back through `GET /store/food-deliveries/:id`
+// (seen on Postgres, SD-110 follow-up: a batch of three, the answer 4 and
+// the sequence 4, and the GET of that batch 403). Leaving the total out of
+// the answer would not have closed it, so the write is the recorded owner's,
+// like a route entry and a courier in PUT above.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -177,19 +244,26 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    // Check batch exists
-    const batch = await foodDistribution.retrieveDeliveryBatch(id)
-    if (!batch) {
-      res.status(404).json({ message: "Batch not found" })
-      return
-    }
-    if (!actorMayManage(req, (batch as any).owner_id)) {
-      res.status(403).json({ message: "This batch is not yours to manage" })
-      return
+    const batch = await nullIfNotFound(foodDistribution.retrieveDeliveryBatch(id))
+    // `actorOwnsResource`, not `actorMayManage`: see the note above.
+    if (!batch || !actorOwnsResource(req, (batch as { owner_id?: string | null }).owner_id)) {
+      return forbidden(res)
     }
 
     if (batch.status !== "PLANNING") {
       res.status(400).json({ message: "Can only add deliveries to batches in PLANNING status" })
+      return
+    }
+
+    const batchable = await deliveriesActorMayBatch(req, foodDistribution, data.delivery_ids)
+    if (!batchable) {
+      return forbidden(res)
+    }
+    const taken = batchable.find((delivery) => delivery.batch_id)
+    if (taken) {
+      res.status(400).json({
+        message: `Delivery ${taken.id} is already in a batch`,
+      })
       return
     }
     
@@ -198,22 +272,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     let currentSequence = existingDeliveries.length
     
     // Add new deliveries
-    for (const deliveryId of data.delivery_ids) {
-      const delivery = await foodDistribution.retrieveFoodDelivery(deliveryId)
-      if (!delivery) {
-        res.status(404).json({ message: `Delivery ${deliveryId} not found` })
-        return
-      }
-      if (delivery.batch_id) {
-        res.status(400).json({ 
-          message: `Delivery ${deliveryId} is already in a batch` 
-        })
-        return
-      }
-      
+    for (const delivery of batchable) {
       currentSequence++
       await foodDistribution.updateFoodDeliveries({
-        id: deliveryId,
+        id: delivery.id,
         batch_id: id,
         batch_sequence: currentSequence,
       } as any)
@@ -237,6 +299,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // DELETE /delivery-batches/:id
+//
+// Still open to any signed-in account on a batch with no owner on record
+// (`actorMayManage`): it cancels the batch and takes its deliveries out of
+// it. The answer is `{ success, id }`, or a 400 that the batch is in progress
+// (its status, which the PUT acknowledgement also carries), and says nothing
+// about the deliveries, so this is a write on an ownerless row, which is the
+// operator's ruling (see PUT).
 // ===========================================
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
@@ -244,15 +313,9 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
-  // Check batch exists
-  const batch = await foodDistribution.retrieveDeliveryBatch(id)
-  if (!batch) {
-    res.status(404).json({ message: "Batch not found" })
-    return
-  }
-  if (!actorMayManage(req, (batch as any).owner_id)) {
-    res.status(403).json({ message: "This batch is not yours to manage" })
-    return
+  const batch = await nullIfNotFound(foodDistribution.retrieveDeliveryBatch(id))
+  if (!batch || !actorMayManage(req, (batch as { owner_id?: string | null }).owner_id)) {
+    return forbidden(res)
   }
 
   if (batch.status === "IN_PROGRESS") {

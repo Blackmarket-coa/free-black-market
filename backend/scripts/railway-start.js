@@ -127,8 +127,12 @@ async function main() {
   // Step 0: Apply MercurJS patches (null-safety for store_status)
   runCommand('node scripts/patch-mercurjs.js', 'MercurJS patches');
 
-  // Step 0b: Apply MikroORM patch (null-safe pruneToOneRelations — fixes
-  // relation-expansion 500s on store/admin queries; idempotent)
+  // Step 0b: Apply the MikroORM patches (SD-117: 6.6.14 turns nested fields
+  // Medusa 2.14.2 sends into populate hints the entity cannot resolve, which
+  // 500s the store cart routes). Idempotent, and it brings a tree an earlier
+  // version of the script patched up to date. The Docker deps stage has no
+  // scripts/ when `pnpm install` runs its postinstall, so this start is what
+  // patches the image.
   runCommand('node scripts/patch-mikro-orm.js', 'MikroORM patches');
 
   // Step 0.5: Wait for database to accept connections

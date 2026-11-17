@@ -22,6 +22,16 @@ const respondToTradeSchema = z.object({
 
 // ===========================================
 // GET /food-trades/:id
+//
+// The producer running the trade, or the customer on it (D10-5). Everyone
+// else is refused, and refused the same way whether the id names a trade,
+// another kind of order or nothing at all. This read needs no sign-in to be
+// attempted, and it used to give three answers: 404 for an id that does not
+// exist (the bare `retrieveFoodOrder` throws; it never returned the null the
+// old `!order` check was written for), 400 for an order that is not a trade,
+// 403 for a trade. Together they told anyone which order ids exist and of
+// which kind. The type check now comes after the principal check, as in POST
+// below, so only a principal of the order learns it is not a trade.
 // ===========================================
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -29,24 +39,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
-  const order = await foodDistribution.retrieveFoodOrder(id)
-  
-  if (!order) {
-    res.status(404).json({ message: "Trade not found" })
-    return
+  const order = await nullIfNotFound(foodDistribution.retrieveFoodOrder(id))
+
+  if (
+    !order ||
+    (!(await actorOwnsProducer(req, order.producer_id)) &&
+      !actorIsAnyOf(req, order.customer_id))
+  ) {
+    return forbidden(res)
   }
-  
+
   if (order.transaction_type !== "TRADE") {
     res.status(400).json({ message: "Order is not a trade" })
     return
-  }
-
-  // The producer running the trade, or the customer on it (D10-5).
-  if (
-    !(await actorOwnsProducer(req, order.producer_id)) &&
-    !actorIsAnyOf(req, order.customer_id)
-  ) {
-    return forbidden(res)
   }
   
   // Get related data

@@ -1,5 +1,9 @@
 import { ProductDetails, ProductGallery } from "@/components/organisms"
-import { getProductListingType, listProducts } from "@/lib/data/products"
+import {
+  getProductListingType,
+  listMoreFromSeller,
+  retrieveProductByHandle,
+} from "@/lib/data/products"
 import { HomeProductSection } from "../HomeProductSection/HomeProductSection"
 import NotFound from "@/app/not-found"
 import type { Presentation } from "@/lib/listing/presentation"
@@ -14,11 +18,7 @@ export const ProductDetailsPage = async ({
   locale: string
   presentation?: Presentation
 }) => {
-  const prod = await listProducts({
-    countryCode: locale,
-    queryParams: { handle: [handle], limit: 1 },
-    forceCache: true,
-  }).then(({ response }) => response.products[0])
+  const prod = await retrieveProductByHandle({ handle, countryCode: locale })
 
   if (!prod) return null
 
@@ -30,6 +30,14 @@ export const ProductDetailsPage = async ({
   // detail-path endpoint (null on error → physical-product default).
   const catalogId = await getProductListingType(prod.id)
   const listingType = selectListingTypePresentation(catalogId)
+
+  // The seller's other products as the listing serves them: published, in
+  // this storefront's sales channel and priced here. `prod` itself carries no
+  // list of the seller's products (see ProductPageProduct).
+  const moreFromSeller =
+    presentation === "marketplace"
+      ? await listMoreFromSeller({ handle, countryCode: locale })
+      : []
 
   return (
     <>
@@ -49,12 +57,11 @@ export const ProductDetailsPage = async ({
           />
         </div>
       </div>
-      {presentation === "marketplace" && (
+      {moreFromSeller.length > 0 && (
         <div className="my-8">
           <HomeProductSection
             heading="More from this seller"
-            products={prod.seller?.products}
-            // seller_handle={prod.seller?.handle}
+            products={moreFromSeller}
             locale={locale}
           />
         </div>

@@ -49,6 +49,13 @@ const OrderAttribution = model
     cookie_window_days: model.number().default(7),
     attribution_decided_at: model.dateTime(),
 
+    /**
+     * Integer MINOR units of `currency_code` (cents for USD), never Medusa's
+     * major-unit amounts: the payout breakdown, the commission ledger credit
+     * and its reversal, the analytics and every panel read them as cents.
+     * Rows written before SD-95's fix hold the major figure here and 1/100 of
+     * the commission; `scripts/fix-creator-commission-minor-units.ts`.
+     */
     attributed_subtotal_cents: model.bigNumber(),
     commission_basis_cents: model.bigNumber(),
     commission_amount_cents: model.bigNumber(),

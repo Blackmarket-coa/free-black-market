@@ -2,15 +2,23 @@
  * The window the vendor sales report counts, read from its `start_date` and
  * `end_date` query parameters.
  *
- * The vendor panel sends calendar dates (`YYYY-MM-DD` from a date input), and
- * its default end date is today. The route used to do `new Date(end_date)`
- * and keep `created_at <= end`, but `new Date("2026-11-15")` is midnight UTC
- * at the START of that day, so every order placed on the end date, today's
- * included, was dropped (SD-74 follow-up). A calendar date now means the whole
- * UTC day: a date-only `end_date` counts up to the start of the next day.
+ * The route used to do `new Date(end_date)` and keep `created_at <= end`, but
+ * `new Date("2026-11-15")` is midnight UTC at the START of that day, so every
+ * order placed on the end date, today's included, was dropped (SD-74
+ * follow-up). A calendar date now means the whole UTC day: a date-only
+ * `end_date` counts up to the start of the next day.
  *
  * A full ISO 8601 date-time with `Z` or an offset is used as given, and is
- * itself counted. Anything else is refused: `new Date("garbage")` is an
+ * itself counted (`endExclusive` is one millisecond after it). That is what
+ * the vendor panel sends: a UTC day is not the day a US vendor means (from
+ * 4pm Pacific their evening is already tomorrow in UTC), so the panel turns
+ * the vendor's calendar dates into the instants that bound their own days,
+ * local midnight at the start and the last millisecond before local midnight
+ * after the end (SD-89 (a); vendor-panel/src/hooks/api/sales-report.ts,
+ * salesReportQuery). Date-only values stay accepted, as UTC days, for other
+ * callers.
+ *
+ * Anything else is refused: `new Date("garbage")` is an
  * Invalid Date whose `toISOString()` threw inside the route's try block, so a
  * bad parameter answered 500, and `new Date("2026-02-31")` quietly meant
  * 3 March.

@@ -7,17 +7,23 @@
  * OrderItem rows and the line itself is `items.item`, an OrderLineItem. So a
  * field resolves only if OrderLineItem has it. Quantities (`quantity`,
  * `fulfilled_quantity`, ...) live on OrderItem and computed totals (`total`,
- * `subtotal`, ...) on no table at all; `items.quantity` and `items.total`
- * both throw "Entity 'OrderLineItem' does not have property ..." for any order
- * that has a line. Select `items.*` instead: it returns the line with its
- * quantity. For line totals add a top-level total field (`total`): the order
- * module then decorates each line with `total`, `subtotal` and the rest, in
- * major units like every Medusa v2 amount.
+ * `subtotal`, ...) on no table at all, so `items.quantity` and `items.total`
+ * name nothing. The read does not fail: the line comes back WITHOUT the
+ * field (and as an empty slot when nothing else on it was asked for), which a
+ * caller then counts as zero. Until SD-117 the same read threw "Entity
+ * 'OrderLineItem' does not have property ..." for any order that has a line,
+ * because MikroORM 6.6.14 made the unresolvable path a populate hint;
+ * `scripts/patch-mikro-orm.js` no longer lets it, which is how MikroORM
+ * 6.6.12, the version Medusa 2.14.2 is built against, treats it. Select
+ * `items.*` instead: it returns the line with its quantity. For line totals
+ * add a top-level total field (`total`): the order module then decorates each
+ * line with `total`, `subtotal` and the rest, in major units like every
+ * Medusa v2 amount.
  *
  * These are OrderLineItem's own columns plus its two relations, as Medusa
  * 2.14.2 defines them (`@medusajs/order/dist/models/line-item.js`). The
  * table also has a `totals_id` column (an early order migration) with no
- * property behind it; it is left out and fails the same way. Deeper paths
+ * property behind it; it is left out and is not returned either. Deeper paths
  * (`items.product.*`, `items.variant.*`, `items.tax_lines.*`,
  * `items.detail.*`) are not covered by this list.
  *

@@ -4,6 +4,8 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BARTER_MODULE } from "../../../../../../modules/barter"
 import type BarterModuleService from "../../../../../../modules/barter/service"
+import { publicBarterProposalView } from "../../../../../../modules/demand-pool/public-view"
+import { poolNotFound, resolvePoolReader } from "../_pool-readers"
 
 const proposeSchema = z.object({
   offering: z.string().min(1),
@@ -13,12 +15,30 @@ const proposeSchema = z.object({
 })
 
 // GET /store/collective/demand-pools/:id/barter
+//
+// The pool's creator, who alone may accept a trade, and each trade's
+// proposer read it whole; anyone else what it offers and wants, without who
+// offered it, who accepted it or the ledger entry (`../_pool-readers.ts`).
+// On a pool that is not public, someone who is neither its creator nor a
+// participant sees only their own offers, and is answered as a missing pool
+// when they have none.
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   try {
+    const reader = await resolvePoolReader(req, res)
+    if (!reader) return
+
     const service = req.scope.resolve<BarterModuleService>(BARTER_MODULE)
     const proposals = await service.listBarterProposals({ demand_post_id: id })
-    res.json({ proposals, count: proposals.length })
+
+    const proposedBy = (p: (typeof proposals)[number]) => reader.isCaller(p.proposer_id)
+    const visible = reader.listed ? proposals : proposals.filter(proposedBy)
+    if (!reader.listed && visible.length === 0) return poolNotFound(res)
+
+    res.json({
+      proposals: visible.map((p) => (reader.creator || proposedBy(p) ? p : publicBarterProposalView(p))),
+      count: visible.length,
+    })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed"
     log.error(`[GET /store/collective/demand-pools/${id}/barter] Error:`, message)

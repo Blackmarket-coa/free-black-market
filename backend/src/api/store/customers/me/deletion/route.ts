@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { createLogger } from "../../../../../shared/logger"
 import { eraseCustomerAcrossRegistry } from "../../../../../lib/customer-erasure"
+import { inspectLogin, removeSellerApplications, type LoginUse } from "../../../../../lib/login-shared"
 
 const log = createLogger("api/store/customers/me/deletion")
 
@@ -12,7 +13,14 @@ const log = createLogger("api/store/customers/me/deletion")
  *  - removes saved addresses,
  *  - anonymises the customer record (email / name / phone / company),
  *  - revokes the auth identity so the account can no longer sign in, and
- *    deletes the old password hashes kept against it (through the registry).
+ *    deletes the old password hashes kept against it (through the registry),
+ *    along with any vendor application made with it that never became a
+ *    vendor (pending, rejected, cancelled),
+ *  - unless that sign-in identity is shared: a vendor or a staff member signs
+ *    in with the same email and password (lib/login-shared.ts says which facts
+ *    count). Then the profile is unlinked from the login, as Medusa's own
+ *    removeCustomerAccountWorkflow does, and the login and its password
+ *    history stay with the other role.
  *
  * Completed-order records are retained in anonymised form (unlinked from live
  * PII) under the tax/accounting legal-basis exception both CCPA and GDPR allow.
@@ -38,6 +46,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const customerModule = req.scope.resolve(Modules.CUSTOMER)
   const query = req.scope.resolve("query")
+
+  // 0) Does the login go with the profile? Decided before anything is written:
+  //    if the check fails, nothing has changed and the person can simply retry.
+  let loginUse: LoginUse | null = null
+  if (authIdentityId) {
+    try {
+      loginUse = await inspectLogin(req.scope, authIdentityId)
+    } catch (err) {
+      log.warn(
+        `deletion: shared-login check failed for ${customerId}; nothing changed: ${(err as Error).message}`
+      )
+      return res.status(503).json({
+        type: "unexpected_state",
+        message:
+          "We couldn't process the deletion just now. Nothing was changed; please try again in a few minutes.",
+      })
+    }
+  }
+  const loginKeptReason = loginUse?.keep ?? null
 
   // 1) Remove saved addresses (best-effort).
   let addressesRemoved = 0
@@ -84,29 +111,65 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // The sign-in identity is passed too: the old password hashes kept for the
   // reuse check (`password_history_entry`) know the person only by it, and
   // step 4 revokes that identity, so its history goes with it here.
-  const registryResults = await eraseCustomerAcrossRegistry(req.scope, customerId, {
-    authIdentityId,
-  })
+  const registryResults = await eraseCustomerAcrossRegistry(
+    req.scope,
+    customerId,
+    loginKeptReason ? { loginKept: true } : { authIdentityId }
+  )
   const registryFailures = registryResults.filter((r) => r.error)
   const registryRows = registryResults.reduce((sum, r) => sum + r.rows, 0)
 
-  // 4) Revoke the auth identity so the account can no longer sign in (best-effort).
+  // 4) Revoke the auth identity so the account can no longer sign in, or, when
+  //    the login is shared, unlink the profile from it (best-effort).
   let loginRevoked = false
-  try {
-    if (authIdentityId) {
-      const authModule = req.scope.resolve(Modules.AUTH)
-      await (authModule as any).deleteAuthIdentities([authIdentityId])
-      loginRevoked = true
+  let loginUnlinked = false
+  let sellerRequestsRemoved = 0
+  let sellerRequestsFailed = false
+  if (authIdentityId) {
+    const authModule = req.scope.resolve(Modules.AUTH)
+    if (!loginKeptReason) {
+      try {
+        sellerRequestsRemoved = await removeSellerApplications(
+          req.scope,
+          loginUse?.submitterIds ?? [authIdentityId]
+        )
+      } catch (err) {
+        sellerRequestsFailed = true
+        log.warn(
+          `deletion: removing vendor applications failed for ${customerId}: ${(err as Error).message}`
+        )
+      }
+      try {
+        await (authModule as any).deleteAuthIdentities([authIdentityId])
+        loginRevoked = true
+      } catch (err) {
+        log.warn(
+          `deletion: auth-identity revocation failed for ${customerId}: ${(err as Error).message}`
+        )
+      }
+    } else {
+      try {
+        const identity = await authModule.retrieveAuthIdentity(authIdentityId)
+        await authModule.updateAuthIdentities([
+          {
+            id: authIdentityId,
+            app_metadata: { ...(identity.app_metadata ?? {}), customer_id: null },
+          },
+        ])
+        loginUnlinked = true
+        log.info(`deletion: login kept for ${customerId} (${loginKeptReason}); profile unlinked`)
+      } catch (err) {
+        log.warn(
+          `deletion: unlinking the profile from the kept login failed for ${customerId}: ${(err as Error).message}`
+        )
+      }
     }
-  } catch (err) {
-    log.warn(
-      `deletion: auth-identity revocation failed for ${customerId}: ${(err as Error).message}`
-    )
   }
 
   log.info(
     `account deletion processed for ${customerId} (addresses removed: ${addressesRemoved}, ` +
-      `login revoked: ${loginRevoked}, registry rows affected: ${registryRows}, ` +
+      `login revoked: ${loginRevoked}, login kept: ${Boolean(loginKeptReason)}, ` +
+      `profile unlinked: ${loginUnlinked}, registry rows affected: ${registryRows}, ` +
       `registry failures: ${registryFailures.length})`
   )
   if (registryFailures.length > 0) {
@@ -123,10 +186,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     customer_id: customerId,
     addresses_removed: addressesRemoved,
     login_revoked: loginRevoked,
+    // The same email and password still sign in to the other role this login
+    // serves (vendor, staff, or a pending vendor application); the shopper
+    // profile is no longer attached to it.
+    login_kept: Boolean(loginKeptReason),
+    profile_unlinked: loginUnlinked,
     records_erased: registryRows,
     // Named rather than counted: a person told their data was deleted should be
     // able to see which parts were not.
-    entities_failed: registryFailures.map((f) => f.entity),
+    entities_failed: [
+      ...registryFailures.map((f) => f.entity),
+      ...(sellerRequestsFailed ? ["request"] : []),
+    ],
+    seller_requests_removed: sellerRequestsRemoved,
     note:
       "Your personal data has been erased. Completed-order records are retained in " +
       "anonymised form under a tax/accounting legal-basis exception.",

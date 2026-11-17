@@ -147,9 +147,99 @@ function getErrorMessage(error: unknown): string {
 }
 
 /* ---------------------------------------------
- * SIGNUP (FIXED — NO TOKEN CHURN)
+ * SIGNUP
+ *
+ * Medusa's sign-up is two calls. Registering the email and password returns a
+ * token minted before any shopper profile exists, so it carries no customer
+ * id. Creating the profile with it works (that route accepts such a token),
+ * but every other customer route refuses it, `/store/customers/me` and the
+ * cart transfer included. So once the profile exists the token is traded for
+ * a fresh one, which Medusa mints with the new customer id
+ * (`POST /auth/token/refresh`).
+ *
+ * Until 2026-11-16 this kept the registration token as the session: the
+ * account was created but the buyer was not signed in, the form showed
+ * nothing (or "Unauthorized" when a cart had to be moved onto the account),
+ * and pressing it again answered "Identity with email already exists".
  * -------------------------------------------- */
-export async function signup(formData: FormData) {
+const IDENTITY_EXISTS = "Identity with email already exists"
+
+const EXISTING_ACCOUNT_MESSAGE =
+  'An account with this email already exists. Sign in with your password, or use "Forgot password?" to set a new one.'
+
+const bearer = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+/** `sdk.auth.*` answers a token string; some versions answer `{ token }`. */
+const tokenFrom = (response: unknown): string | null => {
+  if (typeof response === "string") return response || null
+  const token = (response as { token?: unknown } | null)?.token
+  return typeof token === "string" && token ? token : null
+}
+
+const isIdentityExists = (error: unknown) =>
+  (error as { message?: string } | null)?.message === IDENTITY_EXISTS
+
+const VENDOR_LOGIN_MESSAGE =
+  "This email is registered as a vendor account. Vendor accounts sign in at the Vendor Portal; to shop, sign up with a different email."
+const STAFF_LOGIN_MESSAGE =
+  "This email belongs to a staff or partner login, which can't also hold a shopper account here. Sign up with a different email to shop."
+const CLOSED_PROFILE_MESSAGE =
+  "The shopper account for this email was closed. Contact support to reopen it, or sign up with a different email."
+const TAKEN_EMAIL_MESSAGE =
+  "This email already belongs to another shopper account. Sign in with that account, or contact support."
+const SETUP_FAILED_MESSAGE =
+  "We couldn't finish setting up your account. Please try again in a moment."
+
+/** A link to an actor other than a customer (seller, user, driver, ...). */
+const otherActorLink = (appMetadata: Record<string, unknown>) =>
+  Object.entries(appMetadata).some(
+    ([key, value]) => key !== "customer_id" && key.endsWith("_id") && Boolean(value)
+  )
+
+/**
+ * Why a login with no shopper profile must not be given one here, or null.
+ * A vendor or staff login keeps its roles apart from shopping; a profile that
+ * was closed leaves `customer_id` behind (Medusa unlinks with null), and
+ * Medusa refuses a second profile for that login.
+ */
+const profileRefusal = (
+  appMetadata: Record<string, unknown>
+): { message: string; vendor?: true } | null => {
+  if (appMetadata.seller_id) return { message: VENDOR_LOGIN_MESSAGE, vendor: true }
+  if (otherActorLink(appMetadata)) return { message: STAFF_LOGIN_MESSAGE }
+  if ("customer_id" in appMetadata) return { message: CLOSED_PROFILE_MESSAGE }
+  return null
+}
+
+/** What to tell the buyer when the profile could not be created. */
+const profileCreateFailure = (error: unknown) =>
+  /already has an account/i.test(String((error as { message?: string } | null)?.message ?? ""))
+    ? TAKEN_EMAIL_MESSAGE
+    : SETUP_FAILED_MESSAGE
+
+/**
+ * Create the shopper profile for a login that has none, and return a token
+ * that carries the new customer id.
+ */
+async function createProfileAndRefresh(
+  token: string,
+  profile: HttpTypes.StoreCreateCustomer
+): Promise<{ customer: HttpTypes.StoreCustomer; token: string }> {
+  const { customer } = await sdk.store.customer.create(profile, {}, bearer(token))
+  const refreshed = tokenFrom(await sdk.auth.refresh(bearer(token)))
+  if (!refreshed || !decodeTokenPayload(refreshed)?.actor_id) {
+    throw new Error("Sign-up failed: invalid authentication response")
+  }
+  return { customer, token: refreshed }
+}
+
+/**
+ * Returns the new customer, `null` when the email already had a shopper
+ * profile and the password signed the buyer into it, or an error message.
+ */
+export async function signup(
+  formData: FormData
+): Promise<HttpTypes.StoreCustomer | null | string> {
   const email = String(formData.get("email") || "")
     .toLowerCase()
     .trim()
@@ -163,31 +253,55 @@ export async function signup(formData: FormData) {
   }
 
   try {
-    // 1️⃣ Register (this already authenticates)
-    const token = await sdk.auth.register("customer", "emailpass", {
-      email,
-      password,
-    })
-
-    await setAuthToken(token as string)
-
-    // 2️⃣ Create customer using SAME token
-    const authHeaders = await getAuthHeaders()
-    if (!authHeaders) {
-      throw new Error("Authentication failed after signup")
+    let token: string | null
+    try {
+      token = tokenFrom(
+        await sdk.auth.register("customer", "emailpass", { email, password })
+      )
+    } catch (error) {
+      if (!isIdentityExists(error)) throw error
+      // The email already has a login: an earlier sign-up made it (the old
+      // flow never signed the buyer in, so they could not tell it had worked)
+      // or one stopped after making it. Only the right password goes further.
+      try {
+        token = tokenFrom(
+          await sdk.auth.login("customer", "emailpass", { email, password })
+        )
+      } catch {
+        return EXISTING_ACCOUNT_MESSAGE
+      }
+    }
+    if (!token) {
+      throw new Error("Sign-up failed: invalid authentication response")
     }
 
-    const { customer } = await sdk.store.customer.create(
-      customerForm,
-      {},
-      authHeaders
-    )
+    let customer: HttpTypes.StoreCustomer | null = null
+    const payload = decodeTokenPayload(token)
+    if (!payload?.actor_id) {
+      const refusal = profileRefusal(
+        (payload?.app_metadata ?? {}) as Record<string, unknown>
+      )
+      if (refusal) return refusal.message
+      try {
+        ;({ customer, token } = await createProfileAndRefresh(token, customerForm))
+      } catch (error) {
+        logger.error("Signup: creating the shopper profile failed:", error)
+        return profileCreateFailure(error)
+      }
+    }
 
-    // 3️⃣ Cache + cart
+    await setAuthToken(token)
+
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
 
-    await transferCart()
+    // The buyer is signed in from here on; a cart that cannot be moved onto
+    // the account is not a failed sign-up.
+    try {
+      await transferCart()
+    } catch (error) {
+      logger.warn("Cart transfer failed after signup — continuing", error)
+    }
 
     return customer
   } catch (error) {
@@ -259,6 +373,43 @@ export async function login(formData: FormData): Promise<LoginResult> {
     }
 
     logger.info("[login] Token received, length:", token.length)
+
+    // The password is right. A token that names no customer belongs to a login
+    // with no shopper profile: decide here, before any session is stored.
+    const payload = decodeTokenPayload(token)
+    if (payload && !payload.actor_id) {
+      await removeAuthToken()
+      const refusal = profileRefusal(
+        (payload.app_metadata ?? {}) as Record<string, unknown>
+      )
+      if (refusal?.vendor) {
+        return { error: refusal.message, code: "vendor_account", vendorUrl: VENDOR_PANEL_URL }
+      }
+      if (refusal) return { error: refusal.message }
+
+      // A login with no role at all is a storefront sign-up that stopped after
+      // registering the email (or a vendor application not yet approved; the
+      // backend's account deletion keeps such a login, lib/login-shared.ts).
+      // Finish it rather than send the buyer to a sign-up form that answers
+      // "already exists".
+      let refreshed: string
+      try {
+        ;({ token: refreshed } = await createProfileAndRefresh(token, { email }))
+      } catch (createError) {
+        logger.error("[login] Could not finish an unfinished sign-up:", createError)
+        return { error: profileCreateFailure(createError) }
+      }
+      await setAuthToken(refreshed)
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      try {
+        await transferCart()
+      } catch {
+        logger.warn("Cart transfer failed — continuing login")
+      }
+      return
+    }
+
     await setAuthToken(token)
 
     // The emailpass identity is shared across actor types, so a vendor-only
@@ -284,26 +435,23 @@ export async function login(formData: FormData): Promise<LoginResult> {
       }
     } catch (probeError) {
       if (getErrorStatus(probeError) === 401) {
+        // The token names a customer the backend no longer serves.
         await removeAuthToken()
 
-        const payload = decodeTokenPayload(token)
-        const appMetadata = (payload?.app_metadata ?? {}) as Record<
+        const appMetadata = (decodeTokenPayload(token)?.app_metadata ?? {}) as Record<
           string,
           unknown
         >
-
         if (appMetadata.seller_id) {
           return {
-            error:
-              "This email is registered as a vendor account. Vendor accounts sign in at the Vendor Portal.",
+            error: VENDOR_LOGIN_MESSAGE,
             code: "vendor_account",
             vendorUrl: VENDOR_PANEL_URL,
           }
         }
 
         return {
-          error:
-            "We couldn't find a shopper profile for this login. Please register a shopper account to start buying.",
+          error: "We couldn't find a shopper profile for this login.",
         }
       }
       // Transient failure: keep the session — the account page degrades
@@ -390,6 +538,15 @@ export async function deleteCustomerAccount(): Promise<
     })
   } catch (error) {
     logger.error("deleteCustomerAccount failed:", error)
+    // 503: the backend stopped before changing anything (it could not tell
+    // whether the login is shared), so trying again is the right advice.
+    if (getErrorStatus(error) === 503) {
+      return {
+        success: false,
+        error:
+          "We couldn't process the deletion just now. Nothing was changed; please try again in a few minutes.",
+      }
+    }
     return {
       success: false,
       error: "Could not delete your account. Please contact support.",

@@ -10,7 +10,9 @@ import { runCompleteCartGuards } from "./complete-cart-guards"
  * self-registering on this hook, which crashed app boot with
  * "Cannot define multiple hook handlers for the validate hook") are
  * composed in `complete-cart-guards.ts` and run in sequence, with the
- * Coalition Credits and order-cycle (D9-1/D9-3) guards after them.
+ * Coalition Credits and order-cycle (D9-1/D9-3) guards after them, and last
+ * the guard that refuses a payment session for an amount that is not the
+ * cart's total (SD-115, `validate-cart-payment-amount.ts`).
  *
  * On a cart's first completion this hook runs after the cart is final and
  * before the workflow creates the order or authorizes the payment session, so
@@ -28,8 +30,10 @@ import { runCompleteCartGuards } from "./complete-cart-guards"
  *
  * The hook runs only on checkouts built on `completeCartWorkflow`. FBM's
  * main checkout, `POST /store/carts/:id/complete` (Mercur's
- * `splitAndCompleteCartWorkflow`), never calls it, so none of the four
- * guards runs there (SD-54, open).
+ * `splitAndCompleteCartWorkflow`), never calls it, so none of the first
+ * four guards runs there (SD-54, open); the payment-amount refusal is made
+ * for that route by a middleware in front of it
+ * (`api/middlewares/cart-payment-refresh.ts`).
  *
  * The hook's argument goes to the composition uncast. Before SD-54 the CCR
  * and order-cycle guards were called through `as any` while reading

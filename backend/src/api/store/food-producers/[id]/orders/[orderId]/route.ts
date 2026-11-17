@@ -5,6 +5,8 @@ import type FoodDistributionService from "../../../../../../modules/food-distrib
 import { DeliveryStatus } from "../../../../../../modules/food-distribution/models/delivery"
 import { actorMayManage, actorOwnsResource } from "../../../../../../shared/actor-scope"
 import { forbidden } from "../../../../../../shared/community-read-access"
+import { nullIfNotFound } from "../../../../../../shared/null-if-not-found"
+import { redactDelivery } from "../../../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -48,6 +50,19 @@ const updateProducerSchema = z.object({
  * learn which order ids exist, and with `actorOwnsResource` (no grandfathering
  * of a null `owner_id`), as the list route does, because this is a PII read.
  * Refusals use `forbidden()`: 403 for "not signed in" and "not yours" alike.
+ *
+ * The owner of one producer is a stranger to every other producer's orders,
+ * and any account can own a producer. For them an order id that does not
+ * exist used to answer 404 (the bare `retrieveFoodOrder` throws) and another
+ * producer's order 403 "Order does not belong to this producer", which told
+ * them which order ids exist. Both are now the one `forbidden()`, on this GET
+ * and on the PUT below (the PUT kept the 404/403 pair until SD-107). A
+ * producer that does not exist keeps its 404: producers are a public
+ * catalogue (`GET /store/food-producers`), so that says nothing new.
+ *
+ * The order's delivery is served without its proof PIN, like every other
+ * delivery read (`redactDelivery`). It was the one read left that returned
+ * the row whole.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id: producerId, orderId } = req.params
@@ -66,16 +81,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
   
-  // Get order
-  const order = await foodDistribution.retrieveFoodOrder(orderId)
-  if (!order) {
-    res.status(404).json({ message: "Order not found" })
-    return
-  }
-  
-  // Verify order belongs to producer
-  if (order.producer_id !== producerId) {
-    res.status(403).json({ message: "Order does not belong to this producer" })
+  // The order, when it is this producer's. Missing and another producer's
+  // are refused alike.
+  const order = await nullIfNotFound(foodDistribution.retrieveFoodOrder(orderId))
+  if (!order || order.producer_id !== producerId) {
+    forbidden(res)
     return
   }
   
@@ -84,7 +94,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   // Get delivery if exists
   const deliveries = await foodDistribution.listFoodDeliveries({ order_id: orderId })
-  const delivery = deliveries[0] || null
+  const delivery = deliveries[0]
+    ? redactDelivery(deliveries[0] as unknown as Record<string, unknown>)
+    : null
   
   res.json({
     order: {
@@ -98,6 +110,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // ===========================================
 // PUT /food-producers/:id/orders/:orderId
 // Update order (producer actions)
+//
+// An order that does not exist and another producer's order are refused
+// alike, with `forbidden()`, as on the GET above (SD-107). Read bare, the
+// lookup threw for a missing id, so this verb still answered 404 beside
+// "Order does not belong to this producer" (403) after the GET was closed,
+// to the same caller: the owner of any producer, which any account can be.
+//
+// The updated order is echoed to the producer's recorded owner only.
+// `actorMayManage` lets any signed-in account act on a producer with no owner
+// on record (grandfathered), and the echo was that account's read of the
+// order: recipient name, phone, email and delivery address, which the GET
+// refuses it. A write let through on an unknown owner is acknowledged with
+// the order's id and status.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -120,16 +145,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       return
     }
 
-    // Get order
-    const order = await foodDistribution.retrieveFoodOrder(orderId)
-    if (!order) {
-      res.status(404).json({ message: "Order not found" })
-      return
-    }
-    
-    // Verify order belongs to producer
-    if (order.producer_id !== producerId) {
-      res.status(403).json({ message: "Order does not belong to this producer" })
+    // The order, when it is this producer's. Missing and another producer's
+    // are refused alike.
+    const order = await nullIfNotFound(foodDistribution.retrieveFoodOrder(orderId))
+    if (!order || order.producer_id !== producerId) {
+      forbidden(res)
       return
     }
     
@@ -203,7 +223,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       }
     }
     
-    res.json({ order: updatedOrder })
+    res.json({
+      order: actorOwnsResource(req, (producer as { owner_id?: string | null }).owner_id)
+        ? updatedOrder
+        : { id: updatedOrder.id, status: updatedOrder.status },
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

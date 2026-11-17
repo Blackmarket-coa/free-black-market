@@ -78,8 +78,9 @@ const fail = (status: number, body: Record<string, unknown>): IntakeFailure => (
  *
  * - `total` (top level) is what makes the order module compute totals at
  *   all: `shouldIncludeTotals` looks only at top-level field names. Asking
- *   for `items.total` without it sends `total` to MikroORM as a column, and
- *   the read throws "Entity 'OrderLineItem' does not have property 'total'".
+ *   for `items.total` without it sends `total` to MikroORM as a column the
+ *   line does not have: the line comes back with no total (until SD-117 the
+ *   read threw "Entity 'OrderLineItem' does not have property 'total'").
  *   With it, every item comes back with its computed `total`.
  * - `items.product.seller.id`: Mercur links sellers to products through a
  *   link table. There is no `product.seller_id` column; asking for one is

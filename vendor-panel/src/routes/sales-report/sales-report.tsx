@@ -17,6 +17,8 @@ import {
 import {
   type SalesReportCurrencyTotal,
   type SalesReportLineItem,
+  salesReportQuery,
+  toLocalCalendarDate,
   useSalesReport,
 } from "../../hooks/api/sales-report"
 import { backendUrl, getAuthToken } from "../../lib/client"
@@ -68,13 +70,19 @@ const formatDate = (dateStr: string) => {
   })
 }
 
+/**
+ * The last 30 days ending today, as the vendor's own calendar dates. These
+ * were the UTC dates (`toISOString().split("T")[0]`), so in a US evening the
+ * default end date was already tomorrow's (SD-89 (a)). useSalesReport and the
+ * CSV export turn the dates into local-day instants with salesReportQuery.
+ */
 const getDefaultDateRange = () => {
   const end = new Date()
   const start = new Date()
   start.setDate(start.getDate() - 30)
   return {
-    start: start.toISOString().split("T")[0],
-    end: end.toISOString().split("T")[0],
+    start: toLocalCalendarDate(start),
+    end: toLocalCalendarDate(end),
   }
 }
 
@@ -98,9 +106,10 @@ export const SalesReportPage = () => {
   const handleExportCSV = async () => {
     try {
       const token = getAuthToken()
+      // The same local-day instants the JSON report is fetched with, and the
+      // browser's time zone, which the export's Date column is written in.
       const params = new URLSearchParams({
-        start_date: appliedStart,
-        end_date: appliedEnd,
+        ...salesReportQuery({ start_date: appliedStart, end_date: appliedEnd }),
         format: "csv",
       })
 

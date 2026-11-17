@@ -1,0 +1,76 @@
+/**
+ * Whether confirming a card session charges the total the buyer is shown.
+ *
+ * Stripe is not asked for the cart's total. It is asked for the amount of the
+ * PaymentIntent, and the backend fixed that when the payment session was
+ * opened: the session's `amount`, copied from the cart's payment collection.
+ * Medusa's own cart workflows keep the two together (a change of total
+ * re-amounts the collection and deletes its sessions). A write that goes
+ * round those workflows does not, and then the review step shows one total
+ * while `confirmCardPayment` takes another.
+ *
+ * That was reachable from this storefront, not only by a direct call to the
+ * API (SD-115). Mercur's shipping-method routes, which the delivery step
+ * calls, left the collection behind on any multi-seller cart whose buyer
+ * picked, changed or removed a delivery option after choosing the card; the
+ * backend's `POST /store/carts/:id/tier` and `/wholesale` did the same when
+ * they repriced a line. The backend now refreshes the collection after each
+ * of those writes and refuses to complete a cart on a session for another
+ * amount (`backend/src/api/middlewares/cart-payment-refresh.ts`). A page
+ * rendered after such a write therefore has no card session at all, and the
+ * buyer chooses the payment method again, for the new total.
+ *
+ * So this check is no longer what a buyer who edits delivery runs into. It
+ * stays as the storefront's own: the last thing between the card form and
+ * `confirmCardPayment` if that refresh fails, a writer was missed, or a
+ * session was opened while a change to the total was on its way (then the
+ * collection is right and the session is not). When it refuses, the pay
+ * button offers "Update payment", which has the backend bring the payment to
+ * the total and open the session again (`refreshCardPaymentSession`,
+ * `lib/data/cart.ts`). It sees only the cart this page rendered; a page
+ * rendered before the total changed is stopped by the backend, not here.
+ *
+ * Compared in the currency's minor unit, because that is what both sides come
+ * down to: Stripe is sent the session amount rounded to it, and the buyer
+ * reads the total formatted to it.
+ *
+ * An amount that is not a number is a mismatch. A charge of unknown size is
+ * not one to confirm.
+ *
+ * Pure TS with no imports, like lib/constants/payment-providers.ts:
+ * `backend/integration-tests/http/storefront-payment-providers.spec.ts` runs
+ * this file against a cart a booted backend serves.
+ */
+
+type SessionAmount = { amount?: unknown } | null | undefined
+type CartTotal = { total?: unknown; currency_code?: string | null } | null | undefined
+
+/** Decimal places of a currency's minor unit: 2 for usd, 0 for jpy. */
+export const minorUnitDigits = (currencyCode?: string | null): number => {
+  if (!currencyCode) return 2
+  try {
+    const digits = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currencyCode,
+    }).resolvedOptions().maximumFractionDigits
+    return typeof digits === "number" ? digits : 2
+  } catch {
+    // Not a currency code Intl knows.
+    return 2
+  }
+}
+
+const isAmount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value)
+
+export const cardChargeMatchesCartTotal = (
+  session: SessionAmount,
+  cart: CartTotal
+): boolean => {
+  const charge = session?.amount
+  const total = cart?.total
+  if (!isAmount(charge) || !isAmount(total)) return false
+
+  const factor = 10 ** minorUnitDigits(cart?.currency_code)
+  return Math.round(charge * factor) === Math.round(total * factor)
+}

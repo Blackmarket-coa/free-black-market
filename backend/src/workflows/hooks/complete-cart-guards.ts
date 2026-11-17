@@ -2,15 +2,18 @@ import { validateSlidingScaleTier } from "./validate-sliding-scale-tier"
 import { validateRentalOnCompleteCart } from "../rental/hooks/validate-rental"
 import { validateCcrReservation } from "./validate-ccr-reservation"
 import { validateOrderCycleOnCompleteCart } from "./validate-order-cycle"
+import { validateCartPaymentAmount } from "./validate-cart-payment-amount"
 import { cartAlreadyCompleted, type CompleteCartValidateArgs } from "./complete-cart-validate-args"
 
 /**
  * The guards FBM runs on `completeCartWorkflow.hooks.validate`, in order.
  * `complete-cart-validate.ts` registers this as the hook's one handler.
  *
- * Each guard throws `MedusaError` to refuse the checkout. All four are
+ * Each guard throws `MedusaError` to refuse the checkout. All five are
  * read-only, so their order does not change what is refused, only which
- * message a cart that fails several of them gets.
+ * message a cart that fails several of them gets. The payment-amount guard
+ * (SD-115) is last: the four before it say whether this sale may happen at
+ * all, and it says whether the payment on the cart is the one for it.
  *
  * A cart that has already completed is not checked at all
  * (`cartAlreadyCompleted`). Medusa runs this hook on every run of the
@@ -38,4 +41,5 @@ export async function runCompleteCartGuards(
   await validateRentalOnCompleteCart(args as any, context as any)
   await validateCcrReservation(args, context)
   await validateOrderCycleOnCompleteCart(args, context)
+  await validateCartPaymentAmount(args, context)
 }

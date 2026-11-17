@@ -3,7 +3,6 @@ import {
   ContainerRegistrationKeys,
   Modules,
   QueryContext,
-  defaultCurrencies,
 } from "@medusajs/framework/utils"
 import {
   BASE_UNIT_PRICE_METADATA_KEY,
@@ -18,6 +17,15 @@ import {
   PLAYBOOK_RECIPES,
   type PlaybookId,
 } from "../../../../../modules/playbook"
+import {
+  cartAlreadyCompletedResponse,
+  cartPaymentRefreshFailedResponse,
+  minorUnitDigits,
+} from "../../../../../lib/cart-payment-amount"
+import { refreshCartAfterReprice } from "../../../../../lib/cart-payment-refresh"
+import { createLogger } from "../../../../../shared/logger"
+
+const log = createLogger("api/store/carts/tier")
 
 type Body = { tier?: unknown }
 
@@ -41,7 +49,19 @@ type Body = { tier?: unknown }
  *    poison the base and have the reprice write an arbitrary unit_price.
  *    Items whose variant has no calculated price fall back to deriving
  *    the base from their current unit_price.
- * 5. Writes `cart.metadata.tier` and returns the cart.
+ * 5. Writes `cart.metadata.tier`.
+ * 6. Refreshes the cart (SD-115). The reprice is a cart-module write, which
+ *    tells neither the cart's promotions nor its payment collection, so a
+ *    promotion's adjustment stayed at the amount computed from the old price
+ *    and a card session opened before the reprice stayed pending for the old
+ *    total. `refreshCartAfterReprice` runs what Medusa's own line-item
+ *    workflows end in. It runs on every call that gets this far, repriced
+ *    lines or not, so that repeating a call whose refresh failed is the cure.
+ *    When it fails the answer is 500 `cart_payment_refresh_failed`, not a
+ *    success: the lines are repriced and the payment side is not.
+ *
+ * A cart that has already completed is refused before any of this, 400
+ * `cart_already_completed`: nothing is written to it.
  *
  * Line items from products on a Stall-playbook seller (or any seller
  * without a playbook assignment yet) are left untouched.
@@ -69,6 +89,7 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
     entity: "cart",
     fields: [
       "id",
+      "completed_at",
       "metadata",
       "currency_code",
       "region_id",
@@ -84,6 +105,16 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const cart = carts?.[0]
   if (!cart) return res.status(404).json({ message: "Cart not found" })
 
+  // A completed cart is refused before anything is written. Its order holds
+  // its own prices, so a reprice here changes nothing a buyer pays; and the
+  // refresh this route ends in refuses a completed cart (Medusa's
+  // `validateCartStep`), so the lines were being repriced and the call then
+  // answered 500 `cart_payment_refresh_failed` every time it was repeated.
+  if ((cart as { completed_at?: unknown }).completed_at) {
+    const refusal = cartAlreadyCompletedResponse()
+    return res.status(refusal.status).json(refusal.body)
+  }
+
   // Medusa line-item `unit_price` is a MAJOR-unit decimal (e.g. 19.99), but the
   // sliding-scale helper works in MINOR units (integer cents). Convert with the
   // currency's decimal_digits so the tier math keeps sub-unit precision instead
@@ -93,10 +124,14 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const currencyCode = String(
     (cart as { currency_code?: string }).currency_code || "usd"
   ).toLowerCase()
-  const decimalDigits =
-    (defaultCurrencies as Record<string, { decimal_digits?: number }>)[
-      currencyCode
-    ]?.decimal_digits ?? 2
+  // Medusa's currency table is keyed by the upper-case code, and this looked
+  // the lower-case one up, so every currency fell back to two decimals: a
+  // yen price came out in hundredths of a yen, a dinar's third decimal was
+  // rounded away, and an amount given in minor units (an absolute tier price,
+  // a seller's minimum order) was read at a hundredth of its size in yen and
+  // ten times its size in dinars (SD-115 review). `minorUnitDigits` reads the
+  // table as Medusa keys it; a code it does not have still gets two.
+  const decimalDigits = minorUnitDigits(currencyCode) ?? 2
   const minorFactor = 10 ** decimalDigits
   const toMinor = (major: number) => Math.round(major * minorFactor)
   const toMajor = (minor: number) => minor / minorFactor
@@ -290,6 +325,17 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
     await cartModule.updateCarts(id, {
       metadata: { ...existingMd, tier },
     })
+  }
+
+  try {
+    await refreshCartAfterReprice(req.scope, id)
+  } catch (error) {
+    log.error(
+      `[cart-tier] cart ${id}: ${updates.length} line item(s) repriced to tier ${tier}, but the cart could not be refreshed afterwards; its promotions and payment collection may still be for the old prices: ${(error as Error)?.message ?? error}`,
+      { cart_id: id }
+    )
+    const refusal = cartPaymentRefreshFailedResponse()
+    return res.status(refusal.status).json(refusal.body)
   }
 
   return res.json({

@@ -5,6 +5,7 @@ import { HttpTypes } from "@medusajs/types"
 import { ProductVariants } from "@/components/molecules"
 import useGetAllSearchParams from "@/hooks/useGetAllSearchParams"
 import { getProductPrice } from "@/lib/helpers/get-product-price"
+import { purchasableQuantity } from "@/lib/helpers/variant-stock"
 import { useState } from "react"
 import { addToCart } from "@/lib/data/cart"
 import { Chat } from "@/components/organisms/Chat/Chat"
@@ -77,9 +78,10 @@ export const ProductDetailsHeader = ({
     variantId,
   })
 
-  const variantStock =
-    product.variants?.find(({ id }) => id === variantId)?.inventory_quantity ||
-    0
+  // Infinity for a variant Medusa does not count or lets be backordered.
+  const variantStock = purchasableQuantity(
+    product.variants?.find(({ id }) => id === variantId)
+  )
 
   const variantHasPrice = !!product.variants?.find(({ id }) => id === variantId)
     ?.calculated_price

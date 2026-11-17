@@ -4,8 +4,7 @@ import {
   createStep,
   StepResponse,
 } from "@medusajs/framework/workflows-sdk"
-
-const GOVERNANCE_MODULE = "governanceModuleService"
+import { GOVERNANCE_MODULE } from "../../modules/governance"
 
 interface GovernanceServiceType {
   createGardenProposals: (data: Record<string, unknown>) => Promise<{ id: string }>

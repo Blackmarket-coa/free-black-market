@@ -1,8 +1,24 @@
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { MedusaError } from "@medusajs/framework/utils"
 import { WISHLIST_MODULE } from "../../../modules/wishlist"
 import WishlistModuleService from "../../../modules/wishlist/service"
 import { requireCustomerId } from "../../../shared"
+import { visibleProductIds } from "../../middlewares/store-public-fields"
+
+/**
+ * FBM's wishlist. This file answers `/store/wishlist`, not Mercur's route of
+ * the same path: it reads FBM's own wishlist module and ignores `fields`, so
+ * the `/store` field policy (`api/middlewares/store-public-fields.ts`) never
+ * sees what it selects.
+ *
+ * Which products (SD-118). It selected each wishlisted product whole by id,
+ * and `POST` took any id. A signed-in customer holding the id of a draft, or
+ * of a product sold only in another sales channel, could save it and read
+ * its whole row back (measured on Postgres). Now both ends hold to what
+ * `GET /store/products` serves for the request: published, and in the
+ * publishable key's sales channel (`visibleProductIds`).
+ */
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -37,14 +53,19 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       (wishlist.items || []).map((item: any) => item.product_id)
     ).filter(Boolean)
 
+    // Only the products the listing would serve this request. A row saved
+    // before `POST` checked, or a product unpublished or taken off the
+    // channel since it was saved, stays in the module and is left out here.
+    const visible = await visibleProductIds(req, [...new Set<string>(productIds)])
+
     // Fetch products if there are any
     let productsMap: Record<string, any> = {}
-    if (productIds.length > 0) {
+    if (visible.size > 0) {
       const { data: products } = await query.graph({
         entity: "product",
         fields: ["*", "variants.*", "images.*"],
         filters: {
-          id: productIds,
+          id: [...visible],
         },
       })
       productsMap = products.reduce((acc: Record<string, any>, product: any) => {
@@ -81,6 +102,17 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     if (!customerId) return
 
     const data = addWishlistItemSchema.parse(req.body)
+
+    // A product the caller could not open is not saved either: the 404
+    // `GET /store/products/:id` answers, word for word, whether the id is a
+    // draft's, another channel's product's, or nobody's.
+    const visible = await visibleProductIds(req, [data.reference_id])
+    if (!visible.has(data.reference_id)) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_FOUND,
+        `Product with id: ${data.reference_id} was not found`
+      )
+    }
 
     const wishlistService = req.scope.resolve<WishlistModuleService>(WISHLIST_MODULE)
 

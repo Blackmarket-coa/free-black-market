@@ -6,11 +6,12 @@ import express from "express"
 import type { NextFunction, Request, Response } from "express"
 import jwt from "jsonwebtoken"
 import { authenticate } from "@medusajs/framework/http"
-import type { MiddlewareRoute } from "@medusajs/framework/http"
+import type { MiddlewareRoute, RouteVerb } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PHASE0_FEATURE_FLAGS } from "../../shared/feature-flags"
 import { RESTAURANT_MODULE } from "../../modules/restaurant"
 import { DELIVERY_MODULE } from "../../modules/delivery"
+import { readRouteFileExports } from "./route-file-exports"
 
 /**
  * The nested route sets, through the REAL middleware chain.
@@ -63,7 +64,7 @@ type Handler = (req: Request, res: Response, next: NextFunction) => unknown
 type LoadedMiddleware = { handler: Handler; matcher: string; methods?: string[] }
 type SentinelRoute = { isRoute: true; matcher: string; method: string; handler: Handler }
 type SortableEntry = LoadedMiddleware | SentinelRoute
-type Verb = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+type Verb = RouteVerb
 
 const API_DIR = path.resolve(__dirname, "..")
 const JWT_SECRET = "nested-middleware-auth-spec-secret"
@@ -84,13 +85,11 @@ function token(actorType: string, actorId: string): string {
 // Route files on disk -> sentinel routes, the way Medusa's RoutesLoader maps
 // `[param]` directories to `:param` segments.
 // ---------------------------------------------------------------------------
+/** Every verb the file exports, however it is spelled, as Medusa's RoutesLoader registers them. */
 function exportedVerbs(routeFile: string): Verb[] {
-  const src = fs.readFileSync(routeFile, "utf8")
-  const verbs = new Set<Verb>()
-  for (const m of src.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/g)) {
-    verbs.add(m[1] as Verb)
-  }
-  return [...verbs]
+  const read = readRouteFileExports(routeFile, fs.readFileSync(routeFile, "utf8"))
+  if (read.unreadable.length > 0) throw new Error(`${routeFile}: its verbs cannot be read (${read.unreadable.join("; ")})`)
+  return read.verbs
 }
 
 function routeFilesUnder(prefix: string): { matcher: string; file: string }[] {

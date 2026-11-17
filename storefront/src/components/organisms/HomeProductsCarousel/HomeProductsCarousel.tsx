@@ -1,9 +1,7 @@
 import { Carousel } from "@/components/cells"
 import { ProductCard } from "../ProductCard/ProductCard"
 import { listProducts } from "@/lib/data/products"
-import { Product } from "@/types/product"
 import { HttpTypes } from "@medusajs/types"
-import { getProductPrice } from "@/lib/helpers/get-product-price"
 
 const looksLikePlaceholderListing = (product: HttpTypes.StoreProduct) => {
   const title = String(product.title || "").toLowerCase()
@@ -15,36 +13,42 @@ const looksLikePlaceholderListing = (product: HttpTypes.StoreProduct) => {
 }
 
 
+/**
+ * A row of product cards.
+ *
+ * On the home page (`home`) it fetches ten products itself, with the order it
+ * has always sent (`created_at`, which Medusa reads as oldest first, under a
+ * heading that says "newly added"; left as it was).
+ * Elsewhere it shows the products it is given, which the caller has already
+ * fetched from the listing: every card is rendered from a product
+ * `GET /store/products` served, so it carries its price and its seller's
+ * name, and nothing the listing did not serve is handed to the client card.
+ */
 export const HomeProductsCarousel = async ({
   locale,
   sellerProducts,
   home,
 }: {
   locale: string
-  sellerProducts: Product[]
+  sellerProducts: HttpTypes.StoreProduct[]
   home: boolean
 }) => {
-  let products: HttpTypes.StoreProduct[] = []
-  try {
-    const { response } = await listProducts({
-      countryCode: locale,
-      queryParams: {
-        limit: home ? 10 : undefined,
-        order: "created_at",
-        handle: home ? undefined : sellerProducts.map((product) => product.handle),
-      },
-      forceCache: !home,
-    })
-    products = response.products
-  } catch {
-    // Backend ORM bug workaround — return null gracefully so the page doesn't crash
-    if (!sellerProducts.length) return null
+  let products = sellerProducts
+
+  if (home) {
+    try {
+      const { response } = await listProducts({
+        countryCode: locale,
+        queryParams: { limit: 10, order: "created_at" },
+      })
+      products = response.products
+    } catch {
+      return null
+    }
   }
 
-  if (!products.length && !sellerProducts.length) return null
-
-  const productsToRender = (sellerProducts.length ? sellerProducts : products).filter(
-    (product) => !looksLikePlaceholderListing(product as HttpTypes.StoreProduct)
+  const productsToRender = products.filter(
+    (product) => !looksLikePlaceholderListing(product)
   )
 
   if (!productsToRender.length) return null
@@ -57,21 +61,8 @@ export const HomeProductsCarousel = async ({
           <ProductCard
             key={product.id}
             product={product}
+            api_product={product}
             variant={home ? "producer-forward" : "default"}
-            api_product={
-              home
-                ? (product as HttpTypes.StoreProduct)
-                : products.find((candidate) => {
-                    const { cheapestPrice } = getProductPrice({
-                      product: candidate,
-                    })
-                    return (
-                      cheapestPrice &&
-                      candidate.id === product.id &&
-                      Boolean(cheapestPrice)
-                    )
-                  })
-            }
           />
         ))}
       />

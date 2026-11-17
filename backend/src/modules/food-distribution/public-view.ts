@@ -250,3 +250,138 @@ export function publicCourierViewAll(
 ): Array<Record<string, unknown>> {
   return (couriers ?? []).map((courier) => publicCourierView(courier))
 }
+
+/**
+ * What a stranger may see of a food producer (SD-118).
+ *
+ * `GET /store/food-producers` and `/:id` need no customer and serialized the
+ * `food_producer` row: the reviewer's `verification_notes`, the `licenses`
+ * array (licence numbers and links to the documents), the `owner_id` and
+ * `owner_type` of the account that manages it, the `hawala_account_id` its
+ * money settles to, its contact email and phones, and `metadata`. And nothing
+ * read `public_profile`: a producer who switched their profile off was listed
+ * and served like any other.
+ *
+ * This is the listing a buyer chooses a producer from: who they are, what
+ * they make, where and when, how they deliver and what they accept, their
+ * ratings and their own account of themselves. The street address and the
+ * coordinates are on it and stay subject to `hide_address`
+ * (`applyProducerAddressPrivacy`, applied here so no caller can forget it).
+ *
+ * The contact email and phones are left off. A restaurant's phone is
+ * public knowledge; a home baker's is their own, and the row does not say
+ * which it is. Nothing consumes these two routes today (no storefront, app
+ * or panel calls them), so the conservative reading costs no working surface,
+ * and a buyer with an order reaches the producer through the order.
+ *
+ * An allow-list: a column added to `food_producer` tomorrow is private until
+ * it is added here. The owner still reads the whole row.
+ */
+const PUBLIC_PRODUCER_FIELDS = [
+  "id",
+  "seller_id",
+  "name",
+  "handle",
+  "producer_type",
+  "description",
+  "tagline",
+  "address_line_1",
+  "address_line_2",
+  "city",
+  "state",
+  "postal_code",
+  "country_code",
+  "latitude",
+  "longitude",
+  "hide_address",
+  "service_area_radius_miles",
+  "operating_hours",
+  "timezone",
+  "operating_status",
+  "accepts_orders",
+  "accepts_trades",
+  "accepts_donations",
+  "donation_only",
+  "offers_delivery",
+  "offers_pickup",
+  "delivery_fee",
+  "minimum_order",
+  "free_delivery_threshold",
+  "estimated_prep_time_minutes",
+  "cottage_food_state",
+  "verified",
+  "verified_at",
+  "logo_url",
+  "cover_image_url",
+  "gallery",
+  "website",
+  "social_links",
+  "story",
+  "mission",
+  "accepting_volunteers",
+  "volunteer_info",
+  "cuisine_types",
+  "dietary_options",
+  "specialties",
+  "average_rating",
+  "total_reviews",
+  "total_orders",
+  "community_vouches",
+  "years_active",
+  "accepts_cash",
+  "accepts_card",
+  "accepts_ebt_snap",
+  "accepts_mutual_credit",
+  "featured",
+  "created_at",
+  "updated_at",
+] as const
+
+export function publicProducerView(
+  producer: Record<string, unknown>
+): Record<string, unknown> {
+  const source = applyProducerAddressPrivacy(producer)
+  const out: Record<string, unknown> = {}
+  for (const field of PUBLIC_PRODUCER_FIELDS) {
+    if (field in source) out[field] = source[field]
+  }
+  return out
+}
+
+/** `publicProducerView` over a list. */
+export function publicProducerViewAll(
+  producers: readonly Record<string, unknown>[]
+): Array<Record<string, unknown>> {
+  return (producers ?? []).map((producer) => publicProducerView(producer))
+}
+
+/**
+ * Whether a producer's profile is published. Only an explicit `false` hides
+ * it: the column defaults to true, and a row read without it is not hidden.
+ */
+export function producerProfileIsPublic(producer: Record<string, unknown>): boolean {
+  return producer?.public_profile !== false
+}
+
+/**
+ * What a caller is told of a producer row it has just written or created
+ * (`PUT /store/food-producers/:id`, `POST /store/food-producers`): never more
+ * than `GET /store/food-producers/:id` serves the same caller.
+ *
+ * The owner reads the row whole, as on GET. Anyone else gets the public view
+ * (no contact email or phones, no licences, notes, owner or ledger account,
+ * `hide_address` honoured). A write by someone who is not the owner happens
+ * on a producer with no owner on record, which `actorMayManage` lets any
+ * signed-in account manage; the write is theirs to make, the row is not
+ * theirs to read. And of a profile switched off, which GET answers exactly as
+ * an id that does not exist, the acknowledgement is the id the caller named
+ * and nothing else.
+ */
+export function producerEchoFor(
+  producer: Record<string, unknown>,
+  callerIsOwner: boolean
+): Record<string, unknown> {
+  if (callerIsOwner) return producer
+  if (!producerProfileIsPublic(producer)) return { id: producer.id }
+  return publicProducerView(producer)
+}

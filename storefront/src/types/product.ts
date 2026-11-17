@@ -36,12 +36,13 @@ export interface SingleProductReview {
   rating: number
   username: string
   created_at: string
-  customer: { first_name: string; last_name: string }
+  /** Absent when the review's customer is gone: a deleted customer loses the link. */
+  customer?: { first_name?: string | null; last_name?: string | null } | null
   customer_note: string
   image: string
   seller_note?: string
   updated_at: string
-  seller: SellerProps
+  seller?: SellerProps
 }
 
 export interface SingleProductSeller {

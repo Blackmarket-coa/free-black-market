@@ -112,3 +112,22 @@ describe("ResendNotificationProviderService.send", () => {
     expect(send).not.toHaveBeenCalled()
   })
 })
+
+describe("ResendNotificationProviderService sender address", () => {
+  const build = (from: string) => {
+    const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } as any
+    new ResendNotificationProviderService({ logger }, { api_key: "re_test_key", from } as any)
+    return logger
+  }
+
+  it("warns at start-up when it would send from Resend's testing domain", () => {
+    const logger = build("onboarding@resend.dev")
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(logger.warn.mock.calls[0][0]).toMatch(/resend\.dev/)
+    expect(logger.warn.mock.calls[0][0]).toMatch(/RESEND_FROM_EMAIL/)
+  })
+
+  it("says nothing for an address on the operator's own domain", () => {
+    expect(build("Free Black Market <noreply@fbm.test>").warn).not.toHaveBeenCalled()
+  })
+})

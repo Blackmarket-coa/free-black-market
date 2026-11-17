@@ -382,6 +382,15 @@ export class StripeAchService {
     type: string
     data: any
   }> {
+    // An empty secret is not "unverified", it is forgeable: Stripe signs with
+    // HMAC-SHA256, and with a zero-length key anyone can compute the
+    // signature for a body of their own (seen on Postgres: a forged
+    // `payment_intent.succeeded` marked a vendor charge paid). Refuse before
+    // constructEvent, as the Connect and payment webhooks already do.
+    if (!this.config.stripeWebhookSecret) {
+      throw new Error("STRIPE_WEBHOOK_SECRET is not set; refusing to verify a webhook against an empty secret")
+    }
+
     const event = this.stripe.webhooks.constructEvent(
       payload,
       signature,

@@ -98,8 +98,18 @@ describe("proofOfDeliveryError", () => {
     )
   })
 
+  it("refuses a type it does not know how to check on a delivery that requires none", () => {
+    expect(proofOfDeliveryError({ proof_type: "NONE" }, { proof_type: "BIOMETRIC" }, bases)).toBe(
+      "BIOMETRIC cannot be accepted here"
+    )
+  })
+
   it("checks evidence URLs on a delivery that requires no proof", () => {
-    expect(proofOfDeliveryError({ proof_type: "NONE" }, { proof_type: "PHOTO" }, bases)).toBeNull()
+    // Naming PHOTO is not enough even without a requirement: the type is
+    // recorded, so the photo must be there (it used to return null here).
+    expect(proofOfDeliveryError({ proof_type: "NONE" }, { proof_type: "PHOTO" }, bases)).toBe(
+      "PHOTO requires photo_url (a file the courier uploaded; not verified)"
+    )
     expect(
       proofOfDeliveryError({ proof_type: "NONE" }, { proof_type: "PHOTO", photo_url: "javascript:alert(1)" }, bases)
     ).toBe("photo_url must be an https URL of a file uploaded to this platform")
@@ -110,5 +120,20 @@ describe("proofOfDeliveryError", () => {
         bases
       )
     ).toBeNull()
+  })
+
+  // PIN_CODE is the one type recorded as proof, so it is accepted only when a
+  // PIN matched, on a delivery that requires none as on one that requires it.
+  it.each([
+    ["NONE", { proof_type: "NONE" }],
+    ["no requirement at all", { proof_type: null }],
+  ])("compares a PIN_CODE submission with the PIN on record on a delivery with %s", (_label, requirement) => {
+    expect(proofOfDeliveryError(requirement, { proof_type: "PIN_CODE" }, bases)).toBe("Invalid PIN code")
+    expect(proofOfDeliveryError(requirement, { proof_type: "PIN_CODE", pin_code: "4821" }, bases)).toBe(
+      "Invalid PIN code"
+    )
+    const withPin = { ...requirement, proof_pin_code: "4821" }
+    expect(proofOfDeliveryError(withPin, { proof_type: "PIN_CODE", pin_code: "0000" }, bases)).toBe("Invalid PIN code")
+    expect(proofOfDeliveryError(withPin, { proof_type: "PIN_CODE", pin_code: "4821" }, bases)).toBeNull()
   })
 })

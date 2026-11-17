@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from '@medusajs/framework/utils'
 import { buildAuthModule } from './src/lib/build-auth-module'
 import { stripeConnectDirectProviderConfig } from './src/modules/stripe-connect-direct/registration'
+import { resendSender } from './src/lib/resend-sender'
 
 // Load environment variables
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
@@ -464,7 +465,9 @@ const notificationModules = (() => {
       options: {
         channels: ['email'],
         api_key: process.env.RESEND_API_KEY,
-        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+        // RESEND_FROM_EMAIL, or RESEND_FROM (the production template's old
+        // name for it), else Resend's testing address: src/lib/resend-sender.ts.
+        from: resendSender(),
         retry: {
           maxAttempts: Number(process.env.RESEND_MAX_RETRIES) || 3,
           baseDelayMs: Number(process.env.RESEND_RETRY_BASE_MS) || 250,

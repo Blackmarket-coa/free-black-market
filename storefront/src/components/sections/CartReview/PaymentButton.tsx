@@ -2,17 +2,24 @@
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
 import { isManual, isStripe } from "../../../lib/constants"
-import { placeOrder, placeTicketOrder } from "@/lib/data/cart"
+import {
+  placeOrder,
+  placeTicketOrder,
+  refreshCardPaymentSession,
+} from "@/lib/data/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
-import React, { useEffect, useState } from "react"
+import React, { useContext, useEffect, useState } from "react"
 import { Button } from "@/components/atoms"
+import { StripeContext } from "../../organisms/PaymentContainer/StripeWrapper"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
+import { cardChargeMatchesCartTotal } from "@/lib/helpers/card-charge"
 import { toast } from "@/lib/helpers/toast"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 import { completeSubscriptionCheckout } from "@/lib/data/subscriptions"
 import {
   intervalNoun,
+  paymentSessionDataFor,
   subscriptionCheckoutOf,
 } from "@/lib/subscriptions/auto-renew"
 
@@ -86,8 +93,16 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
 
+  // StripePaymentButton's hooks throw outside <Elements>, and PaymentWrapper
+  // mounts that only around a pending card session (and only with a Stripe
+  // key). A card session in any other state — one an unfinished attempt
+  // already authorized, say — gets the disabled button below rather than a
+  // crashed page; choosing the method again on the payment step opens a new
+  // session.
+  const stripeReady = useContext(StripeContext)
+
   switch (true) {
-    case isStripe(paymentSession?.provider_id):
+    case isStripe(paymentSession?.provider_id) && stripeReady:
       return (
         <StripePaymentButton
           notReady={notReady}
@@ -111,6 +126,32 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
       )
   }
 }
+
+/**
+ * Shown when the card session on this page is for an amount that is not the
+ * cart's total. The backend refreshes a cart's payment collection after every
+ * write that changes its total (SD-115), which deletes a session opened for
+ * the old one, so a page rendered after such a write has no session and never
+ * gets here: this is what is left when that refresh did not happen, or when a
+ * session was opened while a change to the total was on its way (the
+ * collection right and the session not).
+ *
+ * The notice comes with the action that puts it right, "Update payment"
+ * (`refreshCardPaymentSession`), rather than with an instruction to find one.
+ * The instructions this notice gave before could not be followed from this
+ * state: choosing the payment method again is ignored by the radio group
+ * while that method is picked, and choosing the delivery option the cart
+ * already holds is refused by the backend before it writes ("Some of the
+ * shipping methods are doubled!", measured in review), so nothing is
+ * refreshed. What the action does was run against the backend in both stale
+ * states (backend/integration-tests/http/cart-payment-refresh.spec.ts).
+ */
+const CARD_AMOUNT_CHANGED =
+  "Your order total changed after you chose how to pay, so your card has not been charged. Update the payment to pay the current total."
+
+/** "Update payment" failed; nothing was charged, and a second try finishes what the first began. */
+const CARD_PAYMENT_NOT_UPDATED =
+  "We could not update the payment for the new total, and your card has not been charged. Please try again."
 
 const StripePaymentButton = ({
   cart,
@@ -162,6 +203,38 @@ const StripePaymentButton = ({
     (s) => s.status === "pending"
   )
 
+  // confirmCardPayment charges what the session was opened for, which is not
+  // necessarily the total on this page (lib/helpers/card-charge.ts). If the
+  // two differ, the card is not confirmed at all.
+  const chargeIsCartTotal = cardChargeMatchesCartTotal(session, cart)
+
+  const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+
+  // "Update payment": the backend brings the cart's payment to its total and
+  // opens the card session again, and the page is rendered afresh with that
+  // session. The same provider, and for an approved subscription cart the
+  // same off-session setup the payment step asks for.
+  const updatePayment = async () => {
+    if (!session) return
+    setUpdating(true)
+    setUpdateError(null)
+    try {
+      const sessionData = paymentSessionDataFor(
+        cart,
+        phase1ModuleFlags.consumerSubscriptions
+      )
+      await refreshCardPaymentSession(cart, {
+        provider_id: session.provider_id,
+        ...(sessionData ? { data: sessionData } : {}),
+      })
+    } catch {
+      setUpdateError(CARD_PAYMENT_NOT_UPDATED)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   useEffect(() => {
     //@ts-ignore
     setDisabled(!card?._complete)
@@ -170,7 +243,7 @@ const StripePaymentButton = ({
   const handlePayment = async () => {
     setSubmitting(true)
 
-    if (!stripe || !elements || !card || !cart) {
+    if (!stripe || !elements || !card || !cart || !chargeIsCartTotal) {
       setSubmitting(false)
       return
     }
@@ -242,13 +315,33 @@ const StripePaymentButton = ({
   return (
     <>
       <Button
-        disabled={disabled || notReady}
+        disabled={disabled || notReady || !chargeIsCartTotal}
         onClick={handlePayment}
         loading={submitting}
         className="w-full"
       >
         Place order
       </Button>
+      <ErrorMessage
+        error={chargeIsCartTotal ? null : CARD_AMOUNT_CHANGED}
+        data-testid="stripe-payment-amount-changed"
+      />
+      {chargeIsCartTotal ? null : (
+        <Button
+          variant="tonal"
+          onClick={updatePayment}
+          loading={updating}
+          disabled={updating}
+          className="w-full mt-2"
+          data-testid="stripe-payment-update"
+        >
+          Update payment
+        </Button>
+      )}
+      <ErrorMessage
+        error={updateError}
+        data-testid="stripe-payment-update-error"
+      />
       <ErrorMessage
         error={errorMessage}
         data-testid="stripe-payment-error-message"

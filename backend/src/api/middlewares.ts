@@ -37,6 +37,7 @@ import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
+import { cartPaymentMiddlewareRoutes } from "./middlewares/cart-payment-refresh";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
 import {
   refuseSharedPaymentOrderCancel,
@@ -53,9 +54,11 @@ import { deliveryMiddlewareRoutes } from "./deliveries/[id]/_middlewares";
 import { storeCollectiveMiddlewareRoutes } from "./store/collective/_middlewares";
 import { storeHawalaMiddlewareRoutes } from "./store/hawala/_middlewares";
 import { mutualAidMiddlewareRoutes } from "./store/mutual-aid/_middlewares";
+import { storePublicFieldsMiddlewares } from "./middlewares/store-public-fields";
 import { vendorHawalaMiddlewareRoutes } from "./vendor/hawala/_middlewares";
 import { vendorWellnessMiddlewareRoutes } from "./vendor/wellness/_middlewares";
 import { requireSellerContextV1 } from "./middlewares/seller-context-v1";
+import { barePrefixAuthMiddlewareRoutes } from "./middlewares/bare-prefix-auth";
 import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
@@ -71,6 +74,7 @@ import {
   optionalEmbedKey,
 } from "./middlewares/embed-key";
 import { installConnectStoreCorsHook } from "./middlewares/connect-cors";
+import { foodNetworkOwnerReadAuthMatchers } from "./middlewares/food-network-owner-read-auth";
 import {
   inventoryLedgerEventSchema,
   pickPackBatchSchema,
@@ -669,6 +673,8 @@ const communityWriteAuthMatchers = COMMUNITY_WRITE_PREFIXES.flatMap((prefix) => 
 export default defineMiddlewares({
   routes: [
     ...communityWriteAuthMatchers,
+    ...barePrefixAuthMiddlewareRoutes,
+    ...foodNetworkOwnerReadAuthMatchers(COMMUNITY_WRITE_ACTORS),
     // ============================================================
     // GLOBAL: Strip 'q' parameter from all admin routes
     // ============================================================
@@ -1250,7 +1256,9 @@ export default defineMiddlewares({
     ...vendorWellnessMiddlewareRoutes,
     ...storeCollectiveMiddlewareRoutes,
     ...mutualAidMiddlewareRoutes,
+    ...storePublicFieldsMiddlewares,
     ...deliveryMiddlewareRoutes,
+    ...cartPaymentMiddlewareRoutes,
     {
       matcher: "/vendor/hawala/payments*",
       middlewares: [

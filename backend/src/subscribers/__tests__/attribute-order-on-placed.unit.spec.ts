@@ -15,7 +15,8 @@
 import handler from "../attribute-order-on-placed"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../modules/creator-attribution"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../modules/marketplace-webhooks"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { BigNumber, ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { AMOUNT_UNIT_METADATA_KEY, AMOUNT_UNIT_MINOR } from "../../shared/minor-units"
 
 jest.mock("../../lib/blackout-identity", () => ({
   resolveCustomerMxid: jest.fn(async () => null),
@@ -51,8 +52,9 @@ const makeContainer = (opts: {
         data: [
           {
             id: "order_1",
-            subtotal: 5000,
-            total: 5000,
+            // Medusa v2 amounts are MAJOR units: this is $50.00 (SD-95).
+            subtotal: 50,
+            total: 50,
             currency_code: "usd",
             customer_id: "cus_1",
             metadata: opts.orderMetadata ?? {},
@@ -169,5 +171,48 @@ describe("attribute-order-on-placed", () => {
     await run(container)
 
     expect(attributionService.attributeOrder).not.toHaveBeenCalled()
+  })
+
+  /**
+   * SD-95: `order.subtotal` is Medusa's MAJOR-unit figure and was handed to
+   * the service as `subtotalCents` unconverted, so a $25 order at 10% stored
+   * a commission of 2 cents. Converted by the currency's exponent here.
+   */
+  describe("hands the service the subtotal in minor units", () => {
+    const placedWith = async (order: Record<string, unknown>) => {
+      const { container, attributionService } = makeContainer({
+        orderMetadata: { fbm_short_code: "CREATOR7", fbm_visitor_token: "vis_abc" },
+      })
+      const graphing = container.resolve("query") as { graph: jest.Mock }
+      graphing.graph.mockImplementationOnce(async () => ({
+        data: [{ id: "order_1", customer_id: "cus_1", metadata: { fbm_short_code: "CREATOR7", fbm_visitor_token: "vis_abc" }, promotions: [], ...order }],
+      }))
+      await run(container)
+      return attributionService.attributeOrder
+    }
+
+    it.each([
+      ["$25.00", { subtotal: 25, total: 25, currency_code: "usd" }, 2500, "usd"],
+      ["$25.99 (binary noise rounded, not floored)", { subtotal: 25.99, total: 25.99, currency_code: "usd" }, 2599, "usd"],
+      ["a BigNumber, as Medusa returns totals", { subtotal: new BigNumber(25), total: new BigNumber(25), currency_code: "usd" }, 2500, "usd"],
+      ["¥5000 (no minor unit)", { subtotal: 5000, total: 5000, currency_code: "jpy" }, 5000, "jpy"],
+      ["KWD 1.234 (three digits)", { subtotal: 1.234, total: 1.234, currency_code: "kwd" }, 1234, "kwd"],
+      ["no subtotal: the total", { subtotal: null, total: 12.5, currency_code: "eur" }, 1250, "eur"],
+      ["no currency: USD", { subtotal: 25, total: 25, currency_code: null }, 2500, "usd"],
+    ])("%s", async (_label, order, cents, currency) => {
+      const attributeOrder = await placedWith(order)
+      expect(attributeOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subtotalCents: cents,
+          currencyCode: currency,
+          metadata: { [AMOUNT_UNIT_METADATA_KEY]: AMOUNT_UNIT_MINOR },
+        })
+      )
+    })
+
+    it("does not attribute an unreadable subtotal", async () => {
+      const attributeOrder = await placedWith({ subtotal: "n/a", total: undefined, currency_code: "usd" })
+      expect(attributeOrder).not.toHaveBeenCalled()
+    })
   })
 })

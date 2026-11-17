@@ -100,6 +100,12 @@ export async function eraseCustomerAcrossRegistry(
   opts: {
     /** The sign-in identity being revoked: the key of `keyedBy: "auth_identity"` entries. */
     authIdentityId?: string
+    /**
+     * The sign-in identity outlives the profile (a vendor, a staff member or a
+     * pending vendor application still signs in with it; lib/login-shared.ts),
+     * so rows kept against the login, not the shopper, stay with it.
+     */
+    loginKept?: boolean
   } = {}
 ): Promise<EntityErasureResult[]> {
   const pg = resolvePgConnection(container)
@@ -119,6 +125,11 @@ export async function eraseCustomerAcrossRegistry(
 
   for (const entry of CUSTOMER_DATA_REGISTRY) {
     // The id this entry's rows name the person by.
+    if (entry.keyedBy === "auth_identity" && opts.loginKept) {
+      log.info(`erasure: ${entry.entity} kept with the login, which outlives ${customerId}'s profile`)
+      results.push({ entity: entry.entity, action: entry.action, rows: 0 })
+      continue
+    }
     const personId = entry.keyedBy === "auth_identity" ? opts.authIdentityId : customerId
     if (!personId) {
       log.warn(`erasure: no sign-in identity given; ${entry.entity} left untouched for ${customerId}`)

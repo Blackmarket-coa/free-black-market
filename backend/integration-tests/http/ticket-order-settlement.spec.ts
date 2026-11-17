@@ -471,8 +471,9 @@ medusaIntegrationTestRunner({
         /**
          * The order ids Medusa's `cancelOrderWorkflow` was started on: its
          * first step is this read ("get-order"), so a run is recorded even
-         * where it then fails at that read, as it does on this stack (MikroORM
-         * EntityLoader, SD-36 (8)). Independent of that failure.
+         * where it then fails at that read, as it did for every paid order
+         * until SD-117 (MikroORM EntityLoader, SD-36 (8)). Independent of
+         * that failure.
          */
         cancelOrderStarts: () =>
           seen

@@ -12,6 +12,7 @@ import { LabeledInput } from "@/components/cells"
 import { registerFormSchema, RegisterFormData } from "./schema"
 import { signup } from "@/lib/data/customer"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Container } from "@medusajs/ui"
 import Link from "next/link"
 import { PasswordValidator } from "@/components/cells/PasswordValidator/PasswordValidator"
@@ -50,6 +51,7 @@ const Form = () => {
     watch,
     formState: { errors, isSubmitting },
   } = useFormContext()
+  const router = useRouter()
 
   const submit = async (data: FieldValues) => {
     const formData = new FormData()
@@ -59,9 +61,16 @@ const Form = () => {
     formData.append("last_name", data.lastName)
     formData.append("phone", data.phone)
 
-    const res = passwordError.isValid && (await signup(formData))
+    if (!passwordError.isValid) return
+    const res = await signup(formData)
 
-    if (typeof res === "string") setError(res)
+    if (typeof res === "string") {
+      setError(res)
+      return
+    }
+    // Signed in: a new shopper profile, or an existing one the password opened.
+    setError(undefined)
+    router.push("/user")
   }
 
   return (

@@ -256,8 +256,17 @@ class ContentPlatformService extends MedusaService({ PlatformAccount }) {
       if (!account || !account.inbound_webhook_secret) {
         throw new Error("Unknown account for inbound custom webhook")
       }
+      // The signature must cover the bytes that were sent. Without the raw
+      // body this verified an HMAC of the empty string: a constant per
+      // account, valid for any payload, while a sender who signed its real
+      // body was refused (both seen on Postgres). The route's matcher
+      // preserves the raw body; if it ever stops, refuse rather than verify
+      // nothing.
+      if (args.rawBody == null || args.rawBody.length === 0) {
+        throw new Error("custom webhook cannot be verified without its raw body")
+      }
       const ok = WebhookGenericProvider.verifySignature(
-        args.rawBody ?? "",
+        args.rawBody,
         sig,
         account.inbound_webhook_secret
       )

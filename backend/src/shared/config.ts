@@ -102,6 +102,9 @@ const envSchema = z.object({
   APPRISE_API_URL: optionalString,
   RESEND_API_KEY: optionalString,
   RESEND_FROM_EMAIL: optionalString,
+  // The name .env.production.example gave RESEND_FROM_EMAIL until 2026-11-16;
+  // read as a fallback by src/lib/resend-sender.ts.
+  RESEND_FROM: optionalString,
   
   // Algolia search
   ALGOLIA_APP_ID: optionalString,

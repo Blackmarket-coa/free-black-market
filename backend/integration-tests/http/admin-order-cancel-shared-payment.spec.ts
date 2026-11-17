@@ -97,11 +97,15 @@ medusaIntegrationTestRunner({
      * same fields. Under MikroORM 6.6.14 it depends on the install:
      *  - without scripts/patch-mikro-orm.js (an install that skipped
      *    postinstall) every such read dies in `pruneToOneRelations`;
-     *  - with it (CI's postinstall, railway-start.js in production) an unpaid
-     *    order reads, but a PAID one still dies: the planner derives a
-     *    `captures_id` populate hint on Payment and
-     *    `EntityLoader.populateField`, which the patch does not guard,
-     *    dereferences it. A separate defect from the one tested here.
+     *  - with the first version of it an unpaid order read, but a PAID one
+     *    still died: MikroORM made a populate hint of the planner's
+     *    `captures_id` on Payment and `EntityLoader.populateField`
+     *    dereferenced it (SD-117);
+     *  - with the script as it is now (CI's postinstall, railway-start.js in
+     *    production) both read, so the pass-through tests take their first
+     *    branch: Medusa's cancel as designed, refund included.
+     *    `store-cart-path.spec.ts` asserts that branch outright, on an order
+     *    placed through the store routes.
      * When the read fails, Medusa's cancel fails before it moves money; the
      * pass-through tests assert whichever outcome is true, exactly.
      */

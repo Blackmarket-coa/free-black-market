@@ -1,5 +1,5 @@
 import { ProductDetailsPage } from "@/components/sections"
-import { listProducts } from "@/lib/data/products"
+import { retrieveProductByHandle } from "@/lib/data/products"
 import { generateProductMetadata } from "@/lib/helpers/seo"
 import { selectPresentation } from "@/lib/listing/presentation"
 import { getStorefrontContext } from "@/lib/data/cookies"
@@ -20,11 +20,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { handle, locale } = await params
 
-  const prod = await listProducts({
-    countryCode: locale,
-    queryParams: { handle: [handle], limit: 1 },
-    forceCache: true,
-  }).then(({ response }) => response.products[0])
+  const prod = await retrieveProductByHandle({ handle, countryCode: locale })
+
+  // The page below answers a missing product with "not found".
+  if (!prod) {
+    return {}
+  }
 
   return generateProductMetadata(prod)
 }
@@ -36,11 +37,7 @@ export default async function ShopProductPage({
 }) {
   const { handle, locale } = await params
 
-  const prod = await listProducts({
-    countryCode: locale,
-    queryParams: { handle: [handle], limit: 1 },
-    forceCache: true,
-  }).then(({ response }) => response.products[0])
+  const prod = await retrieveProductByHandle({ handle, countryCode: locale })
 
   if (!prod) {
     return notFound()

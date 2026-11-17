@@ -12,6 +12,9 @@ import {
   applyProducerAddressPrivacyAll,
   applyRecipientAnonymity,
   applyRecipientAnonymityAll,
+  producerEchoFor,
+  producerProfileIsPublic,
+  publicProducerView,
   redactDeliveries,
   redactDelivery,
 } from "../public-view"
@@ -192,5 +195,68 @@ describe("applyProducerAddressPrivacy", () => {
     ])
     expect(out[0].address_line_1).toBeNull()
     expect(out[1].address_line_1).toBe("9 Public Rd")
+  })
+})
+
+describe("publicProducerView and producerEchoFor (SD-118)", () => {
+  /** A producer row with every kind of column the public view decides on. */
+  const ROW = {
+    id: "prd_1",
+    name: "Corner Kitchen",
+    handle: "corner-kitchen",
+    description: "Soul food",
+    city: "Chicago",
+    address_line_1: "12 Market Street",
+    latitude: 41.88,
+    longitude: -87.62,
+    hide_address: false,
+    email: "kitchen@example.com",
+    phone: "+15550555",
+    secondary_phone: "+15550556",
+    licenses: [{ number: "LIC-1" }],
+    verification_notes: "reviewer note",
+    owner_id: "cus_owner",
+    owner_type: "customer",
+    hawala_account_id: "acct_1",
+    metadata: { internal: true },
+    public_profile: true,
+    a_column_added_tomorrow: "unlisted",
+  }
+  const PRIVATE_COLUMNS = [
+    "email",
+    "phone",
+    "secondary_phone",
+    "licenses",
+    "verification_notes",
+    "owner_id",
+    "owner_type",
+    "hawala_account_id",
+    "metadata",
+    "public_profile",
+    "a_column_added_tomorrow",
+  ]
+
+  it("serves the listing a buyer chooses from, and none of the owner's columns", () => {
+    const view = publicProducerView(ROW)
+    expect(view).toMatchObject({ id: "prd_1", name: "Corner Kitchen", city: "Chicago", address_line_1: "12 Market Street" })
+    for (const column of PRIVATE_COLUMNS) expect([column, column in view]).toEqual([column, false])
+  })
+
+  it("keeps hide_address: the town stays, the doorstep goes", () => {
+    expect(publicProducerView({ ...ROW, hide_address: true })).toMatchObject({ city: "Chicago", address_line_1: null, latitude: null, longitude: null })
+  })
+
+  it("echoes the owner the row whole, anyone else the public view, and of a profile switched off only its id", () => {
+    expect(producerEchoFor(ROW, true)).toBe(ROW)
+    expect(producerEchoFor(ROW, false)).toEqual(publicProducerView(ROW))
+    expect(producerEchoFor({ ...ROW, public_profile: false }, false)).toEqual({ id: "prd_1" })
+    expect(producerEchoFor({ ...ROW, public_profile: false }, true)).toMatchObject({ email: "kitchen@example.com", public_profile: false })
+  })
+
+  it("treats only an explicit false as switched off", () => {
+    expect(producerProfileIsPublic(ROW)).toBe(true)
+    expect(producerProfileIsPublic({ id: "prd_2" })).toBe(true)
+    expect(producerProfileIsPublic({ id: "prd_3", public_profile: null })).toBe(true)
+    expect(producerProfileIsPublic({ id: "prd_4", public_profile: false })).toBe(false)
   })
 })

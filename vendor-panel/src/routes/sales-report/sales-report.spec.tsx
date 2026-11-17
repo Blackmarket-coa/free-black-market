@@ -1,8 +1,46 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Children, type ComponentProps, type ReactElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { SalesReportResponse } from "../../hooks/api/sales-report"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  type SalesReportResponse,
+  browserTimeZone,
+  salesReportQuery,
+  useSalesReport,
+} from "../../hooks/api/sales-report"
 import { SalesReportPage } from "./sales-report"
+
+// The vendor's time zone (SD-89 (a)): FBM's vendors are in US zones, and the
+// bug was reading their calendar dates as UTC days. Node re-reads TZ when it
+// is assigned; nothing in this file reads the clock before the tests run, and
+// the first test checks the zone took.
+const ZONE = "America/Los_Angeles"
+const previousTz = process.env.TZ
+process.env.TZ = ZONE
+afterAll(() => {
+  if (previousTz === undefined) delete process.env.TZ
+  else process.env.TZ = previousTz
+})
+
+// Every Button the page renders, so a test can press Export CSV without a
+// DOM, and the page's toasts. The real Button still renders.
+const ui = vi.hoisted(() => ({
+  buttons: [] as Array<{ children?: unknown; onClick?: () => unknown }>,
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+}))
+vi.mock("@medusajs/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@medusajs/ui")>()
+  const { createElement } = await import("react")
+  return {
+    ...actual,
+    Button: (props: ComponentProps<typeof actual.Button>) => {
+      ui.buttons.push(props as (typeof ui.buttons)[number])
+      return createElement(actual.Button, props)
+    },
+    toast: { ...actual.toast, success: ui.toastSuccess, error: ui.toastError },
+  }
+})
 
 // renderToStaticMarkup escapes text, so entities are decoded before matching:
 // assertions compare what the vendor reads.
@@ -80,21 +118,27 @@ const emptyReport: SalesReportResponse = {
 }
 
 /**
+ * The default range at NOW (13:17 on 15 November in Los Angeles): the last 30
+ * days ending today, as the instants that bound those local days. 16 October
+ * is still on daylight time (UTC-7), 15 November is not (UTC-8).
+ */
+const DEFAULT_KEY = ["sales-report", "2026-10-16T07:00:00.000Z", "2026-11-16T07:59:59.999Z"]
+
+const newClient = () =>
+  new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+
+const renderHtml = (client: QueryClient, element: ReactElement) =>
+  renderToStaticMarkup(<QueryClientProvider client={client}>{element}</QueryClientProvider>)
+
+/**
  * Render the real page with the report already in react-query's cache under
- * the key its hook uses for the default range (the last 30 days ending today,
- * as calendar dates). If the key did not match, the page would render its
- * spinner and every assertion below would fail.
+ * the key its hook uses for the default range. If the key did not match, the
+ * page would render its spinner and every assertion below would fail.
  */
 function renderPage(report: SalesReportResponse): string {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  client.setQueryData(["sales-report", "2026-10-16", "2026-11-15"], report)
-  return text(
-    renderToStaticMarkup(
-      <QueryClientProvider client={client}>
-        <SalesReportPage />
-      </QueryClientProvider>
-    )
-  )
+  const client = newClient()
+  client.setQueryData(DEFAULT_KEY, report)
+  return text(renderHtml(client, <SalesReportPage />))
 }
 
 describe("SalesReportPage", () => {
@@ -155,5 +199,186 @@ describe("SalesReportPage", () => {
     expect(out).toContain("Total Revenue —")
     expect(out).toContain("Avg Order Value —")
     expect(out).toContain("No sales found for the selected date range.")
+  })
+
+  it("dates a line by the vendor's own day: the JSON order_date is an instant, formatted in the browser's zone", () => {
+    // Placed at 19:30 on the 15th in Los Angeles, which is 03:30 UTC on the
+    // 16th. This is why the JSON report needs no server-side date (SD-89): the
+    // CSV export, which the server writes, is where the zone has to be sent.
+    const evening = { ...usdLine, order_date: "2026-11-16T03:30:00.000Z" }
+    const out = renderPage({ ...usdReport, line_items: [evening] })
+    expect(out).toContain("#1 Nov 15, 2026 Linen Apron")
+    expect(out).not.toContain("Nov 16, 2026")
+  })
+})
+
+/**
+ * SD-89 (a): the dates the report asks for are the vendor's own days. The
+ * panel sent date-only values built from the UTC date, and the backend reads a
+ * date-only value as a UTC day, so from 4pm Pacific the default end date was
+ * already tomorrow's, and a vendor who picked today lost their evening.
+ *
+ * SD-89 follow-up: both requests also carry the browser's IANA time zone, so
+ * the CSV export, whose Date column and file name the backend writes, dates
+ * an evening order by the vendor's day and not by the UTC date.
+ */
+describe("SalesReportPage dates in the vendor's zone", () => {
+  /** 19:00 on 15 November in Los Angeles: 03:00 on the 16th in UTC. */
+  const EVENING = new Date("2026-11-15T19:00:00-08:00")
+
+  const fetchMock = vi.fn(async (url: RequestInfo | URL) =>
+    String(url).includes("format=csv")
+      ? new Response("Order ID,Date\n", { status: 200, headers: { "content-type": "text/csv" } })
+      : new Response(JSON.stringify(usdReport), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+  )
+  /** Each request's query string, as an object. */
+  const sent = () =>
+    fetchMock.mock.calls.map(([url]) =>
+      Object.fromEntries(new URL(String(url), "http://panel.test").searchParams)
+    )
+
+  /** Render, then run the one report query the render registered. */
+  async function requestFrom(client: QueryClient, element: ReactElement) {
+    renderHtml(client, element)
+    const queries = client.getQueryCache().findAll({ queryKey: ["sales-report"] })
+    expect(queries).toHaveLength(1)
+    await queries[0].fetch()
+    return { key: queries[0].queryKey, query: sent().at(-1) }
+  }
+
+  const ReportFor = ({ start, end }: { start?: string; end?: string }) => {
+    useSalesReport({ start_date: start, end_date: end })
+    return null
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(EVENING)
+    fetchMock.mockClear()
+    vi.stubGlobal("fetch", fetchMock)
+    ui.buttons.length = 0
+    ui.toastSuccess.mockClear()
+    ui.toastError.mockClear()
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it("runs in a US zone, where the local date is still the 15th while UTC is on the 16th", () => {
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(ZONE)
+    expect(new Date().getTimezoneOffset()).toBeGreaterThan(0)
+    expect(new Date().getDate()).toBe(15)
+    expect(new Date().getUTCDate()).toBe(16)
+  })
+
+  it("at 19:00 local, the default range ends today, not tomorrow, and the JSON and CSV requests send the same local-day instants and the browser's time zone", async () => {
+    const client = newClient()
+    const { key, query } = await requestFrom(client, <SalesReportPage />)
+    const range = {
+      start_date: "2026-10-16T07:00:00.000Z",
+      end_date: "2026-11-16T07:59:59.999Z",
+      time_zone: ZONE,
+    }
+    expect(query).toEqual(range)
+    // The zone is not part of the cache key: the JSON report does not depend
+    // on it.
+    expect(key).toEqual(DEFAULT_KEY)
+
+    // The date inputs show the vendor's calendar dates.
+    const html = renderHtml(client, <SalesReportPage />)
+    expect(html).toContain('value="2026-10-16"')
+    expect(html).toContain('value="2026-11-15"')
+    // An order placed at 18:30 today is inside the window.
+    const order = Date.parse("2026-11-15T18:30:00-08:00")
+    expect(order).toBeGreaterThanOrEqual(Date.parse(range.start_date))
+    expect(order).toBeLessThanOrEqual(Date.parse(range.end_date))
+
+    // Export CSV, from the page as rendered with the report loaded.
+    const anchor = { href: "", download: "", click: vi.fn() }
+    vi.stubGlobal("window", { URL: { createObjectURL: () => "blob:report", revokeObjectURL: vi.fn() } })
+    vi.stubGlobal("document", {
+      createElement: () => anchor,
+      body: { appendChild: vi.fn(), removeChild: vi.fn() },
+    })
+    const exportCsv = ui.buttons.find((b) => Children.toArray(b.children as never).includes("Export CSV"))
+    expect(exportCsv?.onClick).toBeInstanceOf(Function)
+    await exportCsv?.onClick?.()
+    expect(ui.toastError).not.toHaveBeenCalled()
+    expect(ui.toastSuccess).toHaveBeenCalledWith("Sales report CSV downloaded")
+    // Both requests, in order: the JSON report, then the export, each with
+    // the zone the instants were worked out in.
+    expect(sent()).toEqual([range, { ...range, format: "csv" }])
+    expect(sent().map((q) => q.time_zone)).toEqual([ZONE, ZONE])
+    expect(anchor.download).toBe("sales-report-2026-10-16-to-2026-11-15.csv")
+    expect(anchor.click).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    // An ordinary day (24 hours), with this evening's 19:00 in it.
+    ["2026-11-15", "2026-11-15T08:00:00.000Z", "2026-11-16T07:59:59.999Z", "2026-11-15T19:00:00-08:00"],
+    // The day daylight time ends (25 hours) and the day it starts (23).
+    ["2026-11-01", "2026-11-01T07:00:00.000Z", "2026-11-02T07:59:59.999Z", "2026-11-01T23:30:00-08:00"],
+    ["2026-03-08", "2026-03-08T08:00:00.000Z", "2026-03-09T06:59:59.999Z", "2026-03-08T20:00:00-07:00"],
+  ])("a one-day range on %s is that whole local day", async (day, start, end, evening) => {
+    const { query } = await requestFrom(newClient(), <ReportFor start={day} end={day} />)
+    expect(query).toEqual({ start_date: start, end_date: end, time_zone: ZONE })
+    // The CSV export builds its request with the same function.
+    expect(salesReportQuery({ start_date: day, end_date: day })).toEqual(query)
+    // That evening is on the next UTC date, and inside the window.
+    expect(new Date(evening).toISOString().slice(0, 10)).not.toBe(day)
+    expect(Date.parse(evening)).toBeGreaterThanOrEqual(Date.parse(start))
+    expect(Date.parse(evening)).toBeLessThanOrEqual(Date.parse(end))
+  })
+
+  it("leaves out an empty date and passes one it cannot read to the backend to refuse", () => {
+    expect(salesReportQuery({ start_date: "", end_date: "" })).toEqual({ time_zone: ZONE })
+    expect(salesReportQuery({ start_date: "2026-02-31", end_date: "garbage" })).toEqual({
+      start_date: "2026-02-31",
+      end_date: "garbage",
+      time_zone: ZONE,
+    })
+  })
+
+  it("sends the zone the browser reports, and none when it reports no zone the backend can use", () => {
+    expect(browserTimeZone()).toBe(ZONE)
+
+    const resolved = Intl.DateTimeFormat.prototype.resolvedOptions
+    let reported: string | undefined
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockImplementation(function (this: Intl.DateTimeFormat) {
+        return { ...resolved.call(this), timeZone: reported as string }
+      })
+    try {
+      const day = { start_date: "2026-11-15", end_date: "2026-11-15" }
+      const instants = { start_date: "2026-11-15T08:00:00.000Z", end_date: "2026-11-16T07:59:59.999Z" }
+
+      // Whatever name the browser gives is passed on as it is.
+      reported = "America/New_York"
+      expect(salesReportQuery(day)).toEqual({ ...instants, time_zone: "America/New_York" })
+
+      // "Etc/Unknown" (ICU could not tell) would be a 400 from the backend,
+      // and the whole report with it. That and a missing name are left out:
+      // the request goes without a zone and the export is dated in UTC, as
+      // before.
+      for (const none of ["Etc/Unknown", "", undefined]) {
+        reported = none
+        expect(browserTimeZone()).toBeUndefined()
+        expect(salesReportQuery(day)).toEqual(instants)
+      }
+
+      spy.mockImplementation(() => {
+        throw new Error("Intl is not available")
+      })
+      expect(browserTimeZone()).toBeUndefined()
+      expect(salesReportQuery(day)).toEqual(instants)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(browserTimeZone()).toBe(ZONE)
   })
 })

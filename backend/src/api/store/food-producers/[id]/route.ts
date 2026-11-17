@@ -1,10 +1,16 @@
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { MedusaError } from "@medusajs/framework/utils"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../modules/food-distribution/models/food-producer"
-import { actorMayManage } from "../../../../shared/actor-scope"
-import { applyProducerAddressPrivacy } from "../../../../modules/food-distribution/public-view"
+import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
+import {
+  producerEchoFor,
+  producerProfileIsPublic,
+  publicProducerView,
+} from "../../../../modules/food-distribution/public-view"
+import { actorIsAnyOf } from "../../../../shared/community-read-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -87,12 +93,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
+    const row = producer as unknown as Record<string, unknown>
+    const owner = actorIsAnyOf(req, row.owner_id as string | null)
+
+    // A profile switched off answers exactly as an id that does not exist
+    // (the error `retrieveFoodProducer` raises for one), so the answer does
+    // not say which it is.
+    if (!owner && !producerProfileIsPublic(row)) {
+      throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodProducer with id: ${id} was not found`)
+    }
+
     // Check if currently open
     const isOpen = await foodDistribution.isProducerOpen(id)
-    
+
     res.json({
       producer: {
-        ...applyProducerAddressPrivacy(producer as unknown as Record<string, unknown>),
+        // The account that manages the producer reads its row whole; anyone
+        // else the public listing, with `hide_address` honoured.
+        ...(owner ? row : publicProducerView(row)),
         is_currently_open: isOpen,
       },
     })
@@ -103,6 +121,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // PUT /food-producers/:id
+//
+// The row is echoed whole to the producer's recorded owner only. The GET
+// above keeps a producer's street lines and coordinates back when
+// `hide_address` is set (a cottage-food producer working from home), for
+// every caller. This echo did not, and `actorMayManage` lets any signed-in
+// account write a producer with no owner on record (grandfathered): an empty
+// PUT from such an account answered with the address the GET had just kept
+// from it (seen on Postgres, SD-110 follow-up). `hide_address` is not in the
+// update schema, so such an account cannot clear the flag and read the
+// address off the GET: the echo was its way to it. A write let through on an
+// unknown owner is acknowledged with what the GET serves, as the courier PUT
+// acknowledges one with the public projection.
+//
+// What the GET serves a non-owner is the public view (SD-118): no contact
+// email or phones, licences, verification notes, owner or ledger account, and
+// for a profile switched off, nothing (it answers as a missing id). The echo
+// follows it through `producerEchoFor`, so the two cannot drift apart.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -129,7 +164,13 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       ...data,
     } as any)
     
-    res.json({ producer })
+    const updated = producer as unknown as Record<string, unknown>
+    res.json({
+      producer: producerEchoFor(
+        updated,
+        actorOwnsResource(req, (existing as { owner_id?: string | null }).owner_id)
+      ),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

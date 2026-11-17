@@ -3,13 +3,42 @@
 import { medusaFetch } from "../config"
 import { sortProducts } from "@/lib/helpers/sort-products"
 import { HttpTypes } from "@medusajs/types"
-import { SortOptions } from "@/types/product"
+import { AdditionalAttributeProps, SortOptions } from "@/types/product"
 import { getAuthHeaders } from "./cookies"
 import { getRegion, retrieveRegion } from "./regions"
 import { SellerProps } from "@/types/seller"
 import { normalizeImageUrl } from "@/lib/helpers/normalize-image-url"
+import { getProductPrice } from "@/lib/helpers/get-product-price"
+import {
+  MORE_FROM_SELLER_SHOWN,
+  moreFromSellerHandles,
+  productListQuery,
+  productPageQuery,
+} from "./product-query"
 
-const normalizeProductImages = (product: HttpTypes.StoreProduct) => ({
+type SellerProduct = HttpTypes.StoreProduct & { seller?: SellerProps }
+
+/**
+ * A product as the detail page's components read it (`PRODUCT_PAGE_FIELDS`).
+ *
+ * Its seller carries no `products`: the backend's link returns every product
+ * of the seller, drafts and other sales channels' products included, and this
+ * object is handed whole to client components. `listMoreFromSeller` is how a
+ * page gets the seller's other products.
+ */
+export type ProductPageProduct = Omit<SellerProduct, "seller"> & {
+  seller?: Omit<SellerProps, "products">
+  attribute_values?: AdditionalAttributeProps[]
+}
+
+/** The product as `GET /store/products` answers the page's query, the seller's product link included. */
+type FetchedPageProduct = ProductPageProduct & {
+  seller?: {
+    products?: ({ id?: string; handle?: string; status?: string } | null)[] | null
+  }
+}
+
+const normalizeProductImages = <T extends HttpTypes.StoreProduct>(product: T) => ({
   ...product,
   thumbnail: normalizeImageUrl(product.thumbnail),
   images:
@@ -18,6 +47,29 @@ const normalizeProductImages = (product: HttpTypes.StoreProduct) => ({
       url: normalizeImageUrl(image.url),
     })) || [],
 })
+
+type WithSeller = HttpTypes.StoreProduct & {
+  seller?: Pick<SellerProps, "reviews" | "store_status">
+}
+
+/** Image URLs normalised, and the seller's reviews without the nulls an unlinked review leaves. */
+const normalizeProduct = <T extends WithSeller>(product: T): T => {
+  const normalized = normalizeProductImages(product)
+  if (!product.seller) return normalized
+  return {
+    ...normalized,
+    seller: {
+      ...product.seller,
+      reviews: product.seller.reviews?.filter((item) => !!item) ?? [],
+    },
+  }
+}
+
+const isSuspended = (product: WithSeller) =>
+  product.seller?.store_status === "SUSPENDED"
+
+const statusOf = (error: unknown) =>
+  (error as { status?: number } | null | undefined)?.status
 
 export const listProducts = async ({
   pageParam = 1,
@@ -81,12 +133,17 @@ export const listProducts = async ({
   }>(`/store/products`, {
     method: "GET",
     query: {
-      category_id,
-      collection_id,
-      limit,
-      offset,
-      // region_id omitted — MikroORM ORM bug workaround
-      fields: "id,title,handle,thumbnail,status", // ORM bug: *-expansions fail
+      // The card's fields unless the caller names its own, and the region
+      // whenever the fields ask for prices (see product-query.ts).
+      ...productListQuery({
+        fields: queryParams?.fields,
+        regionId: region.id,
+        countryCode,
+        limit,
+        offset,
+        categoryId: category_id,
+        collectionId: collection_id,
+      }),
       ...queryParams,
     },
     headers,
@@ -95,25 +152,9 @@ export const listProducts = async ({
   })
     .then(({ products: productsRaw, count }) => {
       // Only exclude products from suspended sellers
-      const products = productsRaw.filter(
-        (product) => product.seller?.store_status !== "SUSPENDED"
-      )
+      const products = productsRaw.filter((product) => !isSuspended(product))
 
-      const response = products.map((prod) => {
-        const normalizedProduct = normalizeProductImages(prod)
-
-        if (!prod.seller) return normalizedProduct
-        // @ts-ignore Property 'seller' exists but TypeScript doesn't recognize it
-        const reviews = prod.seller?.reviews?.filter((item) => !!item) ?? []
-        return {
-          ...normalizedProduct,
-          seller: {
-            // @ts-ignore Property 'seller' exists but TypeScript doesn't recognize it
-            ...prod.seller,
-            reviews,
-          },
-        }
-      })
+      const response = products.map(normalizeProduct)
 
       const filteredCount = count
       const nextPage = count > offset + limit ? pageParam + 1 : null
@@ -140,11 +181,130 @@ export const listProducts = async ({
 }
 
 /**
+ * The page's product as the backend answers it, the seller's product link
+ * still on it. Not exported: nothing outside this file is handed that link.
+ *
+ * Asked for with the stock count first. Medusa answers that only when exactly
+ * one sales channel resolves for the request, and refuses the whole request
+ * with a 400 when the publishable key is linked to none or to several. A 400
+ * is therefore asked again without the count, so that such a storefront still
+ * has product pages: every priced variant is then offered, and the cart,
+ * which knows the stock, refuses one with none left.
+ *
+ * Null when there is no such published product, when its seller is suspended,
+ * when the region cannot be resolved or when the request fails.
+ */
+const fetchProductPage = async ({
+  handle,
+  countryCode,
+}: {
+  handle: string
+  countryCode: string
+}): Promise<FetchedPageProduct | null> => {
+  const region = await getRegion(countryCode)
+
+  if (!region) {
+    return null
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const request = (stock: boolean) =>
+    medusaFetch<{ products: FetchedPageProduct[] }>(`/store/products`, {
+      method: "GET",
+      query: productPageQuery({ handle, regionId: region.id, countryCode, stock }),
+      headers,
+      next: { revalidate: 60 },
+      cache: "force-cache",
+    })
+
+  return request(true)
+    .catch((error) => {
+      if (statusOf(error) === 400) return request(false)
+      throw error
+    })
+    .then(({ products }) => {
+      const product = products[0]
+      if (!product || isSuspended(product)) return null
+      return normalizeProduct(product)
+    })
+    .catch(() => null)
+}
+
+/**
+ * The product a detail page renders: its variants with their prices in the
+ * visitor's region and their stock, its options, images, tags, attributes and
+ * its seller (`PRODUCT_PAGE_FIELDS`), without the seller's product link (see
+ * `ProductPageProduct`).
+ *
+ * Null when there is no such published product, when its seller is suspended,
+ * when the region cannot be resolved or when the request fails; the pages
+ * answer all four with "not found", as they did when they read the first row
+ * of `listProducts`.
+ */
+export const retrieveProductByHandle = async ({
+  handle,
+  countryCode,
+}: {
+  handle: string
+  countryCode: string
+}): Promise<ProductPageProduct | null> => {
+  const product = await fetchProductPage({ handle, countryCode })
+  if (!product?.seller) return product
+
+  const seller = { ...product.seller }
+  delete seller.products
+  return { ...product, seller }
+}
+
+/**
+ * "More from this seller": up to four of the seller's other products that a
+ * visitor in this region can open and buy.
+ *
+ * The seller's product link names candidates and nothing more
+ * (`moreFromSellerHandles`). What is returned is what the listing serves for
+ * those handles, so only published products in the storefront's sales channel,
+ * and of those only the ones asked for, other than the product being viewed,
+ * with a price in the region.
+ */
+export const listMoreFromSeller = async ({
+  handle,
+  countryCode,
+}: {
+  handle: string
+  countryCode: string
+}): Promise<SellerProduct[]> => {
+  const product = await fetchProductPage({ handle, countryCode })
+  if (!product) return []
+
+  const handles = moreFromSellerHandles(product)
+  if (!handles.length) return []
+
+  const {
+    response: { products },
+  } = await listProducts({
+    countryCode,
+    queryParams: { handle: handles, limit: handles.length, order: "created_at" },
+    forceCache: true,
+  })
+
+  return products
+    .filter(
+      (candidate) =>
+        candidate.id !== product.id &&
+        handles.includes(candidate.handle) &&
+        Boolean(getProductPrice({ product: candidate }).cheapestPrice)
+    )
+    .slice(0, MORE_FROM_SELLER_SHOWN)
+}
+
+/**
  * Detail-path only: fetch the product's listing-type catalog id from the
  * dedicated read endpoint (the store products API does not expose the
- * listing-type link, and the list fetch's fields cannot be widened due to
- * the ORM-bug workaround above). Returns null on any failure so the
- * detail page can fall back to physical-product presentation.
+ * listing-type link). Returns null on any failure so the detail page can
+ * fall back to physical-product presentation.
  */
 export const getProductListingType = async (
   productId: string

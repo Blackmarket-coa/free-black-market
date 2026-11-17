@@ -5,5 +5,4 @@
  */
 
 export * from "./create-proposal"
-export * from "./cast-vote"
 export * from "./finalize-proposal"

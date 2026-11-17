@@ -3,8 +3,11 @@ import { GET as workPartySignups } from "../work-parties/[id]/signups/route"
 import { GET as harvestClaims } from "../harvests/[id]/claims/route"
 import { GET as volunteerLogs } from "../volunteer-logs/route"
 import { GET as deliveryDetail } from "../food-deliveries/[id]/route"
+import { MedusaError } from "@medusajs/framework/utils"
 import { GET as deliveryTrack } from "../food-deliveries/[id]/track/route"
+import { GET as deliverySubscribe } from "../food-deliveries/[id]/subscribe/route"
 import { GET as batchDetail } from "../delivery-batches/[id]/route"
+import { GET as tradeDetail } from "../food-trades/[id]/route"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 
 /**
@@ -243,9 +246,20 @@ describe("deliveries — the enumerable-id pair", () => {
   // Keyed on the module's own registration constant rather than a literal:
   // the routes resolve with FOOD_DISTRIBUTION_MODULE, so a hand-typed key
   // silently misses and the mock never gets used.
-  const modules = (delivery: Record<string, unknown> | null) => ({
+  // A missing delivery is a thrown not-found, as the module's own retrieve
+  // answers it (seen on Postgres, store-food-network-write-authz.spec.ts),
+  // never a null. This mock used to return null, which the real service
+  // cannot: the "does not exist" case below passed on a branch no request
+  // reached, while the routes answered a missing id 404.
+  const modules = (delivery: Record<string, unknown> | null, failure?: Error) => ({
     [FOOD_DISTRIBUTION_MODULE]: {
-      retrieveFoodDelivery: jest.fn(async () => delivery),
+      retrieveFoodDelivery: jest.fn(async (id: string) => {
+        if (failure) throw failure
+        if (!delivery) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodDelivery with id: ${id} was not found`)
+        }
+        return delivery
+      }),
       listDeliveryEvents: jest.fn(async () => []),
       retrieveCourier: jest.fn(async () => null),
     },
@@ -310,20 +324,119 @@ describe("deliveries — the enumerable-id pair", () => {
   })
 
   it("refuses identically for a delivery that does not exist", async () => {
-    const res = createRes()
-    await deliveryTrack(
-      makeReq({ actorId: "cus_1", modules: modules(null), rows: {} }) as never,
-      res as never
+    // Detail, tracking and the SSE stream: the same code and body as for
+    // someone else's delivery, signed in or not.
+    const someoneElses = createRes()
+    await deliveryDetail(
+      makeReq({ actorId: "cus_stranger", modules: modules(DELIVERY), rows: {} }) as never,
+      someoneElses as never
     )
-    expect(res.statusCode).toBe(403)
+    expect(someoneElses.statusCode).toBe(403)
+
+    for (const read of [deliveryDetail, deliveryTrack, deliverySubscribe]) {
+      for (const actorId of ["cus_1", undefined]) {
+        const res = createRes()
+        await read(
+          makeReq({ actorId, modules: modules(null), rows: {} }) as never,
+          res as never
+        )
+        expect(res.statusCode).toBe(403)
+        expect(res.body).toEqual(someoneElses.body)
+      }
+    }
+  })
+
+  it("does not turn a failed lookup into a refusal", async () => {
+    // Only a not-found is "no such delivery". A database error is an error.
+    for (const read of [deliveryDetail, deliveryTrack, deliverySubscribe]) {
+      const res = createRes()
+      await expect(
+        read(
+          makeReq({
+            actorId: "cus_1",
+            modules: modules(DELIVERY, new Error("connection terminated")),
+            rows: {},
+          }) as never,
+          res as never
+        )
+      ).rejects.toThrow("connection terminated")
+      expect(res.statusCode).toBe(200)
+    }
+  })
+
+  it("ends the stream when the delivery is deleted while it is open", async () => {
+    // The poll read the delivery bare, so the module's not-found skipped the
+    // "Delivery not found" branch and landed in the catch: an error logged
+    // every 3 seconds, and a stream that never ended.
+    jest.useFakeTimers()
+    try {
+      let deleted = false
+      const retrieveFoodDelivery = jest.fn(async (id: string) => {
+        if (deleted) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodDelivery with id: ${id} was not found`)
+        }
+        return { ...DELIVERY, status: "EN_ROUTE_DELIVERY" }
+      })
+      const written: string[] = []
+      const end = jest.fn()
+      const res = { ...createRes(), setHeader: jest.fn(), write: (chunk: string) => written.push(chunk), end }
+      const req = {
+        ...makeReq({
+          actorId: "cus_recipient",
+          params: { id: "del_1" },
+          modules: { [FOOD_DISTRIBUTION_MODULE]: { retrieveFoodDelivery } },
+          rows: {
+            food_producer: [{ id: "prd_1", owner_id: "sel_1" }],
+            food_courier: [{ id: "cour_1", owner_id: "cus_courier" }],
+            food_order: [{ id: "fo_1", customer_id: "cus_recipient" }],
+          },
+        }),
+        on: jest.fn(),
+      }
+      await deliverySubscribe(req as never, res as never)
+      expect(written).toHaveLength(1)
+      expect(JSON.parse(written[0].replace(/^data: /, "")).type).toBe("initial")
+
+      // One poll while it exists: a heartbeat, and the stream stays open.
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(written[written.length - 1]).toBe(": heartbeat\n\n")
+      expect(end).not.toHaveBeenCalled()
+
+      deleted = true
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(JSON.parse(written[written.length - 1].replace(/^data: /, ""))).toEqual({
+        type: "error",
+        message: "Delivery not found",
+      })
+      expect(end).toHaveBeenCalledTimes(1)
+
+      // And the poll has stopped.
+      const lookups = retrieveFoodDelivery.mock.calls.length
+      await jest.advanceTimersByTimeAsync(9000)
+      expect(retrieveFoodDelivery.mock.calls.length).toBe(lookups)
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })
 
 describe("delivery batches — a courier's run", () => {
   const BATCH = { id: "bat_1", owner_id: "cus_planner", courier_id: "cour_1" }
-  const modules = (batch: Record<string, unknown> | null) => ({
+  // A missing batch is a thrown not-found, as the module answers it (seen on
+  // Postgres with FF_PICK_PACK_V1 on: 404 "FoodDeliveryBatch with id: … was
+  // not found"). This mock returned null, which the service never does, so
+  // "a batch that does not exist" below passed on the route's `!batch`
+  // branch while every real request for a missing batch answered 404: the
+  // same false green the delivery mock above had.
+  const modules = (batch: Record<string, unknown> | null, failure?: Error) => ({
     [FOOD_DISTRIBUTION_MODULE]: {
-      retrieveDeliveryBatch: jest.fn(async () => batch),
+      retrieveDeliveryBatch: jest.fn(async (id: string) => {
+        if (failure) throw failure
+        if (!batch) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodDeliveryBatch with id: ${id} was not found`)
+        }
+        return batch
+      }),
       listFoodDeliveries: jest.fn(async () => [
         { id: "del_1", delivery_address: "12 Elm Street" },
       ]),
@@ -382,11 +495,121 @@ describe("delivery batches — a courier's run", () => {
   })
 
   it("refuses identically for a batch that does not exist", async () => {
-    const res = createRes()
+    const someoneElses = createRes()
     await batchDetail(
-      makeReq({ actorId: "cus_planner", modules: modules(null), rows: {} }) as never,
+      makeReq({ actorId: "cus_stranger", modules: modules(BATCH), rows: COURIER_ROWS }) as never,
+      someoneElses as never
+    )
+    expect(someoneElses.statusCode).toBe(403)
+
+    for (const actorId of ["cus_planner", undefined]) {
+      const res = createRes()
+      await batchDetail(makeReq({ actorId, modules: modules(null), rows: {} }) as never, res as never)
+      expect(res.statusCode).toBe(403)
+      expect(res.body).toEqual(someoneElses.body)
+    }
+  })
+
+  it("does not turn a failed lookup into a refusal", async () => {
+    const res = createRes()
+    await expect(
+      batchDetail(
+        makeReq({
+          actorId: "cus_planner",
+          modules: modules(BATCH, new Error("connection terminated")),
+          rows: COURIER_ROWS,
+        }) as never,
+        res as never
+      )
+    ).rejects.toThrow("connection terminated")
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe("one trade — /store/food-trades/:id", () => {
+  const TRADE = {
+    id: "fo_trade",
+    transaction_type: "TRADE",
+    producer_id: "prd_1",
+    customer_id: "cus_trader",
+    recipient_name: "Ada Okafor",
+    metadata: { trade_offer_items: [{ name: "eggs" }] },
+  }
+  const SALE = { ...TRADE, id: "fo_sale", transaction_type: "SALE" }
+  const PRODUCER_ROWS = { food_producer: [{ id: "prd_1", owner_id: "cus_producer" }] }
+  // Missing is a thrown not-found, as the module answers it on Postgres.
+  const modules = (order: Record<string, unknown> | null, failure?: Error) => ({
+    [FOOD_DISTRIBUTION_MODULE]: {
+      retrieveFoodOrder: jest.fn(async (id: string) => {
+        if (failure) throw failure
+        if (!order) {
+          throw new MedusaError(MedusaError.Types.NOT_FOUND, `FoodOrder with id: ${id} was not found`)
+        }
+        return order
+      }),
+      retrieveFoodProducer: jest.fn(async () => ({ id: "prd_1", name: "Kitchen", producer_type: "HOME_COOK" })),
+      listFoodOrderItems: jest.fn(async () => []),
+    },
+  })
+  const read = async (opts: { actorId?: string; order: Record<string, unknown> | null }) => {
+    const res = createRes()
+    await tradeDetail(
+      makeReq({ actorId: opts.actorId, modules: modules(opts.order), rows: PRODUCER_ROWS }) as never,
       res as never
     )
+    return res
+  }
+
+  it("refuses a trade, another kind of order and a missing id alike", async () => {
+    // It gave three answers to a caller with no account: 403 for a trade,
+    // 400 for an order that is not one, 404 for an id that does not exist.
+    for (const actorId of [undefined, "cus_stranger"]) {
+      const someoneElses = await read({ actorId, order: TRADE })
+      expect(someoneElses.statusCode).toBe(403)
+      expect(JSON.stringify(someoneElses.body)).not.toContain("Okafor")
+
+      for (const order of [null, SALE]) {
+        const res = await read({ actorId, order })
+        expect([order?.id ?? "missing", res.statusCode]).toEqual([order?.id ?? "missing", 403])
+        expect(res.body).toEqual(someoneElses.body)
+      }
+    }
+  })
+
+  it("serves the trade to its producer and to the customer on it", async () => {
+    for (const actorId of ["cus_producer", "cus_trader"]) {
+      const res = await read({ actorId, order: TRADE })
+      expect([actorId, res.statusCode]).toEqual([actorId, 200])
+      expect((res.body.trade as { id: string }).id).toBe("fo_trade")
+    }
+  })
+
+  it("tells only a principal of the order that it is not a trade", async () => {
+    for (const actorId of ["cus_producer", "cus_trader"]) {
+      const res = await read({ actorId, order: SALE })
+      expect([actorId, res.statusCode, res.body]).toEqual([actorId, 400, { message: "Order is not a trade" }])
+    }
+  })
+
+  it("refuses a principal a missing id the same way", async () => {
+    const stranger = await read({ actorId: "cus_stranger", order: TRADE })
+    const res = await read({ actorId: "cus_producer", order: null })
     expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual(stranger.body)
+  })
+
+  it("does not turn a failed lookup into a refusal", async () => {
+    const res = createRes()
+    await expect(
+      tradeDetail(
+        makeReq({
+          actorId: "cus_producer",
+          modules: modules(TRADE, new Error("connection terminated")),
+          rows: PRODUCER_ROWS,
+        }) as never,
+        res as never
+      )
+    ).rejects.toThrow("connection terminated")
+    expect(res.statusCode).toBe(200)
   })
 })

@@ -1,6 +1,7 @@
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { readRouteFileExports } from "./route-file-exports"
 
 /**
  * Nested middleware files are dead unless the root file imports them.
@@ -20,9 +21,16 @@ import path from "path"
  *     live, and is not);
  *   - a nested `_middlewares.ts|js` the root does not import;
  *   - an exported route array the root does not spread (by text, and by
- *     identity in the middleware set the real loader builds from the root);
- *   - a default export in a nested file (a `defineMiddlewares` default nobody
- *     loads is the same dead declaration under another name).
+ *     identity in the middleware set the real loader builds from the root),
+ *     or an exported `defineMiddlewares`-shaped config (`{ routes: [...] }`)
+ *     whose routes it does not load, default or named;
+ *   - a default export in a nested file, however it is spelled (a
+ *     `defineMiddlewares` default nobody loads is the same dead declaration
+ *     under another name), and any export whose names the file's text does
+ *     not show (`export =`, `export *`, a CommonJS write). Read from the
+ *     syntax tree by route-file-exports.ts, which reports each of these as
+ *     `unreadable`; a regex for `export default` let
+ *     `export { config as default }` through.
  */
 
 // Requiring the route sets creates the rate limiters; pin the in-memory store
@@ -68,6 +76,20 @@ function importSpecifier(f: Found): string {
   return "./" + f.rel.replace(/\\/g, "/").replace(/\.(ts|js)$/, "")
 }
 
+/**
+ * Each export in a nested file that is not a plain named one: a default
+ * export in any spelling, and every form whose names the text does not show.
+ */
+const exportProblems = (rel: string, source: string): string[] =>
+  readRouteFileExports(rel, source).unreadable.map((why) => `${rel}: ${why}`)
+
+/** The routes an exported value declares: a route array, or a `defineMiddlewares` config holding one. */
+function routesIn(value: unknown): unknown[] | undefined {
+  if (Array.isArray(value)) return value
+  const routes = value && typeof value === "object" ? (value as { routes?: unknown }).routes : undefined
+  return Array.isArray(routes) ? routes : undefined
+}
+
 describe("nested middleware files (src/api)", () => {
   it("the walk finds the root file, so an empty result cannot pass by accident", () => {
     expect(found.map((f) => f.abs)).toContain(ROOT_FILE)
@@ -105,7 +127,9 @@ describe("nested middleware files (src/api)", () => {
     // The text checks above can be satisfied by a commented-out import, and
     // only see `export const X: MiddlewareRoute[]`. This one asks the loader:
     // require each nested module, take EVERY exported array of
-    // `{ matcher, middlewares }` however it is declared or exported, and find
+    // `{ matcher, middlewares }` however it is declared or exported, and the
+    // routes of every exported `{ routes }` config (a `defineMiddlewares`
+    // default nobody loads, under any key and in any spelling), and find
     // each middleware function with its matcher in the root file's loaded set.
     const loader = new MiddlewareFileLoader()
     await loader.scanDir(API_DIR)
@@ -116,8 +140,9 @@ describe("nested middleware files (src/api)", () => {
     for (const f of nested) {
       const mod = require(f.abs) as Record<string, unknown>
       for (const [name, value] of Object.entries(mod)) {
-        if (!Array.isArray(value)) continue
-        for (const r of value as unknown[]) {
+        const routes = routesIn(value)
+        if (!routes) continue
+        for (const r of routes) {
           if (!r || typeof r !== "object") continue
           const route = r as { matcher?: unknown; middlewares?: unknown }
           if (typeof route.matcher !== "string" || !Array.isArray(route.middlewares)) continue
@@ -135,11 +160,25 @@ describe("nested middleware files (src/api)", () => {
     expect(missing).toEqual([])
   }, 60_000)
 
-  it("no nested file has a default export (nobody would load it)", () => {
-    const withDefault = nested
-      .filter((f) => /^\s*export\s+default\b/m.test(fs.readFileSync(f.abs, "utf8")))
-      .map((f) => f.rel)
-    expect(withDefault).toEqual([])
+  it("no nested file has a default export, however it is spelled, or an export its text does not name (nobody would load it)", () => {
+    expect(nested.flatMap((f) => exportProblems(f.rel, fs.readFileSync(f.abs, "utf8")))).toEqual([])
+  })
+
+  it("a default export is found in every spelling, so the check above cannot be passed by re-spelling it", () => {
+    const rel = path.join("deliveries", "[id]", "_middlewares.ts")
+    const config = 'const deadConfig = { routes: [{ matcher: "/deliveries/:id/scratch", middlewares: [] }] }'
+    const spellings: Record<string, string> = {
+      "export default deadConfig": "export default (line 2)",
+      "export default defineMiddlewares(deadConfig)": "export default (line 2)",
+      "export { deadConfig as default }": "export { ... as default } (line 2)",
+      'export { default } from "./other"': "export { ... as default } (line 2)",
+      'export { deadConfig as default } from "./other"': "export { ... as default } (line 2)",
+    }
+    for (const [spelling, why] of Object.entries(spellings)) {
+      expect([spelling, exportProblems(rel, `${config}\n${spelling}`)]).toEqual([spelling, [`${rel}: ${why}`]])
+    }
+    // The convention, a named route array, is not a problem.
+    expect(exportProblems(rel, `${config}\nexport const deliveryMiddlewareRoutes: MiddlewareRoute[] = deadConfig.routes`)).toEqual([])
   })
 
   it("names the route sets this slice made live", () => {

@@ -4,7 +4,8 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../modules/food-distribution/models/food-producer"
 import { hawalaAccountOwnershipError } from "../../../shared/actor-scope"
-import { applyProducerAddressPrivacyAll } from "../../../modules/food-distribution/public-view"
+import { producerEchoFor, publicProducerView } from "../../../modules/food-distribution/public-view"
+import { actorIsAnyOf } from "../../../shared/community-read-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -114,7 +115,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    const filters: Record<string, any> = {}
+    // A producer who switched their profile off is not listed.
+    const filters: Record<string, any> = { public_profile: true }
     
     if (query.producer_type) filters.producer_type = query.producer_type
     if (query.is_active !== undefined) filters.operating_status = query.is_active ? OperatingStatus.ACCEPTING_ORDERS : OperatingStatus.CLOSED
@@ -134,8 +136,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ])
     
     res.json({
-      // A producer who set `hide_address` does not publish their doorstep.
-      producers: applyProducerAddressPrivacyAll(producers as unknown as Record<string, unknown>[]),
+      // The public listing, `hide_address` honoured; the account that manages
+      // a producer reads its own row whole.
+      producers: (producers as unknown as Record<string, unknown>[]).map((producer) =>
+        actorIsAnyOf(req, producer.owner_id as string | null) ? producer : publicProducerView(producer)
+      ),
       count,
       limit: query.limit,
       offset: query.offset,
@@ -195,7 +200,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       verified: false,
     } as any)
     
-    res.status(201).json({ producer })
+    // The account that created it is its owner, and reads it whole. The
+    // community-write matcher authenticates every POST here, so there is
+    // always one; were there not, the row would have no owner and the echo
+    // would be what GET serves a stranger (SD-118).
+    const created = producer as unknown as Record<string, unknown>
+    res.status(201).json({
+      producer: producerEchoFor(created, actorIsAnyOf(req, created.owner_id as string | null)),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

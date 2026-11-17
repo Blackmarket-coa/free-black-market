@@ -17,6 +17,7 @@ import { getRegion } from "./regions"
 import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
 import { applyAttributionToCart } from "./attribution"
 import { applyBookingToCart } from "./booking"
+import { CART_FIELDS } from "./cart-query"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -37,10 +38,7 @@ export async function retrieveCart(cartId?: string) {
   return await medusaFetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
     method: "GET",
     query: {
-      fields:
-        "*items,*region, *items.product, *items.variant, *items.variant.options, items.variant.options.option.title," +
-        "*items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name, *items.product.seller" +
-        "",
+      fields: CART_FIELDS,
     },
     headers,
     cache: "no-cache",
@@ -347,6 +345,52 @@ export async function initiatePaymentSession(
       return resp
     })
     .catch(medusaError)
+}
+
+/**
+ * Bring a card session that is for an amount other than the cart's total up
+ * to the total, from the page that shows it: the pay button's "Update
+ * payment" (SD-114, SD-115). Two of the backend's own store routes, in this
+ * order, because each alone leaves one of the two stale states behind:
+ *
+ *  1. `POST /store/carts/:id` with nothing to change. Medusa's update ends in
+ *     its refresh of the cart's payment collection: when the collection's
+ *     amount is not the cart's total, the collection takes the total and
+ *     every session on it is deleted (its intent cancelled at Stripe).
+ *  2. The card session opened again, as `initiatePaymentSession` opens it.
+ *     Medusa deletes the collection's sessions and opens one for the
+ *     collection's amount, which is now the total. This is what replaces a
+ *     session opened for an old total on a collection that was already
+ *     right, which (1) leaves alone.
+ *
+ * `backend/integration-tests/http/cart-payment-refresh.spec.ts` makes exactly
+ * these two calls on Postgres, in both states, and then completes the cart.
+ *
+ * The cart is revalidated once both have gone through. When either fails this
+ * throws and the page is left as it was: the pay button stays disabled under
+ * its notice, the buyer is told to try again, and a second try finishes the
+ * job ((1) changes nothing once the collection is right).
+ */
+export async function refreshCardPaymentSession(
+  cart: HttpTypes.StoreCart,
+  data: {
+    provider_id: string
+    /** As for `initiatePaymentSession`: set only for an approved subscription cart. */
+    data?: Record<string, unknown>
+  }
+) {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  await sdk.store.cart.update(cart.id, {}, {}, headers).catch(medusaError)
+  const resp = await sdk.store.payment
+    .initiatePaymentSession(cart, data, {}, headers)
+    .catch(medusaError)
+
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+  return resp
 }
 
 export async function applyPromotions(codes: string[]) {

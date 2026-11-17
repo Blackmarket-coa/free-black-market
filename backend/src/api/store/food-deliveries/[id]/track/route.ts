@@ -31,11 +31,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
-  const delivery = await foodDistribution.retrieveFoodDelivery(id)
-
   // Producer, courier or recipient only (D10-5). Unauthenticated over
   // enumerable ids, this returned a home address, its coordinates, the live
-  // position of the courier heading there and an ETA.
+  // position of the courier heading there and an ETA. A delivery that does
+  // not exist is refused the same way (`retrieveDeliveryOrNull`: the bare
+  // retrieve threw, which answered 404).
+  const delivery = await retrieveDeliveryOrNull(foodDistribution, id)
   if (!delivery || !(await actorMayReadDelivery(req, delivery))) {
     return forbidden(res)
   }
