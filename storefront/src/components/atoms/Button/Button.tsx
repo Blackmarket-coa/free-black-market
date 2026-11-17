@@ -38,8 +38,12 @@ export function Button({
   }
 
   return (
+    // A button that is loading is working on the last click: it takes no
+    // other, so "Place order" cannot send a second completion of the same
+    // cart (one gets the order, the other a 500 from Mercur, SD-147 (e)).
     <button
-      disabled={disabled}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       className={cn(
         variantClasses[variant],
         sizeClasses[size],

@@ -435,7 +435,8 @@ const ManualTestPaymentButton = ({
   }
 
   const handlePayment = () => {
-    onPaymentCompleted()
+    setSubmitting(true)
+    return onPaymentCompleted()
   }
 
   return (

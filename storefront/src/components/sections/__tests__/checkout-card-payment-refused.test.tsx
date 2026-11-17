@@ -392,6 +392,28 @@ describe("the pay button when the card session is for another amount than the ca
       vi.unstubAllEnvs()
     }
   })
+
+  it("marks the manual provider's button as submitting before it places the order, so it takes no second click", async () => {
+    vi.stubEnv("NODE_ENV", "development")
+    try {
+      checkout(cartWith(20, [{ provider_id: MANUAL, amount: 20 }]), [CARD, MANUAL])
+      const updatesAtClick = h.stateUpdates.length
+      let submittingWhenPlaced: unknown
+      h.placeOrder.mockImplementationOnce(async () => {
+        submittingWhenPlaced = h.stateUpdates.slice(updatesAtClick)
+        return { ok: true }
+      })
+
+      await h.payButton.props?.onClick?.()
+
+      expect(h.placeOrder).toHaveBeenCalledTimes(1)
+      // `submitting` went true before the order was asked for: the button
+      // (loading, so disabled) shows the spinner and takes no other click.
+      expect(submittingWhenPlaced).toEqual([true])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
 })
 
 describe("Update payment, under the notice that the session is for another amount", () => {
