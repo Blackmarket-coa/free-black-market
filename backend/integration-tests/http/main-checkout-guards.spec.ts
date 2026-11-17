@@ -4,6 +4,10 @@ import { completeCartWorkflow, completeCartWorkflowId } from "@medusajs/medusa/c
 import { MARKETPLACE_MODULE } from "@mercurjs/b2c-core/modules/marketplace"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { SPLIT_AND_COMPLETE_CART_WORKFLOW_ID } from "../../src/api/middlewares/cart-completion-finished"
+import {
+  CART_ALREADY_COMPLETED_AT_CHECKOUT_MESSAGE,
+  CART_COMPLETION_CHECK_FAILED_MESSAGE,
+} from "../../src/api/middlewares/cart-completion-guards"
 import { CART_PAYMENT_AMOUNT_MISMATCH } from "../../src/lib/cart-payment-amount"
 import { CCR_RESERVATION_METADATA_KEY } from "../../src/lib/ccr-checkout"
 import { ORDER_CYCLE_MODULE } from "../../src/modules/order-cycle"
@@ -27,7 +31,10 @@ jest.setTimeout(240 * 1000)
  * Coalition Credits and a malformed sliding-scale tier all completed here.
  * `refuseGuardedCartCompletion` (`src/api/middlewares/cart-completion-guards.ts`)
  * now runs the main checkout's list (`MAIN_CHECKOUT_GUARDS`: tier, CCR,
- * order cycle; not rental, by operator decision) in front of the route.
+ * order cycle; not rental, by operator decision) in front of the route. It
+ * answers two carts itself, with 409: one Medusa's own workflow completed
+ * (`cart_already_completed`, never passed to Mercur, whose run on it cancels
+ * that order's payment), and one it cannot check (`cart_completion_check_failed`).
  *
  * Everything here is real except Stripe, which is stubbed on the registered
  * provider instance (as in cart-completion-refuses.spec.ts): Mercur's route
@@ -434,6 +441,45 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("a check the middleware cannot make", () => {
+      afterEach(settleBeforeTeardown)
+
+      stallRetry.it("a cart whose order sets cannot be read is answered 409 cart_completion_check_failed: not placed, nothing authorized; once the read works again it completes", async () => {
+        const made = await makeCart()
+        const pak = await newPak()
+        const query = container().resolve(ContainerRegistrationKeys.QUERY)
+        const graph = query.graph.bind(query)
+        let failed = 0
+        jest.spyOn(query, "graph").mockImplementation(async (args: any, ...rest: any[]) => {
+          if (failed === 0 && args?.entity === "order_set" && args?.filters?.cart_id === made.cart.id) {
+            failed++
+            throw new Error("Connection terminated unexpectedly")
+          }
+          return graph(args, ...rest)
+        })
+
+        const refused = await complete(made.cart.id, pak)
+        // The read that failed is the middleware's own.
+        expect(failed).toBe(1)
+        expectStatus(refused, 409)
+        expect(refused.data).toEqual({
+          code: "cart_completion_check_failed",
+          type: "cart_completion_check_failed",
+          message: CART_COMPLETION_CHECK_FAILED_MESSAGE,
+        })
+        expect(await orderSetsOf(made.cart.id)).toEqual([])
+        expect(await ordersOf(made.customer.id)).toEqual([])
+        expect(await paymentsOf(made.collection.id)).toEqual([])
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(await completedAt(made.cart.id)).toBeNull()
+
+        // What the message says to do works.
+        const retried = await complete(made.cart.id, pak)
+        expectStatus(retried, 200)
+        expect(await ordersOf(made.customer.id)).toHaveLength(1)
+      })
+    })
+
     describe("what the guards do not check on the main checkout", () => {
       afterEach(settleBeforeTeardown)
 
@@ -480,22 +526,55 @@ medusaIntegrationTestRunner({
       })
 
       /**
-       * The second cart the middleware does not check: one Medusa's own
+       * The second cart the guards do not check: one Medusa's own
        * `completeCartWorkflow` completed (tickets, rentals, the digital and
        * subscription checkouts, Medusa's payment webhook), which has
        * `completed_at` and no order set. Its guards ran on that workflow's
-       * validate hook; here they would refuse on the cart's own sale (this one
-       * took the cycle's last two units, so the cycle guard would answer "sold
-       * out"). Mercur's workflow does not read `completed_at` and goes on with
-       * the cart, which is SD-72 (b)'s mirror image. This change leaves that as
-       * it was, and the test pins what it is on Mercur 1.5.0 (measured here
-       * first): Mercur's run fails linking its order to the cart's payment
-       * collection, which Medusa's order already holds, and its compensation
-       * cancels the cart's payment, the one Medusa's order was placed on,
-       * calling Stripe's cancel. Recorded in docs/AUDIT_DEBT.md; a fix there
-       * changes this test.
+       * validate hook; here they would refuse on the cart's own sale (these
+       * carts took the cycle's last two units, so the cycle guard would answer
+       * "sold out"). Nor is it passed to Mercur: before this answer, Mercur's
+       * run on such a cart failed linking its order to the cart's payment
+       * collection (400 "Cannot create multiple links between 'order' and
+       * 'payment'") and its compensation cancelled the payment Medusa's order
+       * was placed on, calling Stripe's cancel, on every retry (SD-72 (b)'s
+       * mirror; measured here first, and in review through `complete-digital`).
+       * It is answered 409 `cart_already_completed` with that order's id, and
+       * nothing is written.
        */
-      stallRetry.it("a cart Medusa's own workflow completed (completed_at, no order set) is not checked: Mercur's route answers for it as before, and its failed run cancels the placed order's payment (SD-72 (b)'s mirror, unchanged)", async () => {
+      async function expectAnsweredAsCompleted(
+        made: { cart: { id: string }; customer: { id: string }; collection: { id: string }; cycle: { id: string } | null },
+        orderId: string,
+        pak: ReturnType<typeof pakHeaders>
+      ) {
+        const [placed] = await paymentsOf(made.collection.id)
+        expect(placed.canceled_at ?? null).toBeNull()
+        const authorized = stripe.authorizePayment.mock.calls.length
+
+        // Every retry the same: Mercur is never called, so nothing is cancelled.
+        for (const _attempt of [1, 2]) {
+          const response = await complete(made.cart.id, pak)
+          expectStatus(response, 409)
+          expect(response.data).toEqual({
+            code: "cart_already_completed",
+            type: "cart_already_completed",
+            message: CART_ALREADY_COMPLETED_AT_CHECKOUT_MESSAGE,
+            order_id: orderId,
+          })
+        }
+        await drainSubscribers()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(authorized)
+        const after = await paymentsOf(made.collection.id)
+        expect(after.map((p: any) => ({ id: p.id, canceled_at: p.canceled_at ?? null, captured_at: p.captured_at ?? null }))).toEqual([
+          { id: placed.id, canceled_at: null, captured_at: placed.captured_at ?? null },
+        ])
+        expect(await orderSetsOf(made.cart.id)).toEqual([])
+        expect((await ordersOf(made.customer.id)).map((o: { id: string }) => o.id)).toEqual([orderId])
+        expect(await soldOf(made.cycle!.id)).toEqual([2])
+        expect(await executionStates(made.cart.id)).toEqual([])
+      }
+
+      stallRetry.it("a cart Medusa's own workflow completed (completed_at, no order set) is answered 409 cart_already_completed with its order, on every retry: no guard, no Mercur run, its payment untouched", async () => {
         const made = await makeCart({ quantity: 2, cycle: { status: "open", available: 2, sold: 0 } })
         const { result, errors } = await completeCartWorkflow(container()).run({ input: { id: made.cart.id }, throwOnError: false })
         const medusaOrderId = (result as { id?: string } | undefined)?.id
@@ -508,25 +587,24 @@ medusaIntegrationTestRunner({
         expect(await soldOf(made.cycle!.id)).toEqual([2])
         expect(await completedAt(made.cart.id)).toBeTruthy()
         expect(await orderSetsOf(made.cart.id)).toEqual([])
-        const [placed] = await paymentsOf(made.collection.id)
-        expect(placed.canceled_at ?? null).toBeNull()
         expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
 
-        const response = await complete(made.cart.id, await newPak())
+        await expectAnsweredAsCompleted(made, medusaOrderId, await newPak())
+      })
+
+      stallRetry.it("the review's sequence through store routes alone: a cart completed by POST /store/carts/:id/complete-digital, then posted to the main checkout, is answered 409 with that order and keeps its payment", async () => {
+        const made = await makeCart({ quantity: 2, cycle: { status: "open", available: 2, sold: 0 } })
+        const pak = await newPak()
+        const digital = await api.post(`/store/carts/${made.cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+        expectStatus(digital, 200)
+        const orderId = digital.data.order?.id as string
+        expect(orderId).toBeTruthy()
         await drainSubscribers()
-        // Mercur's own failure, not the guard's "sold out".
-        expectStatus(response, 400)
-        expect(response.data).toEqual({ type: "invalid_data", message: "Cannot create multiple links between 'order' and 'payment'" })
-        // Its order set and order were rolled back; Medusa's order stands, on a cancelled payment.
-        expect(await orderSetsOf(made.cart.id)).toEqual([])
-        expect((await ordersOf(made.customer.id)).map((o: { id: string }) => o.id)).toEqual([medusaOrderId])
-        const after = await paymentsOf(made.collection.id)
-        expect(after.map((p: { id: string }) => p.id)).toEqual([placed.id])
-        expect(after[0].canceled_at).toBeTruthy()
-        expect(stripe.cancelPayment).toHaveBeenCalledTimes(1)
-        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+        // Medusa's order, its payment authorized, the cycle's sale recorded.
         expect(await soldOf(made.cycle!.id)).toEqual([2])
-        expect(await executionStates(made.cart.id)).toEqual([])
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+
+        await expectAnsweredAsCompleted(made, orderId, pak)
       })
 
       it("a cart that does not exist is left to Mercur's route, which fails reading it (500), as before: the middleware's own reads do not fail on it", async () => {
@@ -574,6 +652,23 @@ medusaIntegrationTestRunner({
         expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
         // And no rental record, as before: Mercur's route makes none.
         expect(await container().resolve(RENTAL_MODULE).listRentals({ customer_id: made.customer.id })).toEqual([])
+      })
+
+      /**
+       * The CCR guard reads the count the credits route writes into the cart's
+       * metadata, and a store client can overwrite cart metadata
+       * (`POST /store/carts/:id` takes `metadata`). A count that is not a
+       * positive number is read as no reservation, so the cart completes at
+       * its full total, the credits left wherever the ledger holds them. The
+       * guard is as good as that hint; the ledger escrow is the record.
+       */
+      stallRetry.it("the CCR guard reads a hint a client can overwrite: a cart whose ccr_credits_reserved reads \"abc\" or -1 is not taken for a reservation and completes", async () => {
+        for (const hint of ["abc", -1]) {
+          const made = await makeCart({ cartMetadata: { [CCR_RESERVATION_METADATA_KEY]: hint } })
+          const response = await complete(made.cart.id, await newPak())
+          expectStatus(response, 200)
+          expect(await ordersOf(made.customer.id)).toHaveLength(1)
+        }
       })
 
       it("a cart tagged with a cycle only in its metadata, whose line the cycle does not offer, is refused as no longer offered", async () => {
