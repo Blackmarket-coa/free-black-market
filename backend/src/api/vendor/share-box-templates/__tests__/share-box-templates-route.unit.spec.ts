@@ -65,7 +65,12 @@ const makeReq = (
   params: {},
   query: extra.query ?? {},
   body: extra.body,
-  auth_context: actorId ? { actor_id: actorId } : undefined,
+  // A request the vendor gate let through for this store: the actor is a
+  // member, and `actorId` here names the store the gate resolved (SD-145:
+  // cycle and template ownership is the store's, never the member's).
+  auth_context: actorId ? { actor_id: `mem_of_${actorId}` } : undefined,
+  _seller_id: actorId,
+  _sellerContextResolved: actorId ? true : undefined,
   scope: {
     resolve: (key: string) =>
       key === ORDER_CYCLE_MODULE || key === "orderCycleModuleService"
@@ -115,7 +120,8 @@ describe("GET /vendor/share-box-templates", () => {
     const service = makeService()
     await callGet(service, "sel_me")
     const [filters] = service.listAndCountShareBoxTemplates.mock.calls[0]
-    expect(filters.coordinator_seller_id).toContain("sel_me")
+    // The store alone: the member id used to be matched as well (SD-145).
+    expect(filters.coordinator_seller_id).toEqual(["sel_me"])
   })
 
   it("cannot be widened by a query parameter", async () => {

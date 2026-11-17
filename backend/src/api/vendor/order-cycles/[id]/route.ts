@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../types"
 import { ORDER_CYCLE_MODULE } from "../../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../../modules/order-cycle/service"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * Vendor API Routes for Single Order Cycle
@@ -14,7 +14,7 @@ import type OrderCycleModuleService from "../../../../modules/order-cycle/servic
 // GET /vendor/order-cycles/:id
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const orderCycleService = req.scope.resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   const { id } = req.params
   
   if (!sellerId) {
@@ -58,7 +58,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 // PUT /vendor/order-cycles/:id
 export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
   const orderCycleService = req.scope.resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   const { id } = req.params
   
   if (!sellerId) {
@@ -101,7 +101,7 @@ export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
 // DELETE /vendor/order-cycles/:id
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   const orderCycleService = req.scope.resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   const { id } = req.params
   
   if (!sellerId) {
