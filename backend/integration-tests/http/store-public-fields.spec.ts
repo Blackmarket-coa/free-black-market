@@ -1021,41 +1021,12 @@ medusaIntegrationTestRunner({
     })
 
     /**
-     * SD-63: on a database built from the migrations the demand-pool tables
-     * lack the `raw_*` companion Medusa writes for every `bigNumber`, so no
-     * demand post can be inserted there at all. That is its own open item;
-     * to have a post to read, this adds the columns as Medusa's DML would
-     * have generated them.
-     */
-    async function addDemandPoolRawColumns() {
-      const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      const zero = `JSONB NOT NULL DEFAULT '{"value":"0","precision":20}'`
-      const columns: [string, string, string][] = [
-        ["demand_post", "raw_target_price", "JSONB NULL"],
-        ["demand_post", "raw_final_unit_price", "JSONB NULL"],
-        ["demand_post", "raw_final_total_price", "JSONB NULL"],
-        ["demand_post", "raw_total_bounty_amount", zero],
-        ["demand_post", "raw_total_escrowed", zero],
-        ["demand_participant", "raw_price_willing_to_pay", "JSONB NULL"],
-        ["demand_participant", "raw_escrow_amount", zero],
-        ["demand_bounty", "raw_amount", "JSONB NULL"],
-        ["demand_bounty", "raw_amount_paid_out", zero],
-        ["supplier_proposal", "raw_unit_price", "JSONB NULL"],
-        ["supplier_proposal", "raw_delivery_cost", "JSONB NULL"],
-      ]
-      for (const [table, column, type] of columns) {
-        await pg.raw(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" ${type}`)
-      }
-    }
-
-    /**
      * A pool with one of each row its sub-routes list: a supplier's
      * proposal, a bounty a participant put up and an outsider claimed, a
      * restricted bounty of the creator's, and an outsider's offer of a
      * trade. Every value only the creator or the person a row is about may
-     * read appears nowhere else. (Each bounty names its milestones:
-     * `demand_bounty.milestones` is NOT NULL in the migration, SD-63's
-     * family.)
+     * read appears nowhere else. Each bounty names its milestones, so the
+     * terms a reader sees include them.
      */
     async function makePoolRows(input: {
       creatorId: string
@@ -1221,7 +1192,6 @@ medusaIntegrationTestRunner({
 
       it("the demand-pool list and page are the public view; the creator still reads their own post whole", async () => {
         const { pak, reviewer, asReviewer, get } = await makeMarket()
-        await addDemandPoolRawColumns()
         const pools = container().resolve(DEMAND_POOL_MODULE)
         const post = await pools.createDemandPost({
           creator_id: reviewer.id,
@@ -1305,7 +1275,6 @@ medusaIntegrationTestRunner({
 
       it("a public pool's proposals, bounties and trades: the creator reads them whole, the people on a row read it whole, anyone else the terms", async () => {
         const { pak, reviewer, asReviewer, as, get } = await makeMarket()
-        await addDemandPoolRawColumns()
         const { participant, contributor, assignee, proposer, stranger } = await makePoolPeople()
         const rows = await makePoolRows({
           creatorId: reviewer.id,
@@ -1387,7 +1356,6 @@ medusaIntegrationTestRunner({
 
       it("a pool that is not public lists its rows to its creator, its participants and the people on a row; anyone else gets what a missing pool gets", async () => {
         const { pak, reviewer, asReviewer, as, get } = await makeMarket()
-        await addDemandPoolRawColumns()
         const { participant, contributor, assignee, proposer, stranger } = await makePoolPeople()
         const rows = await makePoolRows({
           creatorId: reviewer.id,

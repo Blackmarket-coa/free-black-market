@@ -1,5 +1,4 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import jwt from "jsonwebtoken"
 import {
   HypeProfileType,
@@ -65,22 +64,19 @@ medusaIntegrationTestRunner({
 
     beforeEach(async () => {
       pak = pakHeaders(await createPublishableKeyToken(getContainer))
-      // The profile row is inserted directly, not through createHypeProfile:
-      // on a database built from the migrations that insert fails with
-      // `column "raw_capital_need_amount" of relation "hype_profile" does not
-      // exist` (the model's bigNumber companion column was never migrated).
-      // That drift is a separate, pre-existing defect; the route under test
-      // only reads the profile, and reads work.
-      profileId = `hp_${Math.random().toString(36).slice(2)}`
-      const pg = getContainer().resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      await pg("hype_profile").insert({
-        id: profileId,
-        profile_type: HypeProfileType.VENDOR,
-        owner_id: ownerId,
-        slug: profileId,
-        display_name: "Owner Co",
-        mission: "Make boxes",
-      })
+      // Through the module's service. Until SD-63's migrations added
+      // `hype_profile.raw_capital_need_amount`, that insert failed on a
+      // database built from the migrations, and this wrote the row with SQL.
+      const [profile] = await service().createHypeProfiles([
+        {
+          profile_type: HypeProfileType.VENDOR,
+          owner_id: ownerId,
+          slug: `hp-${Math.random().toString(36).slice(2)}`,
+          display_name: "Owner Co",
+          mission: "Make boxes",
+        },
+      ])
+      profileId = profile.id
     })
 
     it("lets only the profile owner create a market, and only in DRAFT", async () => {

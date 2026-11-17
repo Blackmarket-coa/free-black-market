@@ -93,18 +93,12 @@ medusaIntegrationTestRunner({
      * An order cycle in `status`, offering `variantId` with the given capacity
      * (`available: null` is unlimited).
      *
-     * One fixture is not FBM's behaviour, and says so. The cycle's product row
-     * is written with SQL, not `createOrderCycleProducts`: on a database built
-     * by the migrations, as this one is, that insert fails with
+     * The cycle's product row goes through `createOrderCycleProducts`. It was
+     * written with SQL until SD-63's order-cycle migration, because on a
+     * database built from the migrations that insert failed with
      * `column "raw_override_price" of relation "order_cycle_product" does not
-     * exist` (seen here first). `override_price` is a `model.bigNumber()`, whose
-     * raw column Medusa names `raw_override_price`; `Migration20251227015616`
-     * created the pair as `price_override` / `raw_price_override`, and
-     * `Migration20251227174700` renamed only the first. Reads are not affected
-     * (the guard's `listOrderCycleProducts` read of a row written this way
-     * works: the capacity test below is refused by it), so the guard's checks
-     * do not depend on it. The drift is reported separately (SD-54 follow-up);
-     * whether production's table has the column is not visible from the tree.
+     * exist` (`Migration20251227174700` renamed only the NUMERIC half of
+     * `price_override` / `raw_price_override`).
      */
     async function makeCycle(variantId: string, spec: { status: string; available: number | null; sold: number }) {
       const cycles = container().resolve(ORDER_CYCLE_MODULE)
@@ -117,11 +111,13 @@ medusaIntegrationTestRunner({
         status: spec.status,
         coordinator_seller_id: `sel_${uid()}`,
       })
-      await container().resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(
-        `INSERT INTO order_cycle_product (id, order_cycle_id, variant_id, seller_id, available_quantity, sold_quantity)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [`ocp_${uid()}`, cycle.id, variantId, `sel_${uid()}`, spec.available, spec.sold]
-      )
+      await cycles.createOrderCycleProducts({
+        order_cycle_id: cycle.id,
+        variant_id: variantId,
+        seller_id: `sel_${uid()}`,
+        available_quantity: spec.available,
+        sold_quantity: spec.sold,
+      })
       return cycle as { id: string; name: string }
     }
 

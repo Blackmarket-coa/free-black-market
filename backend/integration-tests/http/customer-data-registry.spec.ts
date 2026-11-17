@@ -12,6 +12,7 @@ import {
 } from "../../src/lib/customer-data-registry"
 import { readCustomerDataAcrossRegistry } from "../../src/lib/customer-erasure"
 import { PASSWORD_HISTORY_MODULE } from "../../src/modules/password-history"
+import { COLLECTIVE_CAMPAIGN_MODULE } from "../../src/modules/collective-campaign"
 import { clearDeletedCustomersLeftovers } from "../../src/migration-scripts/clear-deleted-customers-review-names-and-password-history"
 
 jest.setTimeout(240 * 1000)
@@ -120,20 +121,17 @@ medusaIntegrationTestRunner({
       }
     }
 
-    // Inserted directly: on a database built from the migrations neither
-    // `collective_campaign` nor `collective_backing` can take a row through
-    // the ORM, because their bigNumber `raw_*` companions were never migrated
-    // (module-schema-drift.spec.ts KNOWN_DRIFT). The backing route writes
-    // `backer_id: auth_context.actor_id` (campaigns/[id]/backings/route.ts),
-    // which is the signed-in customer's id used here.
+    // Through the module's service. Until SD-63's migrations added the
+    // bigNumber `raw_*` companions, `collective_backing` could not take a row
+    // through the ORM on a migrated database, and this inserted it with SQL.
+    // The backing route writes `backer_id: auth_context.actor_id`
+    // (campaigns/[id]/backings/route.ts), which is the signed-in customer's
+    // id used here.
     async function insertBacking(backerId: string, amount: number) {
-      const id = `cbck_registry_${uid().replace(/-/g, "")}`
-      await pg().raw(
-        `INSERT INTO "collective_backing" ("id", "campaign_id", "backer_id", "mode", "amount", "status")
-         VALUES (?, ?, ?, 'PRE_ORDER', ?, 'PLEDGED')`,
-        [id, "ccmp_registry_test", backerId, amount]
-      )
-      return id
+      const [backing] = await getContainer()
+        .resolve(COLLECTIVE_CAMPAIGN_MODULE)
+        .createBackings([{ campaign_id: "ccmp_registry_test", backer_id: backerId, mode: "PRE_ORDER", amount }])
+      return backing.id as string
     }
 
     async function backingRow(id: string) {

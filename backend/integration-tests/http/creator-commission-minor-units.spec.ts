@@ -1529,9 +1529,9 @@ medusaIntegrationTestRunner({
           // (1) A creator reward pool funded out of the vendor's earnings:
           // the ledger call `POST /v1/seller/programs/:id/reward-pools`
           // makes once it has stored the pool, with that route's arguments.
-          // The call, not the route: on a database built from the migrations
-          // the route answers 400 before it, because `reward_pool` has no
-          // `raw_total_cents` column there (SD-63 in docs/AUDIT_DEBT.md).
+          // The call, not the route: it was written when the route answered
+          // 400 before reaching it on a migrated database, `reward_pool`
+          // having no `raw_total_cents` column until SD-63's migrations.
           const funded = await storefrontOrder()
           await hawala().fundCreatorRewardPool({
             poolId: `rpool_${uid()}`,
