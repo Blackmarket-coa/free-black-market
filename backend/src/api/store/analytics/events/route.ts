@@ -5,6 +5,7 @@ import { CREATOR_ATTRIBUTION_MODULE } from "../../../../modules/creator-attribut
 import type CreatorAttributionService from "../../../../modules/creator-attribution/service"
 import { SELLER_EXTENSION_MODULE } from "../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../modules/seller-extension/service"
+import { listSellerMetadataRecords } from "../../../../modules/seller-extension/metadata-service"
 
 /**
  * Canonical funnel events. The storefront emits these via
@@ -113,7 +114,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         const sellerExt = req.scope.resolve<SellerExtensionService>(
           SELLER_EXTENSION_MODULE
         )
-        const [meta] = await sellerExt.listSellerMetadatas({
+        const [meta] = await listSellerMetadataRecords(sellerExt, {
           creator_handle: creatorHandle,
         })
         creatorSellerId = (meta?.seller_id as string | undefined) ?? null

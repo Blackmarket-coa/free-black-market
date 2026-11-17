@@ -136,12 +136,22 @@ medusaIntegrationTestRunner({
       }
       return { out, res }
     }
-    /** Call a vendor route handler as `sellerId`. */
+    /**
+     * Call a vendor route handler as `sellerId`, as a request the vendor gate
+     * let through. In production `ensureSellerContext` runs before every
+     * /vendor handler and attaches the store it resolved (`_seller_id`, with
+     * `_sellerContextResolved`); a bare seller id without them is refused by
+     * `requireSellerId`, since a seller-id actor acts for its store only
+     * through the live member at its login's address (SD-144). Called
+     * directly, the handler gets what the gate would have attached.
+     */
     async function call(handler: any, sellerId: string, opts: { body?: unknown; params?: Record<string, string> } = {}) {
       const { out, res } = fakeRes()
       await handler(
         {
           auth_context: { actor_id: sellerId, actor_type: "seller" },
+          _seller_id: sellerId,
+          _sellerContextResolved: true,
           scope: container(),
           headers: {},
           body: opts.body ?? {},

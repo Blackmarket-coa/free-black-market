@@ -11115,12 +11115,16 @@
         },
         "alreadySeller": {
           "type": "string"
+        },
+        "existingAccount": {
+          "type": "string"
         }
       },
       "required": [
         "title",
         "hint",
-        "alreadySeller"
+        "alreadySeller",
+        "existingAccount"
       ],
       "additionalProperties": false
     },
@@ -11166,6 +11170,9 @@
         "passwordMismatch": {
           "type": "string"
         },
+        "existingAccount": {
+          "type": "string"
+        },
         "toast": {
           "type": "object",
           "properties": {
@@ -11193,6 +11200,7 @@
         "invalidTokenTitle",
         "invalidTokenHint",
         "passwordMismatch",
+        "existingAccount",
         "toast"
       ],
       "additionalProperties": false

@@ -39,7 +39,7 @@ describe("vendor creator xp-balances route", () => {
   it("returns spendable XP as the single aggregate 'All spaces' balance", async () => {
     const progression = { getSpendableXp: jest.fn().mockResolvedValue(7400) }
     const req = {
-      auth_context: { actor_id: "sel_1" },
+      _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" },
       scope: makeScope({
         [ContainerRegistrationKeys.QUERY]: ownerQuery([{ id: "cus_owner", role: "owner" }]),
         [PROGRESSION_MODULE]: progression,
@@ -58,7 +58,7 @@ describe("vendor creator xp-balances route", () => {
   it("reports 0 XP (never errors) when the seller has no resolvable member", async () => {
     const progression = { getSpendableXp: jest.fn() }
     const req = {
-      auth_context: { actor_id: "sel_1" },
+      _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" },
       scope: makeScope({
         [ContainerRegistrationKeys.QUERY]: ownerQuery([]),
         [PROGRESSION_MODULE]: progression,

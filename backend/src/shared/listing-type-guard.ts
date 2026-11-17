@@ -4,15 +4,13 @@ import type {
   MedusaNextFunction,
 } from "@medusajs/framework/http"
 import type { MedusaContainer } from "@medusajs/framework/types"
-import {
-  ContainerRegistrationKeys,
-  MedusaError,
-} from "@medusajs/framework/utils"
+import { MedusaError } from "@medusajs/framework/utils"
 
 import { PLAYBOOK_MODULE } from "../modules/playbook"
 import { LISTING_TYPE_MODULE } from "../modules/listing-type"
 import { LISTING_TYPE_CATALOG } from "../modules/listing-type/catalog"
 import type { PlaybookId, ListingTypeId } from "../modules/playbook"
+import { sellerIdForVendorActor } from "./seller-actor"
 
 /**
  * Playbook × listing-type compatibility enforcement per
@@ -47,33 +45,18 @@ export function resolveListingTypeId(
 }
 
 /**
- * Resolve the seller id behind a vendor request actor. A `mem_` actor is
- * a team member whose owning seller is looked up in the `member` table;
- * any other id is already a seller id.
+ * Resolve the seller id behind a vendor request actor, by the rule both gates
+ * use (shared/seller-actor.ts): a member id only while the member and its
+ * store are live; a seller id only through the live member of that store at
+ * the login's address, which the vendor gate has already checked when it
+ * hands the store on as `_seller_id`. A removed member's id used to resolve to
+ * the store it was removed from, or be passed on as if it were a seller id.
  */
 export async function resolveSellerId(
   req: MedusaRequest,
   actorId?: string
 ): Promise<string | undefined> {
-  if (!actorId) {
-    return undefined
-  }
-
-  if (!actorId.startsWith("mem_")) {
-    return actorId
-  }
-
-  try {
-    const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-    const memberResult = await pgConnection.raw(
-      `SELECT seller_id FROM member WHERE id = ? LIMIT 1`,
-      [actorId]
-    )
-
-    return memberResult.rows?.[0]?.seller_id || actorId
-  } catch {
-    return actorId
-  }
+  return sellerIdForVendorActor(req, actorId)
 }
 
 /**

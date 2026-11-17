@@ -26,6 +26,12 @@ const CART_VALIDATE_GUARDS = join(
   __dirname,
   "../../../workflows/hooks/complete-cart-guards.ts"
 )
+// The main checkout's seam, which runs that list in front of Mercur's route
+// (SD-72 (a)).
+const MAIN_CHECKOUT_GUARD_MIDDLEWARE = join(
+  __dirname,
+  "../../../api/middlewares/cart-completion-guards.ts"
+)
 const HOOKS_DIR = join(__dirname, "../../../workflows/hooks")
 // The workflows of the store's cart-line routes: create with items, add, update.
 const CART_LINE_WORKFLOW =
@@ -70,7 +76,7 @@ describe("cottage-food never blocks a sale", () => {
   })
 
   it("is not referenced by the cart-completion validator", () => {
-    for (const file of [CART_VALIDATE_HOOK, CART_VALIDATE_GUARDS]) {
+    for (const file of [CART_VALIDATE_HOOK, CART_VALIDATE_GUARDS, MAIN_CHECKOUT_GUARD_MIDDLEWARE]) {
       const src = readFileSync(file, "utf8")
       expect(src).not.toMatch(/cottage/i)
     }

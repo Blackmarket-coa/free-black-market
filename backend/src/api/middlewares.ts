@@ -37,8 +37,10 @@ import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
+import { refuseGuardedCartCompletion } from "./middlewares/cart-completion-guards";
 import { cartPaymentMiddlewareRoutes } from "./middlewares/cart-payment-refresh";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
+import { refuseTakenEmailRegistration } from "./middlewares/refuse-taken-email-registration";
 import {
   refuseSharedPaymentOrderCancel,
   refuseSharedPaymentWorkflowRun,
@@ -947,6 +949,19 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [authRateLimiter, normalizeEmailMiddleware],
     },
+    // Registering an address that already has a login: refused the way Medusa
+    // refuses one whose login has an actor, because its emailpass provider
+    // re-passwords a login with no actor and hands over its token. Medusa's
+    // own route shape, deciding on the decoded provider param: a literal
+    // `emailpass` segment missed `%65mailpass`. The sorter runs the `/auth/*`
+    // entry above first (wildcard before param), so the address is normalised
+    // and the call counted before this looks it up.
+    // See middlewares/refuse-taken-email-registration.ts.
+    {
+      matcher: "/auth/:actor_type/:auth_provider/register",
+      method: "POST",
+      middlewares: [refuseTakenEmailRegistration],
+    },
     // Auth read routes - session checks, status reads (generous rate limit)
     {
       matcher: "/auth/*",
@@ -1258,6 +1273,27 @@ export default defineMiddlewares({
     ...mutualAidMiddlewareRoutes,
     ...storePublicFieldsMiddlewares,
     ...deliveryMiddlewareRoutes,
+    // The main checkout, POST /store/carts/:id/complete (Mercur's route), has
+    // three middlewares of FBM's, and they run in the order this file declares
+    // them (one matcher and method: the route sorter keeps declaration order).
+    // 1. FBM's cart-completion guards, the tier, Coalition Credits and
+    //    order-cycle ones, which Mercur's workflow never runs (SD-54,
+    //    SD-72 (a); src/api/middlewares/cart-completion-guards.ts). It also
+    //    answers 409 itself for a cart Medusa's own workflow completed (which
+    //    Mercur's run would cancel the payment of) and for a cart it cannot
+    //    check. It only reads and refuses, so it goes first.
+    // 2. The payment-amount check, from the spread below (SD-115). It can
+    //    write (it puts a refused cart's payment side right, and retires
+    //    orphaned payments before a completion goes on), so it runs only for a
+    //    cart the guards let through.
+    // 3. The SD-53 check that Mercur's run finished, further down.
+    // src/api/__tests__/main-checkout-middleware-order.unit.spec.ts pins this
+    // order with Medusa's own loader and sorter.
+    {
+      matcher: "/store/carts/:id/complete",
+      method: "POST",
+      middlewares: [refuseGuardedCartCompletion],
+    },
     ...cartPaymentMiddlewareRoutes,
     {
       matcher: "/vendor/hawala/payments*",
@@ -1622,7 +1658,9 @@ export default defineMiddlewares({
     // finished (a stalled one was answered 500); while the completion is
     // still unfinished after a settle window, whatever it answered is
     // replaced with 409 cart_completion_incomplete
-    // (src/api/middlewares/cart-completion-finished.ts).
+    // (src/api/middlewares/cart-completion-finished.ts). The last of the
+    // route's three middlewares (the guards and the payment-amount check run
+    // before it; see the entry above `...cartPaymentMiddlewareRoutes`).
     {
       matcher: "/store/carts/:id/complete",
       method: "POST",

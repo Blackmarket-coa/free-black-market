@@ -1,8 +1,10 @@
 import { createLogger } from "./logger"
 const log = createLogger("shared/seller-approval-service")
 import { MedusaContainer } from "@medusajs/framework/types"
-import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { Modules, ContainerRegistrationKeys, toHandle } from "@medusajs/framework/utils"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
+import { isUnfinishedApprovalOf, resolveLinkedStore } from "./linked-store"
+import { STORE_NAME_NEEDS_LATIN, storeHandleFor } from "./store-handle"
 import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadata"
 import { assignPlaybookWorkflow } from "../workflows/assign-playbook"
 import {
@@ -18,7 +20,10 @@ import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-cust
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
 import { SELLER_EXTENSION_MODULE } from "../modules/seller-extension"
 import type SellerExtensionService from "../modules/seller-extension/service"
-import { updateSellerMetadataRecord } from "../modules/seller-extension/metadata-service"
+import {
+  listSellerMetadataRecords,
+  updateSellerMetadataRecord,
+} from "../modules/seller-extension/metadata-service"
 import { GOVERNANCE_POWER_LEVEL } from "./matrix-service"
 import { getChatProvider } from "./chat"
 import { REQUEST_MODULE } from "../modules/request"
@@ -41,6 +46,32 @@ export interface SellerApprovalResult {
   }
   matrixCreated: boolean
 }
+
+/**
+ * An approval refused for a reason the reviewer can act on, with the status
+ * `POST /admin/requests/:id/approve` answers. Thrown before anything is
+ * created or linked: the request stays as it was.
+ */
+export class SellerApprovalRefusedError extends Error {
+  constructor(
+    readonly status: 400 | 409,
+    message: string
+  ) {
+    super(message)
+    this.name = "SellerApprovalRefusedError"
+  }
+}
+
+/**
+ * Whether createSellerWorkflow failed because another store has this handle.
+ * Mercur's createSellerStep creates the seller with `handle: toHandle(name)`,
+ * and Medusa's DB error mapper turns the unique-index violation into exactly
+ * this message (table, key and value). Compared whole, so no other error that
+ * happens to say "already exists" (setAuthAppMetadataStep's "Key seller_id
+ * already exists in app metadata") reads as a name clash.
+ */
+export const isHandleClash = (error: unknown, handle: string): boolean =>
+  (error as { message?: unknown } | null)?.message === `Seller with handle: ${handle}, already exists.`
 
 /**
  * Input for seller approval
@@ -296,122 +327,166 @@ export class SellerApprovalService {
 
     // Step 2.5: Verify auth identity exists before proceeding
     const authModule = this.container.resolve(Modules.AUTH)
-    const authIdentities = await authModule.listAuthIdentities({ id: [data.auth_identity_id] })
+    const authIdentities = await authModule.listAuthIdentities(
+      { id: [data.auth_identity_id] },
+      { relations: ["provider_identities"] }
+    )
     if (!authIdentities || authIdentities.length === 0) {
       log.error(`[SellerApproval] Auth identity not found: ${data.auth_identity_id}`)
       throw new Error(`Auth identity not found. The user may need to re-register.`)
     }
+    const applicantLogin = authIdentities[0]
+
+    // Step 2.6: The application must be the one seller registration writes:
+    // filed by the login it names, under that login's own address. Rows from
+    // the doors closed by SD-127 (the generic request routes, a body email
+    // that picked the login) carry any login and any address, and approving
+    // one gives that login a store, or a store that address.
+    if (request.submitter_id !== data.auth_identity_id) {
+      throw new SellerApprovalRefusedError(
+        400,
+        "This application names a login other than the one that filed it, so it did not come through seller registration and cannot be approved. Reject it; the applicant can apply again from the vendor panel."
+      )
+    }
+    const loginEmail = applicantLogin.provider_identities?.find(
+      (p) => p.provider === "emailpass"
+    )?.entity_id
+    if (!loginEmail || loginEmail.trim().toLowerCase() !== data.member.email.trim().toLowerCase()) {
+      throw new SellerApprovalRefusedError(
+        400,
+        "This application's member email is not the address of the login it names, so it cannot be approved. Reject it; the applicant can apply again from the vendor panel."
+      )
+    }
     log.info(`[SellerApproval] Auth identity verified: ${data.auth_identity_id}`)
+
+    // Step 2.7: A login that already holds a store gets no other one. Decided
+    // before the workflow runs: Mercur's createSellerWorkflow refuses a linked
+    // login only in its last steps ("Key seller_id already exists in app
+    // metadata"), after creating the new store, and that message once passed
+    // for a name clash, which resumed approval onto the store the login had
+    // been invited into (SD-127 re-review, reproduced on Postgres).
+    const handle = toHandle(data.seller.name)
+    const linked = await resolveLinkedStore(
+      this.container,
+      applicantLogin.app_metadata as Record<string, unknown> | undefined,
+      applicantLogin.id
+    )
+    if (linked.kind === "closed") {
+      throw new SellerApprovalRefusedError(
+        409,
+        "This login is linked to a store that was closed, so this application cannot be approved. Nothing was created or linked. Reject it, and ask the applicant to contact support."
+      )
+    }
+    // A seller id naming an open store where the login has no member at its
+    // address, live or removed: an owner whose member email drifted from the
+    // login's address holds one. Clearing it and approving, as for a removed
+    // member, left that store's member row live and linked to no login
+    // (follow-up re-review, R-b).
+    if (linked.kind === "unmatched") {
+      throw new SellerApprovalRefusedError(
+        409,
+        `This login's link to the existing store "${linked.seller.name}" (${linked.seller.id}) needs support to fix: no member of that store, live or removed, has the login's address, so approving would leave that store's members linked to no login. Nothing was created or changed. Fix the link or the member's email first.`
+      )
+    }
+    // The one store approval resumes onto: the one an earlier approval of
+    // this application created and linked before a later step failed.
+    const resumeOnto =
+      linked.kind === "live" &&
+      (await isUnfinishedApprovalOf(this.container, linked, {
+        requestId,
+        loginId: data.auth_identity_id,
+        handle,
+        applicantEmail: data.member.email,
+      }))
+        ? linked.seller
+        : null
+    if (linked.kind === "live" && !resumeOnto) {
+      throw new SellerApprovalRefusedError(
+        409,
+        `This login already has a store ("${linked.seller.name}"), so this application cannot be approved. Nothing was created or linked. Reject it.`
+      )
+    }
+    // A store is made with handle toHandle(name), and every name with no
+    // Latin letter or digit makes the same "-" or "": the first such store got
+    // it and every later one failed as a name clash it was not.
+    if (!resumeOnto && !storeHandleFor(data.seller.name)) {
+      throw new SellerApprovalRefusedError(
+        400,
+        `${STORE_NAME_NEEDS_LATIN} "${data.seller.name}" has none, so this application cannot be approved. Nothing was created or linked. Reject it, then ask the applicant to apply again with a store name that has one.`
+      )
+    }
+    // After every refusal that needs no store made, so none of them changes
+    // anything (a name clash, which only the workflow finds, refuses with the
+    // link already cleared). A link that acts as no member of a store that is
+    // still open because its member was removed (a removed member's id, or a
+    // seller id whose member at the login's address was removed) names no
+    // store of this login's, and Mercur's setAuthAppMetadataStep refuses any
+    // login whose seller_id is set ("Key seller_id already exists in app
+    // metadata"). Approval used to refuse it as "linked to a store that was
+    // closed" while the store was live.
+    // `undefined` removes the key: the auth module merges app_metadata, so
+    // leaving the key out keeps it, and null keeps it set (measured).
+    if (linked.kind === "removed") {
+      log.warn(
+        `[SellerApproval] Login ${data.auth_identity_id}'s link ${linked.actor} acts as no member of store ${linked.seller.id} (a removed member's id, or a seller id whose member at the login's address was removed); clearing that link before creating its own store (request ${requestId})`
+      )
+      await authModule.updateAuthIdentities([
+        { id: data.auth_identity_id, app_metadata: { seller_id: undefined } },
+      ])
+    }
 
     let createdSeller: { id: string; name: string; handle?: string } | null = null
     let authUpdated = false
 
     try {
-      // Step 3: Create the seller using MercurJS workflow
-      log.info(`[SellerApproval] Starting seller workflow with auth_identity_id: ${data.auth_identity_id}`)
-
-      const workflowInput = {
-        auth_identity_id: data.auth_identity_id,
-        member: {
-          name: data.member.name,
-          email: data.member.email,
-        },
-        seller: {
-          name: data.seller.name,
-        },
-      }
-      log.info(`[SellerApproval] Workflow input:`, JSON.stringify(workflowInput, null, 2))
-
       let seller: { id: string; name: string; handle?: string }
 
-      try {
-        const workflowResult = await createSellerWorkflow.run({
-          container: this.container,
-          input: workflowInput,
-        })
-
-        const { result } = workflowResult
-        if (!result || !result.id) {
-          throw new Error("Seller creation workflow did not return a valid seller")
-        }
-        seller = result
+      if (resumeOnto) {
+        log.info(`[SellerApproval] Resuming approval onto this login's own store: ${resumeOnto.id}`)
+        seller = resumeOnto
         createdSeller = seller
-        log.info(`[SellerApproval] Seller created with ID: ${seller.id}`)
-      } catch (workflowError: any) {
-        // Check if it's a duplicate handle error - if so, try to find and link existing seller
-        if (workflowError.message?.includes("already exists")) {
-          log.info(`[SellerApproval] Seller already exists, attempting to find and link existing seller...`)
+      } else {
+        // Step 3: Create the seller using MercurJS workflow
+        log.info(`[SellerApproval] Starting seller workflow with auth_identity_id: ${data.auth_identity_id}`)
 
-          const query = this.container.resolve(ContainerRegistrationKeys.QUERY)
-          const pgConnection = this.container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const workflowInput = {
+          auth_identity_id: data.auth_identity_id,
+          member: {
+            name: data.member.name,
+            email: data.member.email,
+          },
+          seller: {
+            name: data.seller.name,
+          },
+        }
+        log.info(`[SellerApproval] Workflow input:`, JSON.stringify(workflowInput, null, 2))
 
-          let existingSeller: { id: string; name: string; handle?: string } | undefined
+        try {
+          const workflowResult = await createSellerWorkflow.run({
+            container: this.container,
+            input: workflowInput,
+          })
 
-          // First try to find by member email via direct lookup
-          const memberResult = await pgConnection.raw(
-            `
-            SELECT seller_id
-            FROM member
-            WHERE email = ?
-            ORDER BY created_at DESC
-            LIMIT 1
-            `,
-            [data.member.email]
-          )
-          const sellerId = memberResult.rows?.[0]?.seller_id
-          if (sellerId) {
-            const { data: sellers } = await query.graph({
-              entity: "seller",
-              fields: ["id", "name", "handle"],
-              filters: { id: sellerId },
-            })
-            existingSeller = sellers?.[0]
+          const { result } = workflowResult
+          if (!result || !result.id) {
+            throw new Error("Seller creation workflow did not return a valid seller")
           }
-
-          // If not found by email, try to find by handle (derived from seller name)
-          if (!existingSeller) {
-            log.info(`[SellerApproval] Seller not found by email, trying by handle...`)
-
-            // Generate expected handle from seller name (MercurJS uses kebab-case)
-            const expectedHandle = data.seller.name
-              .toLowerCase()
-              .trim()
-              .replace(/\s+/g, '-')
-              .replace(/[^a-z0-9-]/g, '')
-
-            const handleResult = await pgConnection.raw(
-              `
-              SELECT id, name, handle
-              FROM seller
-              WHERE handle = ? OR handle LIKE ?
-              ORDER BY length(handle) ASC
-              LIMIT 1
-              `,
-              [expectedHandle, `${expectedHandle}%`]
+          seller = result
+          createdSeller = seller
+          log.info(`[SellerApproval] Seller created with ID: ${seller.id}`)
+        } catch (workflowError: any) {
+          // A name clash is the seller handle's unique index and nothing else:
+          // Medusa's DB error mapper words it "Seller with handle: <handle>,
+          // already exists." Another store has the handle this name makes. No
+          // store is linked: the lookups by member email and by handle that
+          // used to run here gave the applicant someone else's store.
+          if (isHandleClash(workflowError, handle)) {
+            log.warn(`[SellerApproval] Refused request ${requestId}: a store already has the handle "${handle}"`)
+            throw new SellerApprovalRefusedError(
+              409,
+              `The store name "${data.seller.name}" gives the web address "${handle}", which another store already uses, so this application cannot be approved. Nothing was created or linked. Reject it, then ask the applicant to apply again with another store name.`
             )
-            const handleMatch = handleResult.rows?.[0]
-            if (handleMatch) {
-              existingSeller = {
-                id: handleMatch.id,
-                name: handleMatch.name,
-                handle: handleMatch.handle,
-              }
-            }
-
-            if (existingSeller) {
-              log.info(`[SellerApproval] Found seller by handle: ${existingSeller.handle}`)
-            }
           }
-
-          if (existingSeller) {
-            log.info(`[SellerApproval] Found existing seller: ${existingSeller.id} (${existingSeller.name})`)
-            seller = { id: existingSeller.id, name: existingSeller.name, handle: existingSeller.handle }
-            createdSeller = seller
-          } else {
-            log.error(`[SellerApproval] Could not find existing seller to link. Email: ${data.member.email}, Name: ${data.seller.name}`)
-            throw new Error(`Seller creation workflow failed: ${workflowError.message}`)
-          }
-        } else {
           log.error(`[SellerApproval] Workflow execution failed:`, workflowError.message)
           log.error(`[SellerApproval] Workflow error details:`, workflowError)
           throw new Error(`Seller creation workflow failed: ${workflowError.message}`)
@@ -461,7 +536,10 @@ export class SellerApprovalService {
         })
         log.info(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}${enabledExtensions ? ` (+${enabledExtensions.length} union features)` : ""}`)
       } catch (metadataError: any) {
-        // Non-critical: subscriber will create with default type
+        // Non-critical, but nothing creates the row later on its own: the
+        // sellerCreated subscriber listens for an event nothing emits (see
+        // the reconcile below). A route that writes seller metadata creates
+        // the row when it first needs one.
         log.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
       }
 
@@ -591,17 +669,22 @@ export class SellerApprovalService {
         })
 
         // Reconcile the metadata flag with what actually happened. Step 5 sets
-        // it at creation, but the sellerCreated subscriber can win that race
-        // and create the row first with defaults — and vendor_type === logistics
-        // provisions without the survey flag at all. Either way the settings
-        // page would read back "off" for a seller who holds a credential, and
-        // the next toggle would try to issue a second one.
+        // it when it creates the row, but step 5 can fail, or find a row
+        // already there (seller_id is unique: an approval resumed onto its
+        // store, or a route that wrote one first, keeps its defaults), and
+        // vendor_type === logistics provisions without the survey flag at all.
+        // Either way the settings page would read back "off" for a seller who
+        // holds a credential, and the next toggle would try to issue a second
+        // one. Not the sellerCreated subscriber, which this used to blame: it
+        // listens for an event named "sellerCreated" that nothing emits
+        // (Mercur's createSellerWorkflow declares a workflow hook of that name,
+        // not an event), so it never runs.
         if (provisioned.emitted) {
           try {
             const sellerExtension = this.container.resolve<SellerExtensionService>(
               SELLER_EXTENSION_MODULE
             )
-            const [meta] = await sellerExtension.listSellerMetadatas({
+            const [meta] = await listSellerMetadataRecords(sellerExtension, {
               seller_id: seller.id,
             })
             if (meta && !meta.node_operator_opt_in) {

@@ -38,7 +38,7 @@ describe("vendor creator quests route", () => {
 
   it("flag off: returns an empty list and never resolves the quest module", async () => {
     const resolve = jest.fn().mockReturnValue(undefined)
-    const req = { auth_context: { actor_id: "sel_1" }, scope: makeScope(resolve) }
+    const req = { _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, scope: makeScope(resolve) }
 
     const res = createRes()
     await invoke(req, res)
@@ -64,7 +64,7 @@ describe("vendor creator quests route", () => {
     const resolve = jest.fn((key: string) =>
       key === VENDOR_QUEST_MODULE ? service : undefined
     )
-    const req = { auth_context: { actor_id: "sel_1" }, scope: makeScope(resolve) }
+    const req = { _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, scope: makeScope(resolve) }
 
     const res = createRes()
     await invoke(req, res)

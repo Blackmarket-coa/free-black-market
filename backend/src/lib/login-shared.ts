@@ -17,10 +17,13 @@ import { REQUEST_TYPES } from "../modules/request/validators"
  * with.
  *
  * Only facts a stranger cannot create count. A PENDING vendor application does
- * not: POST /auth/seller/register-request (api/shared/seller-registration.ts)
- * files one for whatever login the email in its body names, with no token, so
- * anyone who knows a shopper's email could otherwise keep that shopper's login
- * from ever being deleted (SD-127). A vendor member row with the login's email
+ * not. Until SD-127 was fixed, POST /auth/seller/register-request filed one for
+ * whatever login the email in its body named, with no token, so anyone who
+ * knew a shopper's email could keep that shopper's login from ever being
+ * deleted; applications filed that way may still be in the table. Now an
+ * application is filed only for the caller's own login, from its seller token
+ * and under its own address (api/shared/seller-registration.ts), but a pending
+ * one still proves nothing about who owns the login. A vendor member row with the login's email
  * does count: it is made at approval (on the email owner's verification, or by
  * an admin) or by accepting an emailed invite, and it covers approved vendors
  * whose login was never given `seller_id` (shared/seller-registration.ts
@@ -115,7 +118,7 @@ export async function inspectLogin(
 /**
  * Delete the vendor applications made with a login that is being revoked and
  * that never became a vendor (pending, rejected or cancelled): they name the
- * person, and one may have been filed in their name by someone else (SD-127).
+ * person, and one filed before SD-127 was fixed may be someone else's doing.
  * A real applicant can apply again. Approved ones stay: they are the record of
  * a vendor that exists.
  */

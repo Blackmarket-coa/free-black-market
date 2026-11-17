@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_EXTENSION_MODULE } from "../../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../../modules/seller-extension/service"
+import { listSellerMetadataRecords } from "../../../../../modules/seller-extension/metadata-service"
 import { REVIEWS_MODULE } from "../../../../../modules/reviews"
 import type ReviewsService from "../../../../../modules/reviews/service"
 
@@ -25,7 +26,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const service =
     req.scope.resolve<SellerExtensionService>(SELLER_EXTENSION_MODULE)
 
-  const matches = await service.listSellerMetadatas({
+  const matches = await listSellerMetadataRecords(service, {
     creator_handle: handle,
     vendor_type: "creator",
   })

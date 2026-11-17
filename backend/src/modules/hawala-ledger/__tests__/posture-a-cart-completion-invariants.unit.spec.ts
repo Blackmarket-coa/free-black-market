@@ -3,7 +3,11 @@ import path from "path"
 
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
+import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+
+import { refuseGuardedCartCompletion } from "../../../api/middlewares/cart-completion-guards"
 import { CCR_RESERVATION_METADATA_KEY } from "../../../lib/ccr-checkout"
+import { MAIN_CHECKOUT_GUARDS } from "../../../workflows/hooks/complete-cart-guards"
 import { validateCcrReservation } from "../../../workflows/hooks/validate-ccr-reservation"
 
 /**
@@ -20,23 +24,29 @@ import { validateCcrReservation } from "../../../workflows/hooks/validate-ccr-re
  *      credits into the cart escrow (`reference_type: CART`) and releases
  *      them; the leg that would spend them on the order,
  *      `settleCartCredits` (a BURN against the order), has no caller in
- *      `src/`, and `completeCartWorkflow`'s validate hook refuses a cart that
- *      still carries a reservation before any order exists
- *      (`workflows/hooks/validate-ccr-reservation.ts`). It checks nothing on
- *      a re-run of a cart that has already completed
+ *      `src/`, and a cart that still carries a reservation is refused before
+ *      any order exists (`workflows/hooks/validate-ccr-reservation.ts`, which
+ *      reads the count in the cart's metadata: a store client can overwrite
+ *      it, and a count that is not a positive number reads as none) at
+ *      both seams that complete carts: `completeCartWorkflow`'s validate
+ *      hook, and, in front of Mercur's main checkout
+ *      (`POST /store/carts/:id/complete`, whose workflow never calls that
+ *      hook), `api/middlewares/cart-completion-guards.ts`. Neither checks
+ *      a cart that has already completed
  *      (`workflows/hooks/complete-cart-guards.ts`): that cart's sale has
  *      already happened, and a refusal there would only fail the retry and
  *      run the refund compensation on a captured payment for an order that
- *      stands. So a stall cannot be
- *      followed by a BURN, and a cart with credits on it never reaches the
- *      stall on a checkout built on `completeCartWorkflow`. (Until SD-54 the
- *      guard read a field the hook never carries and refused nothing; and
- *      Mercur's main checkout, `POST /store/carts/:id/complete`, never calls
- *      the hook at all, so there a reserved cart completes at its full total
- *      (by reading, not run; SD-54, open). No BURN follows either way, since
- *      `settleCartCredits` has no caller.)
- *   2. The refusal itself touches no ledger: none of the three modules
- *      imports the hawala ledger or the CCR libraries.
+ *      stands. So a stall cannot be followed by a BURN, and a cart with
+ *      credits on it never reaches the stall through a store route. (Until
+ *      SD-54 the guard read a field the hook never carries and refused
+ *      nothing, and until SD-72 (a) was closed the main checkout ran no
+ *      guard at all, so there a reserved cart completed at its full total
+ *      with the credits left in escrow. No BURN followed either way, since
+ *      `settleCartCredits` has no caller. Medusa's generic admin workflow
+ *      runner can still run `split-and-complete-cart` past the middleware.)
+ *   2. The refusals themselves touch no ledger: none of the four modules
+ *      that refuse a completion imports the hawala ledger or the CCR
+ *      libraries.
  *
  * Wiring `settleCartCredits` into a completion is the moment this spec fails,
  * deliberately: that caller must run after `requireCompletedCartOrderStep`
@@ -58,6 +68,24 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8")
 const rel = (abs: string) => path.relative(SRC, abs)
+
+/** Every file under src/ that `start` reaches through relative imports, transitively. */
+function importClosure(start: string): string[] {
+  const seen = new Set<string>()
+  const visit = (file: string) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const source = read(file)
+    for (const m of source.matchAll(/(?:^|\n)\s*(?:import|export)\b[^'"]*?from\s*['"](\.[^'"]+)['"]|require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+      const spec = m[1] ?? m[2]
+      const base = path.join(path.dirname(path.join(SRC, file)), spec)
+      const hit = [`${base}.ts`, path.join(base, "index.ts"), base].find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile())
+      if (hit) visit(rel(hit))
+    }
+  }
+  visit(start)
+  return [...seen]
+}
 
 describe("Posture A: a refused cart completion cannot move Coalition Credits", () => {
   it("nothing in src/ spends a cart's reserved credits on an order: settleCartCredits has no caller", () => {
@@ -97,10 +125,60 @@ describe("Posture A: a refused cart completion cannot move Coalition Credits", (
     ).rejects.toMatchObject({ type: "not_allowed" })
   })
 
+  it("Mercur's main checkout refuses the same cart in front of its route, before any order exists (SD-72 (a))", async () => {
+    // The registration: the guard middleware sits on the main checkout's own
+    // matcher (its order among that route's middlewares is pinned in
+    // api/__tests__/main-checkout-middleware-order.unit.spec.ts), and the
+    // main checkout's guard list holds the CCR guard.
+    expect(read("api/middlewares.ts")).toMatch(
+      /matcher: "\/store\/carts\/:id\/complete",\s*method: "POST",\s*middlewares: \[refuseGuardedCartCompletion\]/
+    )
+    expect(MAIN_CHECKOUT_GUARDS.map((g) => g.name)).toContain("ccr-reservation")
+    // And the middleware run with the real guards behind it, on a cart that
+    // holds a reservation and has neither completed nor an order set. Query
+    // answers only under its real registration key; nothing else resolves.
+    const graph = async ({ entity, filters }: { entity: string; filters: Record<string, unknown> }) => {
+      if (entity === "order_set") return { data: [] }
+      if (entity === "cart" && filters.id === "cart_1") {
+        return { data: [{ id: "cart_1", completed_at: null, metadata: { [CCR_RESERVATION_METADATA_KEY]: 2 }, items: [] }] }
+      }
+      return { data: [] }
+    }
+    const scope = {
+      resolve: (key: string) => {
+        if (key !== ContainerRegistrationKeys.QUERY) throw new Error(`unresolvable: ${key}`)
+        return { graph }
+      },
+    }
+    const next = jest.fn()
+    await expect(
+      refuseGuardedCartCompletion(
+        { params: { id: "cart_1" }, scope } as unknown as MedusaRequest,
+        {} as MedusaResponse,
+        next as unknown as MedusaNextFunction
+      )
+    ).rejects.toMatchObject({ type: "not_allowed" })
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it("the guard middleware reaches no ledger through anything it imports, however deep", () => {
+    const seen = importClosure("api/middlewares/cart-completion-guards.ts")
+    // The walk reaches the guards and the CCR guard's own imports.
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        "workflows/hooks/complete-cart-guards.ts",
+        "workflows/hooks/validate-ccr-reservation.ts",
+        "lib/ccr-checkout.ts",
+      ])
+    )
+    expect(seen.filter((file) => /hawala|ccr-cart-ledger|posture-a|card-clearing/.test(file))).toEqual([])
+  })
+
   it.each([
     "lib/cart-completion.ts",
     "workflows/steps/require-completed-cart-order.ts",
     "api/middlewares/cart-completion-finished.ts",
+    "api/middlewares/cart-completion-guards.ts",
   ])("%s imports no ledger: the refusal reads orders, links and executions only", (file) => {
     const source = read(file)
     const imports = [...source.matchAll(/^import[^;'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1])

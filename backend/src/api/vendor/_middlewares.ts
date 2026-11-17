@@ -14,10 +14,117 @@
 import { createLogger } from "../../shared/logger"
 import type { VendorRequest } from "./types"
 const log = createLogger("api/vendor/_middlewares")
-import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
+import { getAuthContextFromJwtToken } from "@medusajs/framework/http"
+import type { AuthContext, MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
+import type { ConfigModule } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import { decodeAuthTokenFromAuthorization } from "../../shared/auth-helpers"
+import { liveSellerIdOfMember, resolveSellerActor } from "../../shared/seller-actor"
 import { handleSellerRegistration } from "../shared/seller-registration"
+
+/** What the gate validates and pins: Medusa's auth context, and the member it acts as. */
+type GateAuthContext = Partial<AuthContext> & { member_id?: string }
+
+/**
+ * The seller bearer token on this request, read the way Medusa's authenticate
+ * reads one (the same header parsing, secret or public key, verify options and
+ * actor-type rule): the token Mercur's checkSellerApproved accepted before
+ * this gate, and the one a route-level `authenticate("seller", "bearer")`
+ * reads again after it. `refused` is a bearer this server did not sign for a
+ * seller, or one that has expired.
+ */
+function sellerBearerOf(
+  req: MedusaRequest
+): { kind: "none" } | { kind: "refused" } | { kind: "seller"; context: AuthContext } {
+  const header = req.headers.authorization
+  const match = typeof header === "string" ? header.match(/(\S+)\s+(\S+)/) : null
+  if (!match || match[1].toLowerCase() !== "bearer") {
+    return { kind: "none" }
+  }
+  const { http } = req.scope.resolve<ConfigModule>(ContainerRegistrationKeys.CONFIG_MODULE).projectConfig
+  if (!http.jwtSecret && !http.jwtPublicKey) {
+    return { kind: "refused" }
+  }
+  const context = getAuthContextFromJwtToken(
+    header,
+    http.jwtSecret ?? "",
+    ["bearer"],
+    ["seller"],
+    http.jwtPublicKey,
+    http.jwtVerifyOptions ?? http.jwtOptions
+  )
+  return context ? { kind: "seller", context } : { kind: "refused" }
+}
+
+/**
+ * The seller login a session cookie carries: the context a seller
+ * `authenticate` would read from it. Another actor type's session (an admin
+ * signed in to the admin panel in the same browser) is never read by a seller
+ * `authenticate`, so it names no seller here.
+ */
+function sellerSessionOf(req: MedusaRequest): Partial<AuthContext> | null {
+  const context = (req as MedusaRequest & { session?: { auth_context?: Partial<AuthContext> } }).session
+    ?.auth_context
+  return context && context.actor_type === "seller" ? context : null
+}
+
+const PINNED_FIELDS = ["actor_id", "actor_type", "auth_identity_id", "member_id"] as const
+
+/**
+ * Fixes `req.auth_context`, for every middleware and handler after the gate,
+ * to the caller the gate validated.
+ *
+ * Medusa's authenticate assigns `req.auth_context` wholesale, and route-level
+ * `authenticate("seller", "bearer")` matchers in `api/middlewares.ts` run
+ * after this gate on dozens of vendor paths. Whatever was assigned last was
+ * what the handler acted as, and only a converted seller id was protected
+ * (and only from an assignment naming that same seller id).
+ *
+ * A later assignment is ignored, and the validated context stays: forced back,
+ * not refused. This setter runs inside other middleware, Medusa's authenticate
+ * among them, where it cannot answer the request, and a throw there becomes an
+ * answer only if that middleware happens to be wrapped to turn it into one.
+ * Refusing a request whose credentials disagree is done once, at the gate,
+ * before any of them run: a seller session for another login is a 401. What
+ * reaches the setter after that is the same login read again (a seller-id
+ * token keeps acting as its member); anything naming another login or actor
+ * is logged. The identity fields of the pinned context ignore writes the same
+ * way.
+ */
+function pinCaller(req: MedusaRequest, validated: GateAuthContext, rawActorId: string | undefined): void {
+  const pinned: GateAuthContext = { ...validated }
+  for (const field of PINNED_FIELDS) {
+    const value = validated[field]
+    Object.defineProperty(pinned, field, {
+      get: () => value,
+      set: (next: unknown) => {
+        if (next !== value) {
+          log.warn(`[VENDOR AUTH] Ignored a write of auth_context.${field} after the gate validated ${String(value)}`)
+        }
+      },
+      enumerable: true,
+      configurable: false,
+    })
+  }
+  Object.defineProperty(req, "auth_context", {
+    get: () => pinned,
+    set: (next: GateAuthContext | undefined) => {
+      if (next === pinned) {
+        return
+      }
+      const sameLogin = next?.auth_identity_id === pinned.auth_identity_id
+      const sameActor = next?.actor_id === pinned.actor_id || next?.actor_id === rawActorId
+      if (!sameLogin || !sameActor) {
+        log.warn(
+          `[VENDOR AUTH] Ignored an auth_context naming login ${String(next?.auth_identity_id)} and actor ${String(
+            next?.actor_id
+          )} after the gate validated login ${String(pinned.auth_identity_id)} as ${String(pinned.actor_id)}`
+        )
+      }
+    },
+    enumerable: true,
+    configurable: false,
+  })
+}
 
 export async function ensureSellerContext(
   req: MedusaRequest,
@@ -68,37 +175,46 @@ export async function ensureSellerContext(
     return
   }
 
-  const requestWithAuth = req as MedusaRequest & {
-    auth_context?: {
-      actor_id?: string
-      actor_type?: string
-      auth_identity_id?: string
-      member_id?: string
-    }
+  // Who is asking. Mercur's checkSellerApproved, which runs before this gate,
+  // reads only the bearer token and lets through any seller token with an
+  // actor; Mercur's authenticate after it prefers the session cookie. So the
+  // actor this gate used to validate (the session's) need not be the one
+  // Mercur let through, and a route-level authenticate("seller", "bearer")
+  // later put the bearer's actor in front of the handler, unvalidated: a
+  // removed member's bearer with a live seller's cookie read and wrote
+  // invoices under the removed member, and Mercur's own lookup found the
+  // store's promotions through it (follow-up re-review, R-c). The bearer, when
+  // there is one, is now the caller, and a seller session for another login
+  // alongside it is refused: nothing says which of the two is asking. With no
+  // bearer, the context Mercur's authenticate read stays the caller.
+  const bearer = sellerBearerOf(req)
+  if (bearer.kind === "refused") {
+    res.status(401).json({
+      message: "Unauthorized - seller authentication required",
+      type: "unauthorized",
+    })
+    return
   }
-  const authContext = requestWithAuth.auth_context ?? {}
-  const decodedToken = decodeAuthTokenFromAuthorization(req.headers.authorization)
+  const sellerSession = sellerSessionOf(req)
+  if (bearer.kind === "seller" && sellerSession && sellerSession.auth_identity_id !== bearer.context.auth_identity_id) {
+    log.warn(
+      `[VENDOR AUTH] Refused a request whose seller session (login ${String(
+        sellerSession.auth_identity_id
+      )}) and bearer token (login ${bearer.context.auth_identity_id}) name different logins`
+    )
+    res.status(401).json({
+      message: "The session and the token on this request belong to different sellers. Sign in again.",
+      type: "unauthorized",
+    })
+    return
+  }
 
-  if (!requestWithAuth.auth_context) {
-    requestWithAuth.auth_context = authContext
+  const requestWithAuth = req as MedusaRequest & { auth_context?: GateAuthContext }
+  // A copy: a session's context is the object express-session saves.
+  const authContext: GateAuthContext = {
+    ...(bearer.kind === "seller" ? bearer.context : requestWithAuth.auth_context ?? {}),
   }
-
-  if (!authContext.actor_id && decodedToken?.actorId) {
-    authContext.actor_id = decodedToken.actorId
-  }
-
-  if (!authContext.actor_type && decodedToken?.actorType) {
-    authContext.actor_type = decodedToken.actorType
-  }
-
-  if (!authContext.auth_identity_id && decodedToken?.authIdentityId) {
-    authContext.auth_identity_id = decodedToken.authIdentityId
-  }
-
-  if (!authContext.actor_id && decodedToken?.sellerId) {
-    authContext.actor_id = decodedToken.sellerId
-    authContext.actor_type = authContext.actor_type ?? "seller"
-  }
+  const rawActorId = authContext.actor_id
 
   if (!authContext.actor_id && authContext.auth_identity_id) {
     const authModule = req.scope.resolve(Modules.AUTH)
@@ -111,49 +227,33 @@ export async function ensureSellerContext(
   }
 
   if (authContext.actor_id?.startsWith("sel_")) {
-    // Store original seller ID for route handlers that need it
-    ;(req as VendorRequest)._seller_id = authContext.actor_id
-
-    // Try to convert seller ID to member ID for MercurJS compatibility.
-    // MercurJS storeActiveGuard queries sellers by members.id,
-    // so having a mem_* actor_id is preferred. However, the patched
-    // fetchSellerByAuthActorId (via scripts/patch-mercurjs.js) now handles
-    // sel_* IDs as a fallback, so this conversion is best-effort.
+    // A seller id acts as the live member of that store whose email is the
+    // login's own address, and as nothing without one (shared/seller-actor.ts).
+    // It used to act as the store's first live member, its owner, for any
+    // login holding it, a removed member's included; and finding none was
+    // not a refusal at all. Mercur's member-keyed guards get the matched
+    // member as the actor.
+    let matched: Awaited<ReturnType<typeof resolveSellerActor>> = null
     try {
-      const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      const memberResult = await pgConnection.raw(
-        `SELECT id FROM member WHERE seller_id = ? ORDER BY created_at ASC LIMIT 1`,
-        [authContext.actor_id]
-      )
-      const memberId = memberResult.rows?.[0]?.id
-      if (memberId) {
-        const originalSellerId = authContext.actor_id
-        authContext.member_id = memberId
-        authContext.actor_id = memberId
-
-        // Intercept future auth_context assignments to ensure actor_id stays as member ID.
-        // MedusaJS authenticate middleware may replace req.auth_context with JWT data
-        // containing the original seller ID.
-        let _currentAuthContext = requestWithAuth.auth_context
-        Object.defineProperty(req, "auth_context", {
-          get() {
-            return _currentAuthContext
-          },
-          set(value) {
-            _currentAuthContext = value
-            if (value && value.actor_id === originalSellerId) {
-              value.actor_id = memberId
-            }
-          },
-          configurable: true,
-          enumerable: true,
-        })
-      }
-      // If no member found, continue anyway - the patched MercurJS code
-      // handles sel_* IDs via direct seller lookup as a fallback
-    } catch {
-      // Non-fatal: if member lookup fails, patched MercurJS handles it
+      matched = await resolveSellerActor(req.scope, authContext.actor_id, authContext.auth_identity_id)
+    } catch (error) {
+      log.error("[VENDOR AUTH] Failed to resolve a seller-id actor:", error)
+      res.status(500).json({
+        message: "Failed to validate seller context",
+        type: "server_error",
+      })
+      return
     }
+    if (!matched) {
+      res.status(401).json({
+        message: "Seller not found for authenticated user",
+        type: "unauthorized",
+      })
+      return
+    }
+    // The store, for route handlers that need it.
+    ;(req as VendorRequest)._seller_id = matched.sellerId
+    authContext.actor_id = matched.memberId
   }
 
   const actorType = authContext.actor_type
@@ -171,16 +271,17 @@ export async function ensureSellerContext(
     // Use pre-resolved seller ID if available (from sel_* to mem_* conversion above)
     let sellerId = (req as VendorRequest)._seller_id || authContext.actor_id
     if (sellerId.startsWith("mem_")) {
-      const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-      const memberResult = await pgConnection.raw(
-        `
-        SELECT seller_id
-        FROM member
-        WHERE id = ?
-        `,
-        [sellerId]
-      )
-      const resolvedSellerId = memberResult.rows?.[0]?.seller_id
+      // Only a member that is still on the team, of a store that is still
+      // open. Mercur's deleteMemberStep soft-deletes a removed member and
+      // leaves the login's link naming it, and signing in mints that member as
+      // the actor again; read without `deleted_at`, a removed member's tokens
+      // kept reading the store's orders and customers' addresses and could
+      // write. It is now refused like a member that no longer exists. Mercur's
+      // own guards cannot do this for us: storeActiveGuard lets every GET
+      // through and finds the store through a removed member anyway
+      // (fetchSellerByAuthActorId filters `members.id`, which matches
+      // soft-deleted rows).
+      const resolvedSellerId = await liveSellerIdOfMember(req.scope, sellerId)
       if (!resolvedSellerId) {
         res.status(401).json({
           message: "Seller not found for authenticated member",
@@ -217,6 +318,10 @@ export async function ensureSellerContext(
     return
   }
 
+  // Past this point the actor is a live member of a live store, whichever
+  // kind of id the caller presented: what every handler after the gate sees.
+  authContext.member_id = authContext.actor_id
+  pinCaller(req, authContext, rawActorId)
   ;(req as VendorRequest)._sellerContextResolved = true
   next()
 }

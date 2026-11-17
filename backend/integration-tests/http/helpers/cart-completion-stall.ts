@@ -32,9 +32,15 @@ import { FINISHED_EXECUTION_STATES } from "../../../src/lib/cart-completion"
  * stays `not_started`, because the in-memory engine writes no `invoking`
  * checkpoint for it (`saveToDb`), which is also why the runner, which counts
  * `not_started` as ended, never waits on that one. The workflow id is
- * Medusa's own constant. Nothing else counts: another workflow left
- * unfinished is not this defect, and fails the test through the spec's own
- * teardown check as before.
+ * Medusa's own constant, unless the spec names others (`workflowId`):
+ * Mercur's main checkout runs `split-and-complete-cart` (FBM's
+ * `SPLIT_AND_COMPLETE_CART_WORKFLOW_ID`) with the cart id as its transaction
+ * id, and the engine stores that idempotent run's row as `not_started` when it
+ * begins and deletes it when it ends, so a row still there `settleMs` later is
+ * the same stall (helpers/stalled-workflows.ts; cart-completion-refuses.spec.ts
+ * pins that state). Nothing else counts: another workflow left unfinished is
+ * not this defect, and fails the test through the spec's own teardown check
+ * as before.
  *
  * On a stall: one line `SD53_STALL_OBSERVED <spec> "<test>" attempt=<n> ...`
  * on stderr (grep CI logs for it to keep the frequency measurable), the
@@ -78,6 +84,13 @@ export type CartCompletionStallRetryOptions = {
   reset: () => Promise<void> | void
   retries?: number
   settleMs?: number
+  /**
+   * The completion workflow(s) whose executions are watched: Medusa's
+   * `complete-cart` (default), Mercur's `split-and-complete-cart` for a
+   * spec that completes carts through `POST /store/carts/:id/complete`, or
+   * both for one that does each.
+   */
+  workflowId?: string | readonly string[]
   /** Stall the first cart completion of each of the first n attempts (default: `SD53_INDUCE_STALLS`, else 0). */
   induceStalls?: number
   /** Where the marker line goes (default: stderr, one line, outside Jest's console buffering). */
@@ -97,19 +110,19 @@ const describeExecutions = (rows: Execution[]) =>
   rows.map((r) => `${r.workflow_id}:${r.transaction_id}(${r.state})`).join(",")
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-/** The `complete-cart` executions not yet ended. */
-async function unfinishedCompletions(pg: any): Promise<Execution[]> {
+/** The watched completion workflows' executions not yet ended. */
+async function unfinishedCompletions(pg: any, workflowIds: readonly string[]): Promise<Execution[]> {
   const { rows } = await pg.raw(
     `SELECT id, workflow_id, transaction_id, state FROM workflow_execution
-      WHERE deleted_at IS NULL AND workflow_id = ? AND ${NOT_ENDED} ORDER BY created_at`,
-    [completeCartWorkflowId, ...ENDED]
+      WHERE deleted_at IS NULL AND workflow_id IN (${workflowIds.map(() => "?").join(", ")}) AND ${NOT_ENDED} ORDER BY created_at`,
+    [...workflowIds, ...ENDED]
   )
   return rows
 }
 
 /** Those not unfinished before the attempt that are still unfinished `settleMs` after it. */
-async function stalledSince(pg: any, before: Set<string>, settleMs: number): Promise<Execution[]> {
-  const fresh = async () => (await unfinishedCompletions(pg)).filter((row) => !before.has(row.id))
+async function stalledSince(pg: any, workflowIds: readonly string[], before: Set<string>, settleMs: number): Promise<Execution[]> {
+  const fresh = async () => (await unfinishedCompletions(pg, workflowIds)).filter((row) => !before.has(row.id))
   const until = Date.now() + settleMs
   let rows = await fresh()
   while (rows.length && Date.now() < until) {
@@ -152,6 +165,8 @@ function induceStall(container: () => any): void {
 export function cartCompletionStallRetry(options: CartCompletionStallRetryOptions) {
   const retries = options.retries ?? SD53_STALL_RETRIES
   const settleMs = options.settleMs ?? SD53_STALL_SETTLE_MS
+  const watched = options.workflowId ?? completeCartWorkflowId
+  const workflowIds: readonly string[] = typeof watched === "string" ? [watched] : watched
   const induced = options.induceStalls ?? (Number(process.env[SD53_INDUCE_STALLS_ENV]) || 0)
   const log = options.log ?? ((line: string) => void process.stderr.write(`${line}\n`))
 
@@ -168,7 +183,7 @@ export function cartCompletionStallRetry(options: CartCompletionStallRetryOption
     const attemptsAllowed = retries + 1
     const stalls: Execution[][] = []
     for (let attempt = 1; ; attempt++) {
-      const before = new Set((await unfinishedCompletions(pg)).map((row) => row.id))
+      const before = new Set((await unfinishedCompletions(pg, workflowIds)).map((row) => row.id))
       if (attempt <= induced) induceStall(options.container)
       let failure: unknown = undefined
       let failed = false
@@ -178,7 +193,7 @@ export function cartCompletionStallRetry(options: CartCompletionStallRetryOption
         failed = true
         failure = error
       }
-      const stalled = await stalledSince(pg, before, settleMs)
+      const stalled = await stalledSince(pg, workflowIds, before, settleMs)
       if (!stalled.length) {
         if (failed) throw failure
         return { attempts: attempt, stalls }

@@ -75,7 +75,7 @@ async function send(recipient: string) {
   const h = harness()
   const req = {
     scope: h.scope,
-    auth_context: { actor_id: "sel_1", actor_type: "seller" },
+    _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1", actor_type: "seller" },
     headers: {},
     body: { trigger: "booking_reminder", recipient_email: recipient, vars: { name: "Sam" } },
   }

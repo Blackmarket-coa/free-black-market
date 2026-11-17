@@ -30,6 +30,24 @@ import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
  * hook has already taken the buyer's money, and `recordSale` deliberately
  * records an overshoot rather than refusing one for exactly that reason.
  *
+ * ## Where it runs, and what "before payment" means there
+ *
+ * At both seams that complete carts: `completeCartWorkflow.hooks.validate`
+ * (`complete-cart-validate.ts`), before that workflow authorizes the payment
+ * session, and the middleware in front of Mercur's main checkout,
+ * `POST /store/carts/:id/complete` (`api/middlewares/cart-completion-guards.ts`),
+ * before Mercur's `splitAndCompleteCartWorkflow` authorizes anything; that
+ * workflow never calls the hook. Two exceptions to "before payment". Medusa's
+ * payment webhook captures before it runs the workflow, so a refusal there
+ * leaves a captured payment for the workflow's compensation to try to refund
+ * (`complete-cart-validate.ts`). And on
+ * the storefront's card flow the buyer's card is confirmed in the browser
+ * (`stripe.confirmCardPayment`, `PaymentButton.tsx`) before the main checkout
+ * is called, so a refusal there leaves an uncaptured hold on the card. It is
+ * released when the buyer changes the cart (Medusa's payment refresh deletes
+ * the session, and the Stripe provider cancels its intent) or when Stripe
+ * lets it lapse. There the refusal comes before capture, not before the hold.
+ *
  * ## What it does not catch
  *
  * Two buyers completing in the same instant both read the same remaining
@@ -49,6 +67,7 @@ import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
  */
 
 type CartItem = {
+  title?: string | null
   variant_id?: string | null
   quantity?: number | null
   metadata?: Record<string, unknown> | null
@@ -74,7 +93,7 @@ export async function validateOrderCycleOnCompleteCart(
     const query = context.container.resolve(ContainerRegistrationKeys.QUERY)
     const { data } = await query.graph({
       entity: "cart",
-      fields: ["id", "metadata", "items.variant_id", "items.quantity", "items.metadata"],
+      fields: ["id", "metadata", "items.title", "items.variant_id", "items.quantity", "items.metadata"],
       filters: { id: cartId },
     })
     cart = Array.isArray(data) ? data[0] : undefined
@@ -86,10 +105,15 @@ export async function validateOrderCycleOnCompleteCart(
   }
   if (!cart) return
 
-  // Resolved exactly as `subscribers/order-cycle-order-placed.ts` does — an
+  // Resolved as `subscribers/order-cycle-order-placed.ts` does — an
   // item-level tag, falling back to a cart-level one. If these two ever
   // disagreed about which items belong to a cycle, the check and the sale
-  // would be about different things.
+  // would be about different things. On Mercur's main checkout they do, for
+  // the fallback: Mercur copies each line's metadata onto its orders and never
+  // the cart's, so the subscriber's order-level fallback finds no tag, and a
+  // line this guard checks under the cart's tag is recorded under none
+  // (pinned in integration-tests/http/main-checkout-guards.spec.ts). No
+  // client in this repo writes the cart-level tag.
   const cartMetadata = (cart.metadata ?? {}) as Record<string, unknown>
   const cartLevelCycleId =
     typeof cartMetadata.order_cycle_id === "string"
@@ -100,6 +124,8 @@ export async function validateOrderCycleOnCompleteCart(
 
   /** cycleId -> variantId -> quantity in this cart */
   const wanted = new Map<string, Map<string, number>>()
+  /** cycleId -> the titles of its lines, which the buyer sees in the cart */
+  const titles = new Map<string, Set<string>>()
 
   for (const item of items) {
     const cycleId =
@@ -114,6 +140,9 @@ export async function validateOrderCycleOnCompleteCart(
     const byVariant = wanted.get(cycleId) ?? new Map<string, number>()
     byVariant.set(item.variant_id, (byVariant.get(item.variant_id) ?? 0) + quantity)
     wanted.set(cycleId, byVariant)
+    if (typeof item.title === "string" && item.title.trim()) {
+      titles.set(cycleId, (titles.get(cycleId) ?? new Set<string>()).add(item.title.trim()))
+    }
   }
 
   if (wanted.size === 0) return
@@ -130,11 +159,10 @@ export async function validateOrderCycleOnCompleteCart(
     }
 
     if (!cycle) {
-      throw new MedusaError(
-        MedusaError.Types.NOT_ALLOWED,
-        `This cart is for an order cycle that no longer exists (${cycleId}). ` +
-          `Remove those items and check out again.`
-      )
+      // Shown to the buyer as it is (`storefront/src/lib/helpers/
+      // order-error-formatter.ts`), so it names the lines they can see rather
+      // than the cycle's id, which they cannot.
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, missingCycleMessage([...(titles.get(cycleId) ?? [])]))
     }
 
     if (!SELLABLE_STATUSES.has(String(cycle.status))) {
@@ -188,6 +216,18 @@ export async function validateOrderCycleOnCompleteCart(
       }
     }
   }
+}
+
+/** The refusal for lines whose cycle is gone, naming them by title when the cart has titles. */
+function missingCycleMessage(titles: string[]): string {
+  const quoted = titles.map((title) => `"${title}"`)
+  if (quoted.length === 1) {
+    return `${quoted[0]} in your cart is from an order cycle that no longer exists. Remove it and check out again.`
+  }
+  if (quoted.length > 1) {
+    return `${quoted.join(", ")} in your cart are from an order cycle that no longer exists. Remove them and check out again.`
+  }
+  return `Some items in your cart are from an order cycle that no longer exists. Remove them and check out again.`
 }
 
 /**

@@ -101,7 +101,7 @@ const setup = (opts: {
     body: opts.body ?? {},
     headers: {},
     // `requireSellerId` takes a sel_ actor id as the seller.
-    auth_context: { actor_id: opts.sellerId, actor_type: "seller" },
+    _seller_id: opts.sellerId, _sellerContextResolved: true, auth_context: { actor_id: opts.sellerId, actor_type: "seller" },
     scope: {
       resolve: (key: string) => {
         if (key === FOOD_DISTRIBUTION_MODULE) return service

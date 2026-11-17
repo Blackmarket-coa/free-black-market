@@ -119,15 +119,24 @@ export default async function orderPlacedHandler({
       // see. So a closed cycle recording a sale is the intended outcome on
       // THIS path.
       //
-      // What is genuinely still open is the other end: nothing re-validates
-      // the cycle between add-to-cart and order-placed, so a cart tagged
-      // with a cycle that closed hours earlier also records a sale, and
-      // that one is not a race — it is a missing check. Medusa v2 allows
-      // one handler per workflow hook and `completeCartWorkflow.hooks.validate`
-      // is already occupied by a composed FBM handler, so that check has to
-      // go inside `workflows/hooks/complete-cart-validate.ts` rather than
-      // beside it. Left to D9-3 because whether a cycle closing mid-checkout
-      // should fail the checkout is a policy question, not a patch.
+      // The other end is checked before payment, not here: a cart tagged
+      // with a cycle that is not open is refused at completion
+      // (`workflows/hooks/validate-order-cycle.ts`, D9-3), inside
+      // `completeCartWorkflow`'s validate hook and in front of Mercur's main
+      // checkout (`api/middlewares/cart-completion-guards.ts`). What still
+      // reaches this handler as a cycle line of a closed cycle: the race
+      // above (the cycle closed between that check and this event); Mercur's
+      // workflow run through Medusa's generic admin workflow runner, which no
+      // FBM middleware stands in front of; and the no-cart-lock race at the
+      // main checkout, a tagged line written after the middleware's check and
+      // before Mercur's workflow reads the cart. (A line whose tag a client
+      // stripped is not a cycle line here at all. A cycle kept only in the
+      // cart's metadata depends on whose order this is: Mercur copies line
+      // metadata onto its orders, never the cart's, so on Mercur's orders such
+      // a line is not a cycle line here either; Medusa's `complete-cart.js`
+      // copies `metadata: cart.metadata` onto its order, so on Medusa's orders
+      // the order-level fallback above sees the tag, for lines its validate
+      // hook has already checked under it.)
       try {
         await orderCycleService.retrieveOrderCycle(orderCycleId)
       } catch {

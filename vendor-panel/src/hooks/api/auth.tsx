@@ -10,7 +10,7 @@ import {
   sdk,
   setAuthToken,
 } from "../../lib/client"
-import { devLogger } from "../../lib/logger"
+import { finishSellerSignUp, registerOrSignIn } from "../../lib/register-or-sign-in"
 
 const fetchRegistrationStatus = async (token: string) => {
   const response = await fetch(
@@ -91,7 +91,11 @@ export const useSignInWithEmailPass = (
 }
 
 /**
- * Sign up with email/password and create vendor registration
+ * Sign up with email/password and create vendor registration.
+ *
+ * When the address already has a login, signs in to it with the password
+ * typed instead; a wrong password rejects with `ExistingAccountError`, and a
+ * filing that does not answer 2xx rejects with a message for the page.
  */
 export const useSignUpWithEmailPass = (
   options?: UseMutationOptions<
@@ -122,75 +126,46 @@ export const useSignUpWithEmailPass = (
         node_operator_opt_in,
         ...authPayload
       } = payload
-      const normalizedEmail = payload.email.toLowerCase().trim()
-      const normalizedPassword = normalizePassword(payload.password)
-
-      try {
-        const token = await sdk.auth.register("seller", "emailpass", {
-          ...authPayload,
-          email: normalizedEmail,
-          password: normalizedPassword,
-        })
-
-        if (typeof token === "string") setAuthToken(token)
-        return token
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Registration failed"
-        const status = error instanceof FetchError ? error.status : undefined
-
-        if (
-          status === 409 ||
-          message.toLowerCase().includes("already exists")
-        ) {
-          const result = await sdk.auth.login("seller", "emailpass", {
-            ...authPayload,
-            email: normalizedEmail,
-            password: normalizedPassword,
-          })
-          if (typeof result === "string") {
-            setAuthToken(result)
-            return result
-          }
-        }
-
-        throw error
-      }
+      // A taken address signs in with the password typed instead, and a wrong
+      // password rejects with ExistingAccountError: the account exists, which
+      // "Invalid email or password" under the email field did not say.
+      const token = await registerOrSignIn(sdk.auth, "seller", {
+        ...authPayload,
+        email: payload.email.toLowerCase().trim(),
+        password: normalizePassword(payload.password),
+      })
+      setAuthToken(token)
+      return token
     },
     onSuccess: async (data, variables, context) => {
-      try {
-        const token = typeof data === "string" ? data : getAuthToken()
-        if (token) {
-          const status = await fetchRegistrationStatus(token)
-          if (status.status === "pending" || status.status === "approved") {
-            options?.onSuccess?.(data, variables, context)
-            return
-          }
-        }
-
-        await fetchQuery("/auth/seller/register-request", {
-          method: "POST",
-          body: {
-            name: variables.name,
-            vendor_type:
-              variables.vendor_type ||
-              playbookToVendorType(variables.playbook) ||
-              "producer",
-            playbook: variables.playbook,
-            recommended_playbook: variables.recommended_playbook,
-            roles: variables.roles,
-            resources: variables.resources,
-            node_operator_opt_in: variables.node_operator_opt_in === true,
-            member: {
+      // Success only once the application is filed (2xx) or the login already
+      // has one pending or a store; any other outcome rejects with a message
+      // the page shows (lib/register-or-sign-in.ts finishSellerSignUp).
+      const token = typeof data === "string" ? data : getAuthToken()
+      await finishSellerSignUp({
+        status: async () => (token ? fetchRegistrationStatus(token) : null),
+        file: () =>
+          fetchQuery("/auth/seller/register-request", {
+            method: "POST",
+            body: {
               name: variables.name,
-              email: variables.email.toLowerCase().trim(),
+              vendor_type:
+                variables.vendor_type ||
+                playbookToVendorType(variables.playbook) ||
+                "producer",
+              playbook: variables.playbook,
+              recommended_playbook: variables.recommended_playbook,
+              roles: variables.roles,
+              resources: variables.resources,
+              node_operator_opt_in: variables.node_operator_opt_in === true,
+              member: {
+                name: variables.name,
+                email: variables.email.toLowerCase().trim(),
+              },
             },
-          },
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        })
-      } catch (error) {
-        devLogger.error("Failed to create seller registration request:", error)
-      }
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }),
+      })
 
       // Call user's onSuccess callback if provided
       options?.onSuccess?.(data, variables, context)
@@ -200,7 +175,11 @@ export const useSignUpWithEmailPass = (
 }
 
 /**
- * Sign up for invite flow (no vendor type)
+ * Sign up for invite flow (no vendor type).
+ *
+ * When the address already has a login, signs in to it with the password
+ * typed instead, and a wrong password rejects with `ExistingAccountError`
+ * (see lib/register-or-sign-in.ts).
  */
 export const useSignUpForInvite = (
   options?: UseMutationOptions<
@@ -211,13 +190,12 @@ export const useSignUpForInvite = (
 ) => {
   return useMutation({
     mutationFn: async (payload) => {
-      const normalizedPassword = normalizePassword(payload.password)
-      const token = await publicAuthSdk.auth.register("seller", "emailpass", {
+      const token = await registerOrSignIn(publicAuthSdk.auth, "seller", {
         ...payload,
         email: payload.email.toLowerCase().trim(),
-        password: normalizedPassword,
+        password: normalizePassword(payload.password),
       })
-      if (typeof token === "string") setAuthToken(token)
+      setAuthToken(token)
       return token
     },
     ...options,

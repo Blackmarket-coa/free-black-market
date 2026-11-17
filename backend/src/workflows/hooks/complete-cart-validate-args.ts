@@ -8,7 +8,9 @@
  * include `completed_at`). Every FBM path that completes a cart this way
  * (tickets, rentals, the digital and subscription checkouts, renewals, and
  * Medusa's payment webhook through `completeCartAfterPaymentStep`) passes
- * `{ id }`.
+ * `{ id }`. The middleware in front of Mercur's main checkout, which never
+ * calls the hook, hands its guards the same shape
+ * (`api/middlewares/cart-completion-guards.ts`).
  *
  * The Coalition Credits and order-cycle guards read `input.cart_id` until
  * SD-54 (docs/AUDIT_DEBT.md), found nothing, and returned before reading the

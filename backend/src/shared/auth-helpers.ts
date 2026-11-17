@@ -4,6 +4,7 @@ import type { MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import jwt from "jsonwebtoken"
 import { config } from "./config"
+import { liveSellerIdForActor, liveSellerIdOfMember } from "./seller-actor"
 
 /**
  * Authentication context from MedusaJS
@@ -135,6 +136,15 @@ export function extractAdminId(
 
 /**
  * Require seller ID - returns null if not authenticated and sends response
+ *
+ * By the rule both gates use (shared/seller-actor.ts). A member id resolves
+ * only while the member and its store are live: a removed member, which
+ * Mercur soft-deletes and leaves linked, resolved to the store it was removed
+ * from. A `sel_*` id resolves only through the live member of that store at
+ * the login's own address; it is taken as it is only when it is the
+ * `_seller_id` the vendor gate resolved that way for this request. It used to
+ * be taken as it is anywhere.
+ *
  * @param req - The authenticated request
  * @param res - The response object to send error if not authenticated
  * @returns The seller ID or null if not authenticated
@@ -150,30 +160,22 @@ export async function requireSellerId(
   const token = extractBearerToken(req.headers?.authorization)
   const decodedToken = token ? decodeAuthToken(token) : null
 
-  const resolveSellerIdFromMember = async (memberId: string): Promise<string | null> => {
-    if (!pgConnection) {
-      return null
-    }
-    const result = await pgConnection.raw(
-      `
-      SELECT seller_id
-      FROM member
-      WHERE id = ?
-      `,
-      [memberId]
-    )
-    return result.rows?.[0]?.seller_id ?? null
-  }
+  const scope = req.scope as Parameters<typeof liveSellerIdOfMember>[0] | undefined
+  const loginId = authIdentityId ?? decodedToken?.authIdentityId
+  const gate = req as AuthenticatedRequest & { _seller_id?: string; _sellerContextResolved?: boolean }
 
   const resolveLinkedSellerId = async (id?: string | null): Promise<string | null> => {
-    if (!id) {
+    if (!id || !scope) {
       return null
     }
     if (id.startsWith("sel_")) {
-      return id
+      if (gate._seller_id === id && gate._sellerContextResolved === true) {
+        return id
+      }
+      return pgConnection && authModule ? liveSellerIdForActor(scope, id, loginId) : null
     }
     if (id.startsWith("mem_")) {
-      return resolveSellerIdFromMember(id)
+      return pgConnection ? liveSellerIdOfMember(scope, id) : null
     }
     return null
   }

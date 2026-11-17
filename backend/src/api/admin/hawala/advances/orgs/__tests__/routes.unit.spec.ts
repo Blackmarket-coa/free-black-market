@@ -110,7 +110,7 @@ function makeCtx(opts: { orgs?: Array<Partial<OrgRow> & { key: string; name: str
   return { scope, resolved, dir, ledger }
 }
 
-type ReqShape = { params?: Record<string, string>; body?: unknown; headers?: Record<string, string>; auth_context?: { actor_id: string }; _seller_id?: string }
+type ReqShape = { params?: Record<string, string>; body?: unknown; headers?: Record<string, string>; auth_context?: { actor_id: string }; _seller_id?: string; _sellerContextResolved?: boolean }
 const ADMIN = { auth_context: { actor_id: "user_admin_1" } }
 
 async function call(handler: Handler, ctx: Ctx, req: ReqShape) {
@@ -426,7 +426,7 @@ describe("GET /vendor/hawala/advances", () => {
       accounts: [{ id: "acc-earn", account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: "sel_1", currency_code: "USD", balance: 0, pending_balance: 0, available_balance: 0 }],
     })
     const ctx = makeCtx({ ledger })
-    const res = await call(vendorAdvances as unknown as Handler, ctx, { _seller_id: "sel_1", auth_context: { actor_id: "sel_1" }, headers: {} })
+    const res = await call(vendorAdvances as unknown as Handler, ctx, { _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, headers: {} })
     expect(res.statusCode).toBe(200)
     const advances = res.body.advances as Array<{ id: string }>
     expect(advances.map((a) => a.id)).toEqual(["adv_seller"])

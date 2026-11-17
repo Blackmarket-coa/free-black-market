@@ -112,13 +112,24 @@ export const CART_PAYMENT_REFRESH_FAILED_MESSAGE =
   "Your cart was updated, but we could not update its payment for the new total. " +
   "Your payment is checked against the new total before your order is placed, and you may be asked to choose your payment method again."
 
-/** The `code` of a tier or wholesale reprice asked of a cart that has already completed. */
+/**
+ * The `code` of an answer to a cart that has already completed, on two routes
+ * that answer it differently:
+ * - a tier or wholesale reprice asked of one: 400 with `type: "invalid_data"`
+ *   (`cartAlreadyCompletedResponse` below);
+ * - the main checkout, `POST /store/carts/:id/complete`, asked to complete a
+ *   cart Medusa's own workflow completed into an order FBM's judge passes: 409
+ *   with `type: "cart_already_completed"` and that order's id
+ *   (`cartAlreadyCompletedAtCheckoutResponse`,
+ *   `api/middlewares/cart-completion-guards.ts`).
+ */
 export const CART_ALREADY_COMPLETED = "cart_already_completed"
 
 /**
- * 400 `invalid_data`, which is how Medusa's own cart writes answer a completed
- * cart (`validateCartStep`: "Cart ... is already completed."), so a client
- * meets one status for it whichever route it called.
+ * The reprice's status: 400 `invalid_data`, which is how Medusa's own cart
+ * writes answer a completed cart (`validateCartStep`: "Cart ... is already
+ * completed."), so a client meets one status for it whichever cart write it
+ * called. (The main checkout's completion answers 409 under the same code.)
  */
 export const CART_ALREADY_COMPLETED_STATUS = 400
 

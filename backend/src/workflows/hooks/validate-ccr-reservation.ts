@@ -16,9 +16,25 @@ import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
  *
  * So this fails closed. The reservation lifecycle can be exercised end to end
  * (apply, release) without risk, and the one transition that could take money
- * twice is bolted shut with an error that names exactly what is missing rather
- * than a generic refusal. Deleting this guard is the last step of wiring the
+ * twice is bolted shut. Deleting this guard is the last step of wiring the
  * tender, not an obstacle to it.
+ *
+ * It runs at both seams that complete carts: `completeCartWorkflow`'s
+ * validate hook, and the middleware in front of Mercur's main checkout
+ * (`api/middlewares/cart-completion-guards.ts`), whose workflow never calls
+ * that hook. The storefront shows the refusal's message to the buyer as it is
+ * (`storefront/src/lib/helpers/order-error-formatter.ts`), so it says what
+ * happened and what to do in plain words, with no ids and no API paths.
+ * Releasing the reservation is `DELETE /store/carts/:id/credits`.
+ *
+ * What it reads is the count the credits route writes into the cart's
+ * metadata, not the ledger, and a store client can overwrite cart metadata
+ * (`POST /store/carts/:id` takes `metadata`). A count that is not a finite
+ * number above zero is read as no reservation, so a cart whose count was
+ * overwritten with `"abc"` or `-1` completes at its full total while its
+ * credits stay in escrow (pinned in
+ * `integration-tests/http/main-checkout-guards.spec.ts`). The ledger escrow is
+ * the record; this guard is as good as the count.
  */
 export async function validateCcrReservation(
   args: CompleteCartValidateArgs,
@@ -53,10 +69,11 @@ export async function validateCcrReservation(
   const reserved = Number(metadata[CCR_RESERVATION_METADATA_KEY] ?? 0)
   if (!Number.isFinite(reserved) || reserved <= 0) return
 
+  const credits = `${reserved} Coalition Credit${reserved === 1 ? "" : "s"}`
   throw new MedusaError(
     MedusaError.Types.NOT_ALLOWED,
-    `This cart has ${reserved} Coalition Credits reserved, and credit tender is not yet wired into payment. ` +
-      `Completing it would charge the full total and consume the credits. ` +
-      `Release the reservation (DELETE /store/carts/${cartId}/credits) to check out with cash.`
+    `Your cart has ${credits} applied, but paying with Coalition Credits is not available yet, so checking out ` +
+      `now would charge the full price and use up the credits as well. Remove the credits from your cart, then ` +
+      `place your order again to pay the full price.`
   )
 }

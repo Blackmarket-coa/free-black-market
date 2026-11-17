@@ -5,6 +5,7 @@ import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadat
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
 import { SELLER_EXTENSION_MODULE } from "../modules/seller-extension"
 import SellerExtensionService from "../modules/seller-extension/service"
+import { listSellerMetadataRecords } from "../modules/seller-extension/metadata-service"
 
 /**
  * Subscriber: Seller Created
@@ -33,7 +34,7 @@ export default async function sellerCreatedHandler({
       SELLER_EXTENSION_MODULE
     )
 
-    const existingMetadata = await sellerExtensionService.listSellerMetadatas({
+    const existingMetadata = await listSellerMetadataRecords(sellerExtensionService, {
       seller_id: sellerId,
     })
 

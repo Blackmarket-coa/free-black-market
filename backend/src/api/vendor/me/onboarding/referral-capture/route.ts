@@ -2,11 +2,11 @@ import { createLogger } from "../../../../../shared/logger"
 import type { VendorRequest } from "../../../types"
 const log = createLogger("api/vendor/me/onboarding/referral-capture")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { TENANCY_MODULE } from "../../../../../modules/tenancy"
 import type TenancyModuleService from "../../../../../modules/tenancy/service"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../../modules/creator-attribution"
 import type CreatorAttributionService from "../../../../../modules/creator-attribution/service"
+import { sellerIdForVendorActor } from "../../../../../shared/seller-actor"
 
 /**
  * Capture an affiliate referral after a freshly-authenticated seller lands
@@ -21,24 +21,6 @@ import type CreatorAttributionService from "../../../../../modules/creator-attri
  * so the chain is automatically populated for every social-login signup
  * that arrived via an affiliate link.
  */
-
-async function resolveSellerId(
-  req: MedusaRequest,
-  actorId?: string
-): Promise<string | undefined> {
-  if (!actorId) return undefined
-  if (!actorId.startsWith("mem_")) return actorId
-  try {
-    const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-    const memberResult = await pgConnection.raw(
-      `SELECT seller_id FROM member WHERE id = ? LIMIT 1`,
-      [actorId]
-    )
-    return memberResult.rows?.[0]?.seller_id || actorId
-  } catch {
-    return actorId
-  }
-}
 
 function readCookie(req: MedusaRequest, name: string): string | null {
   const header = req.headers["cookie"]
@@ -58,7 +40,7 @@ type Body = {
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await resolveSellerId(req, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
   }

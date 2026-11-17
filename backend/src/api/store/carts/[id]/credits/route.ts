@@ -25,10 +25,22 @@ import type HawalaLedgerModuleService from "../../../../../modules/hawala-ledger
  * same shape as `vendor/creator/credits/withdraw`.
  *
  * Applying does NOT reduce the charge on its own. Credits are tender and the
- * payment-collection half is not built, so `completeCartWorkflow` refuses a
- * cart holding a reservation (`workflows/hooks/validate-ccr-reservation.ts`).
- * That is deliberate: the lifecycle is reachable and testable, and the
- * transition that could take money twice is bolted shut.
+ * payment-collection half is not built, so a cart holding a reservation is
+ * refused at completion (`workflows/hooks/validate-ccr-reservation.ts`):
+ * inside `completeCartWorkflow`'s validate hook, and in front of Mercur's main
+ * checkout, `POST /store/carts/:id/complete`, whose workflow never calls that
+ * hook (`api/middlewares/cart-completion-guards.ts`; until SD-72 (a) was
+ * closed a reserved cart completed there at its full total). That is
+ * deliberate: the lifecycle is reachable and testable, and the transition
+ * that could take money twice is bolted shut on every store route, while the
+ * count this route writes into the cart's metadata is intact. Both refusals
+ * read that count, and a store client can overwrite cart metadata too
+ * (`POST /store/carts/:id` takes `metadata`): a count that is not a positive
+ * number is read as no reservation, so such a cart completes at its full
+ * total with the credits left in escrow (measured in review: `"abc"` and
+ * `-1` complete, `"3.0"` is refused). The ledger escrow is the record, not
+ * the count. Medusa's generic admin workflow runner can still run Mercur's
+ * workflow directly, past that middleware.
  */
 
 const BodySchema = z.object({ credits: z.number().int().nonnegative() }).strict()

@@ -1,27 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { VendorRequest } from "../types"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../modules/creator-attribution"
 import type CreatorAttributionService from "../../../modules/creator-attribution/service"
-
-async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<string | undefined> {
-  if (!actorId) return undefined
-  if (!actorId.startsWith("mem_")) return actorId
-  try {
-    const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-    const memberResult = await pgConnection.raw(
-      `SELECT seller_id FROM member WHERE id = ? LIMIT 1`,
-      [actorId]
-    )
-    return memberResult.rows?.[0]?.seller_id || actorId
-  } catch {
-    return actorId
-  }
-}
+import { sellerIdForVendorActor } from "../../../shared/seller-actor"
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await resolveSellerId(req, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<CreatorAttributionService>(CREATOR_ATTRIBUTION_MODULE)
@@ -44,7 +29,7 @@ type Body = {
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await resolveSellerId(req, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const body = (req.validatedBody || req.body || {}) as Body

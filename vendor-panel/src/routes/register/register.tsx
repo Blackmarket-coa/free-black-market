@@ -12,6 +12,7 @@ import { PLAYBOOK_DISPLAY_NAMES } from "../../components/playbook/playbook-picke
 import type { PlaybookId } from "../../components/playbook/playbook-picker/recommend"
 import { useSignUpWithEmailPass } from "../../hooks/api"
 import { isFetchError } from "../../lib/is-fetch-error"
+import { ExistingAccountError } from "../../lib/register-or-sign-in"
 import { useState } from "react"
 
 // URL validation helper
@@ -126,6 +127,11 @@ export const Register = () => {
       },
       {
         onError: (error) => {
+          // The address already has a login and this is not its password.
+          if (error instanceof ExistingAccountError) {
+            form.setError("email", { type: "manual", message: t("register.existingAccount") })
+            return
+          }
           if (isFetchError(error) && error.status === 401) {
             form.setError("email", { type: "manual", message: error.message })
             return

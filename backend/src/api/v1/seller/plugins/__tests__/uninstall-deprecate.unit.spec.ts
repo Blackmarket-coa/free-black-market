@@ -55,13 +55,16 @@ const makeHarness = (
       ? { id: "pl_1", slug: "sales-analytics", status: "PUBLISHED", author_seller_id: "sel_123" }
       : opts.plugin
 
+  // The names the module has at runtime. The generated types declare plural
+  // names (`listSellerMetadatas`, ...) that do not exist, so a double that
+  // mocked those passed while production threw (SD-141).
   const sellerExt = {
-    listSellerMetadatas: async () => (meta ? [meta] : []),
-    updateSellerMetadatas: async (data: Record<string, unknown>) => {
+    listSellerMetadata: async () => (meta ? [meta] : []),
+    updateSellerMetadata: async (data: Record<string, unknown>) => {
       updated.push(data)
       return data
     },
-    createSellerMetadatas: async (data: Record<string, unknown>) => {
+    createSellerMetadata: async (data: Record<string, unknown>) => {
       created.push(data)
       return data
     },
