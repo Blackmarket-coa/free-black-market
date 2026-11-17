@@ -3,7 +3,7 @@ import path from "path"
 import type { HttpTypes } from "@medusajs/types"
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
  * The delivery step and Place order on a cart with two sellers.
@@ -193,9 +193,18 @@ describe("the delivery step", () => {
 describe("Place order", () => {
   const ready = (cart: HttpTypes.StoreCart) => ({
     ...cart,
-    // A manual session: its button renders without Stripe Elements.
+    // A manual session: its button renders without Stripe Elements. Only a
+    // development build offers one (lib/constants/payment-providers.ts).
     payment_collection: { id: "pay_col_1", payment_sessions: [{ id: "ps_1", provider_id: "pp_system_default", status: "pending", amount: 32 }] },
   }) as unknown as HttpTypes.StoreCart
+
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "development")
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
 
   it("waits on the measured cart and says which seller still needs a delivery option", () => {
     const html = renderToStaticMarkup(

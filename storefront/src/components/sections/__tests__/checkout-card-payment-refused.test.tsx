@@ -380,11 +380,17 @@ describe("the pay button when the card session is for another amount than the ca
   })
 
   it("leaves the manual provider's button alone", () => {
-    // It takes no money, so there is no amount to be wrong about.
-    const html = checkout(cartWith(13, [{ provider_id: MANUAL, amount: 20 }]), [CARD, MANUAL])
+    // It takes no money, so there is no amount to be wrong about. Only a
+    // development build offers it (lib/constants/payment-providers.ts).
+    vi.stubEnv("NODE_ENV", "development")
+    try {
+      const html = checkout(cartWith(13, [{ provider_id: MANUAL, amount: 20 }]), [CARD, MANUAL])
 
-    expect(html).toContain("Place order")
-    expect(html).not.toContain(AMOUNT_CHANGED)
+      expect(html).toContain("Place order")
+      expect(html).not.toContain(AMOUNT_CHANGED)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 

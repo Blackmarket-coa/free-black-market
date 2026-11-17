@@ -2,7 +2,7 @@ import type { HttpTypes } from "@medusajs/types"
 import * as React from "react"
 import { useContext } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
  * What the checkout shows a buyer for each payment provider id the backend
@@ -207,14 +207,30 @@ describe("checkout with a card session on the backend's Stripe provider", () => 
   })
 })
 
+// The manual provider places orders nobody pays for, so only a development
+// build offers it (lib/constants/payment-providers.ts); `next build` writes
+// "production" into the bundle, which is what the second case stands for.
 describe("checkout with the manual provider", () => {
-  it("offers Place order with no card form and no Stripe Elements", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("offers Place order with no card form and no Stripe Elements, in a development build", () => {
+    vi.stubEnv("NODE_ENV", "development")
     const html = checkout(cartWith([{ provider_id: MANUAL }]), [CARD, MANUAL])
 
     expect(html).toContain('data-elements="absent"')
     expect(html).not.toContain(CARD_FORM)
     expect(html).toContain(PLACE_ORDER)
     expect(html).not.toContain(NO_METHOD)
+  })
+
+  it("offers no Place order on a manual session in a production build", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const html = checkout(cartWith([{ provider_id: MANUAL }]), [CARD, MANUAL])
+
+    expect(html).not.toContain(PLACE_ORDER)
+    expect(html).toContain(NO_METHOD)
   })
 
   it("opens no session when the method is picked; the Continue button does", async () => {

@@ -1,7 +1,7 @@
 "use client"
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
-import { isManual, isStripe } from "../../../lib/constants"
+import { isManual, isStripe, offeredAtCheckout } from "../../../lib/constants"
 import {
   placeOrder,
   placeTicketOrder,
@@ -150,7 +150,12 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
           data-testid={dataTestId}
         />
       )
-    case isManual(paymentSession?.provider_id):
+    // A manual session places an order nobody pays for. The payment step lists
+    // the provider only in a development build; a session on it that reaches
+    // a production page anyway (opened through the API, or before this
+    // change) gets the disabled button below.
+    case isManual(paymentSession?.provider_id) &&
+      offeredAtCheckout(paymentSession?.provider_id, process.env.NODE_ENV):
       return (
         <ManualTestPaymentButton
           notReady={notReady}
