@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { deletedBody, ownedLot } from "../../_access"
+import { deletedBody, dismissLinksBeforeDelete, ownedLot } from "../../_access"
 import { definedFields } from "../../../../../shared/defined-fields"
 
 // Type for agriculture service methods
@@ -173,6 +173,10 @@ export async function DELETE(
     const owned = await ownedLot(req, res, lotId)
     if (!owned) return
 
+    // Deleting the lot deletes its availability windows in the database (ON
+    // DELETE CASCADE); their product links are dismissed first, so none
+    // dangles (`dismissLinksBeforeDelete`).
+    await dismissLinksBeforeDelete(req, { lotIds: [lotId] })
     await agricultureService.deleteLots(lotId)
 
     // Medusa's deletion body. A 204 with no body made the panel's SDK, which

@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { buildFarmHarvestConsistencyIssues } from "../../consistency"
 import { forbidden } from "../../../../../shared/community-read-access"
-import { deletedBody, lotsByHarvest, ownedHarvest } from "../../_access"
+import { deletedBody, dismissLinksBeforeDelete, lotsByHarvest, ownedHarvest } from "../../_access"
 import { definedFields } from "../../../../../shared/defined-fields"
 
 // Type for agriculture service methods
@@ -196,8 +196,15 @@ export async function DELETE(
     const owned = await ownedHarvest(req, res, harvestId)
     if (!owned) return
 
-    // Deletes the harvest row only: the models define no relation, so its
-    // lots are not cascaded.
+    // Deleting the harvest deletes its lots and their availability windows in
+    // the database (ON DELETE CASCADE); their link rows are dismissed first,
+    // so none dangles (`dismissLinksBeforeDelete`).
+    const query = req.scope.resolve("query")
+    const { data: lots } = await query.graph({ entity: "lot", fields: ["id"], filters: { harvest_id: harvestId } })
+    await dismissLinksBeforeDelete(req, {
+      harvest: owned.harvest,
+      lotIds: (lots ?? []).map((l: { id: string }) => l.id),
+    })
     await agricultureService.deleteHarvests(harvestId)
 
     // Medusa's deletion body. A 204 with no body made the panel's SDK, which

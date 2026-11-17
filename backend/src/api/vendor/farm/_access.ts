@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { AGRICULTURE_MODULE } from "../../../modules/agriculture"
 import { PRODUCER_MODULE } from "../../../modules/producer"
 import { forbidden } from "../../../shared/community-read-access"
 import { getSellerId } from "../quests/_helpers"
@@ -146,6 +147,46 @@ export async function lotsByHarvest(
     byHarvest.set(harvestId, [...(byHarvest.get(harvestId) ?? []), lot])
   }
   return byHarvest
+}
+
+type LinkDismisser = { dismiss: (links: Record<string, unknown> | Array<Record<string, unknown>>) => Promise<unknown> }
+
+/**
+ * Dismiss the link rows a delete would leave behind.
+ *
+ * Deleting a harvest deletes its lots, and deleting a lot deletes its
+ * availability windows, in the database itself (`lot_harvest_fk` and
+ * `availability_window_lot_fk` are ON DELETE CASCADE; measured in review).
+ * The producer-harvest and product-window link rows live in their own tables
+ * and are not touched by that, so they are dismissed first: none is left
+ * naming a record that is gone.
+ */
+export async function dismissLinksBeforeDelete(
+  req: MedusaRequest,
+  scope: { harvest?: OwnedHarvest; lotIds: string[] }
+): Promise<void> {
+  const query = req.scope.resolve<QueryGraph>(ContainerRegistrationKeys.QUERY)
+  const link = req.scope.resolve<LinkDismisser>(ContainerRegistrationKeys.LINK)
+  if (scope.lotIds.length) {
+    const { data: windows } = await query.graph({
+      entity: "availability_window",
+      fields: ["id", "product_id"],
+      filters: { lot_id: scope.lotIds },
+    })
+    const productLinks = (windows ?? [])
+      .filter((w) => typeof w.product_id === "string" && w.product_id)
+      .map((w) => ({
+        [Modules.PRODUCT]: { product_id: String(w.product_id) },
+        [AGRICULTURE_MODULE]: { availability_window_id: String(w.id) },
+      }))
+    if (productLinks.length) await link.dismiss(productLinks)
+  }
+  if (scope.harvest) {
+    await link.dismiss({
+      [PRODUCER_MODULE]: { producer_id: scope.harvest.producer_id },
+      [AGRICULTURE_MODULE]: { harvest_id: scope.harvest.id },
+    })
+  }
 }
 
 /** What a farm DELETE answers: Medusa's deletion body, which the panel's SDK parses. */
