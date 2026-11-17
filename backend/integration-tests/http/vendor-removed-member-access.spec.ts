@@ -4,6 +4,8 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { createSellerWorkflow, deleteMemberWorkflow } from "@mercurjs/b2c-core/workflows"
 import { PLAYBOOK_MODULE } from "../../src/modules/playbook"
+import { REQUEST_MODULE } from "../../src/modules/request"
+import backfillSellerAuth from "../../src/scripts/backfill-seller-auth"
 import seedPlaybooks from "../../src/scripts/seed-playbooks"
 import {
   firstLiveMemberIdOf,
@@ -30,7 +32,14 @@ jest.setTimeout(240 * 1000)
  * store's playbook. `/v1/seller/**` took any member row and any `sel_` id, so
  * a member of a closed store still got 200 there.
  *
- * Members are removed with Mercur's own deleteMemberWorkflow. Spends 9 of the
+ * The seller-auth backfill (POST /admin/backfill-seller-auth and its script)
+ * links an unlinked login to its member, as Mercur does, never through a
+ * removed member or to a closed store. It wrote the seller id, which acts as
+ * the store's owner, and matched removed members: after approval cleared a
+ * removed member's link and then failed on a name clash, it handed the store
+ * back as its owner (follow-up review, measured on Postgres).
+ *
+ * Members are removed with Mercur's own deleteMemberWorkflow. Spends 11 of the
  * auth limiter's 20 a minute (seller register and sign-ins).
  */
 
@@ -100,6 +109,54 @@ medusaIntegrationTestRunner({
     ]
     const playbookOf = async (sellerId: string) =>
       container().resolve(PLAYBOOK_MODULE).listPlaybookAssignments({ seller_id: sellerId })
+    const linkOf = async (authIdentityId: string) =>
+      ((await container().resolve(Modules.AUTH).listAuthIdentities({ id: [authIdentityId] }))[0]?.app_metadata ?? {}).seller_id
+
+    /** A login made through the auth module, so it spends none of the limiter. */
+    async function plainLogin(prefix: string) {
+      const email = `${prefix}-${uid()}@example.com`
+      const password = `Pw-${uid()}-Aa1!`
+      const auth = container().resolve(Modules.AUTH)
+      await auth.register("emailpass", { body: { email, password } } as any)
+      const [provider] = await auth.listProviderIdentities({ entity_id: email, provider: "emailpass" })
+      return { email, password, authIdentityId: provider.auth_identity_id as string }
+    }
+
+    /** A store made the way approval makes one: Mercur links its owner's login to the owner member. */
+    async function storeOf(name: string) {
+      const owner = await plainLogin("owner")
+      const { result: store } = await createSellerWorkflow.run({
+        container: container(),
+        input: { auth_identity_id: owner.authIdentityId, member: { name: "Owner", email: owner.email }, seller: { name } } as any,
+      })
+      const [ownerMember] = await container().resolve(SELLER_MODULE).listMembers({ seller_id: store.id })
+      return { owner, ownerMemberId: ownerMember.id as string, store: store as { id: string; name: string; handle: string } }
+    }
+
+    /** A member row with no login linked to it: what the backfill exists for. */
+    async function unlinkedMember(store: { id: string }, prefix: string) {
+      const login = await plainLogin(prefix)
+      const [member] = await container()
+        .resolve(SELLER_MODULE)
+        .createMembers([{ seller_id: store.id, name: prefix, email: login.email, role: "member" }])
+      return { ...login, memberId: member.id as string }
+    }
+
+    async function adminToken() {
+      const admin = await plainLogin("admin")
+      const [user] = await container().resolve(Modules.USER).createUsers([{ email: admin.email }])
+      await container().resolve(Modules.AUTH).updateAuthIdentities([{ id: admin.authIdentityId, app_metadata: { user_id: user.id } }])
+      return jwt.sign(
+        { actor_id: user.id, actor_type: "user", auth_identity_id: admin.authIdentityId, app_metadata: { user_id: user.id } },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "1h" }
+      )
+    }
+    const backfill = async () => call(api.post("/admin/backfill-seller-auth", {}, bearer(await adminToken())))
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
 
     describe("a member removed from a store", () => {
       it("is refused on every route, with a token from before the removal and with a fresh sign-in", async () => {
@@ -192,6 +249,77 @@ medusaIntegrationTestRunner({
           expect({ who, status: installed.status }).toEqual({ who, status: 401 })
         }
         expect(await playbookOf(store.id)).toEqual([])
+      })
+    })
+
+    describe("the seller-auth backfill", () => {
+      it("links an invited member's login to that member, and the login then acts as it, not as the owner", async () => {
+        const { owner, ownerMemberId, store } = await storeOf(`Backfill Farm ${uid()}`)
+        const invited = await unlinkedMember(store, "invited")
+
+        const res = await backfill()
+        expect(res.status).toBe(200)
+        expect(res.data.summary).toMatchObject({ updated: 1, errors: 0 })
+        expect(await linkOf(invited.authIdentityId)).toBe(invited.memberId)
+        expect(await linkOf(owner.authIdentityId)).toBe(ownerMemberId)
+
+        const token = await signIn(invited)
+        expect(jwt.decode(token)).toMatchObject({ actor_id: invited.memberId })
+        const me = await api.get("/vendor/me", bearer(token))
+        expect(me.data.member).toMatchObject({ id: invited.memberId, role: "member", seller_id: store.id })
+        const profile = await api.get("/vendor/sellers/me", bearer(token))
+        expect(profile.data.seller.id).toBe(store.id)
+      })
+
+      it("does not hand a removed member its old store back after approval cleared its link and then failed", async () => {
+        // The follow-up review's sequence: a removed member files; approval
+        // clears the stale link, then fails on a name clash; the backfill used
+        // to write the old store's seller id onto the now unlinked login, and
+        // /vendor/me gave the owner's member.
+        const { store } = await storeOf(`Old Farm ${uid()}`)
+        const removed = await teamMember(store, "removed")
+        await deleteMemberWorkflow.run({ container: container(), input: removed.memberId })
+        const { store: taken } = await storeOf(`Taken Farm ${uid()}`)
+        const [row] = await container().resolve(REQUEST_MODULE).createRequests([
+          {
+            type: "seller",
+            status: "pending",
+            submitter_id: removed.authIdentityId,
+            data: { auth_identity_id: removed.authIdentityId, member: { name: "Removed", email: removed.email }, seller: { name: taken.name }, vendor_type: "general" },
+          },
+        ])
+        jest.spyOn(container().resolve(Modules.NOTIFICATION), "createNotifications").mockResolvedValue([] as any)
+
+        const refused = await call(api.post(`/admin/requests/${row.id}/approve`, {}, bearer(await adminToken())))
+        expect(refused.status).toBe(409)
+        expect(refused.data.message).toContain(`gives the web address "${taken.handle}", which another store already uses`)
+        expect(await linkOf(removed.authIdentityId)).toBeUndefined()
+
+        const res = await backfill()
+        expect(res.status).toBe(200)
+        expect(await linkOf(removed.authIdentityId)).toBeUndefined()
+
+        const token = await signIn(removed)
+        const me = await call(api.get("/vendor/me", bearer(token)))
+        expect(me.status).toBe(403)
+        expect(JSON.stringify(me.data)).not.toContain(store.id)
+      })
+
+      it("the script links the same way, and skips removed members and closed stores", async () => {
+        const { store } = await storeOf(`Script Farm ${uid()}`)
+        const invited = await unlinkedMember(store, "invited")
+        const removed = await unlinkedMember(store, "removed")
+        await deleteMemberWorkflow.run({ container: container(), input: removed.memberId })
+        const { store: closed } = await storeOf(`Shut Farm ${uid()}`)
+        const closedMember = await unlinkedMember(closed, "closedmember")
+        await container().resolve(SELLER_MODULE).softDeleteSellers([closed.id])
+        jest.spyOn(console, "log").mockImplementation(() => undefined)
+
+        await backfillSellerAuth({ container: container(), args: [] } as any)
+
+        expect(await linkOf(invited.authIdentityId)).toBe(invited.memberId)
+        expect(await linkOf(removed.authIdentityId)).toBeUndefined()
+        expect(await linkOf(closedMember.authIdentityId)).toBeUndefined()
       })
     })
 
