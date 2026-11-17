@@ -470,7 +470,7 @@ export class SellerApprovalService {
             log.warn(`[SellerApproval] Refused request ${requestId}: a store already has the handle "${handle}"`)
             throw new SellerApprovalRefusedError(
               409,
-              `A store named "${data.seller.name}" already exists, so this application cannot be approved. Nothing was created or linked. Reject it, then ask the applicant to apply again with another store name.`
+              `The store name "${data.seller.name}" gives the web address "${handle}", which another store already uses, so this application cannot be approved. Nothing was created or linked. Reject it, then ask the applicant to apply again with another store name.`
             )
           }
           log.error(`[SellerApproval] Workflow execution failed:`, workflowError.message)

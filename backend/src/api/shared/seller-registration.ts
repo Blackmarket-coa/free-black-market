@@ -180,9 +180,12 @@ export const handleSellerRegistration = async (
       filters: { handle },
     })
     if (sameHandle.length > 0) {
+      // Named by its web address: names that differ only outside a-z and 0-9
+      // share one ("Ферма 1" and "Магазин 1" both make "-1"), and "a store
+      // named ... already exists" was false for the second.
       return res.status(409).json({
         type: "conflict",
-        message: `A store named "${body.name}" already exists. Choose another store name.`,
+        message: `The store name "${body.name}" gives the web address "${handle}", which another store already uses. Choose another store name.`,
       })
     }
 

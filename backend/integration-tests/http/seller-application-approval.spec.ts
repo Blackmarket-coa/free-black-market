@@ -33,8 +33,11 @@ jest.setTimeout(240 * 1000)
  * store name with no Latin letter or digit is refused, at filing and at
  * approval, because its handle would have none.
  *
+ * A name whose handle another store has is refused naming that handle, the
+ * store's web address: names that differ only outside a-z and 0-9 share one.
+ *
  * Approvals go through POST /admin/requests/:id/approve with an admin token;
- * the filings spend 12 of the auth limiter's 20 a minute.
+ * the filings spend 13 of the auth limiter's 20 a minute.
  */
 
 medusaIntegrationTestRunner({
@@ -173,7 +176,9 @@ medusaIntegrationTestRunner({
 
         const refused = await approve(filed.id)
         expect(refused.status).toBe(409)
-        expect(refused.data.message).toMatch(/already exists/)
+        expect(refused.data.message).toContain(
+          `The store name "${store.name}" gives the web address "${store.handle}", which another store already uses, so this application cannot be approved.`
+        )
 
         expect(await requestStatus(filed.id)).toBe("pending")
         expect(await linkedSeller(applicant.authIdentityId)).toBeUndefined()
@@ -516,8 +521,39 @@ medusaIntegrationTestRunner({
           )
         )
         expect(refused.status).toBe(409)
-        expect(refused.data.message).toMatch(/Choose another store name/)
+        expect(refused.data.message).toBe(
+          `The store name "${store.name.toUpperCase()}!" gives the web address "${store.handle}", which another store already uses. Choose another store name.`
+        )
         expect(await container().resolve(REQUEST_MODULE).listRequests({})).toHaveLength(0)
+      })
+
+      it("two names that share a web address: the second is told the address is taken, not that a store has its name", async () => {
+        // «Ферма 1» and «Магазин 1» both make the handle "-1". The second used
+        // to be told "A store named «Магазин 1» already exists".
+        const owner = await login("owner")
+        const store = await storeFor(owner, "Ферма 1")
+        expect(store.handle).toBe("-1")
+        const mail = stubMail()
+
+        const applicant = await login("applicant")
+        const refused = await file(applicant, "Магазин 1")
+        expect(refused.status).toBe(409)
+        expect(refused.data).toEqual({
+          type: "conflict",
+          message: 'The store name "Магазин 1" gives the web address "-1", which another store already uses. Choose another store name.',
+        })
+
+        // A row filed before «Ферма 1» took the address.
+        const earlier = await login("earlier")
+        const row = await application(earlier, "Магазин 1")
+        const notApproved = await approve(row.id)
+        expect(notApproved.status).toBe(409)
+        expect(notApproved.data.message).toBe(
+          'The store name "Магазин 1" gives the web address "-1", which another store already uses, so this application cannot be approved. Nothing was created or linked. Reject it, then ask the applicant to apply again with another store name.'
+        )
+        expect(await requestStatus(row.id)).toBe("pending")
+        expect(await linkedSeller(earlier.authIdentityId)).toBeUndefined()
+        expect(mail).not.toHaveBeenCalled()
       })
 
       it("a store name with no Latin letter or digit is refused with a message that says why, and nothing is filed", async () => {
