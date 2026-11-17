@@ -59,6 +59,7 @@ vi.mock("@/lib/data/attribution", () => ({
 }))
 
 import {
+  addToCart,
   applyPromotions,
   deleteLineItem,
   deletePromotionCode,
@@ -73,11 +74,14 @@ import {
   updateCart,
   updateLineItem,
 } from "@/lib/data/cart"
+import { ALREADY_PLACED_GUEST_MESSAGE } from "@/lib/helpers/cart-completion"
 
 const authed = { Authorization: "Bearer t" }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  // Reset, not clear: a test that makes a mock reject (the cookie write a page
+  // render refuses) must not leave it rejecting for the tests after it.
+  vi.resetAllMocks()
   h.getAuthHeaders.mockResolvedValue(authed)
   h.getCacheTag.mockResolvedValue("tag")
   h.getCacheOptions.mockResolvedValue({})
@@ -99,6 +103,65 @@ describe("retrieveCart", () => {
   it("returns null when the fetch throws", async () => {
     h.medusaFetch.mockRejectedValue(new Error("boom"))
     await expect(retrieveCart("cart_x")).resolves.toBeNull()
+  })
+})
+
+/**
+ * A completed cart left in the cookie. Measured on Postgres by the checkout
+ * scout: after the order, `GET /store/carts/:id` still answers 200 with the
+ * lines, and adding a line answers 400 "Cart … is already completed." The
+ * storefront went on showing that cart, and every add to cart failed, for
+ * the cookie's seven days.
+ */
+describe("a completed cart in the cookie", () => {
+  const completed = {
+    id: "cart_1",
+    region_id: "reg_us",
+    completed_at: "2026-11-17T12:00:00.000Z",
+    items: [{ id: "li_1", variant_id: "variant_1", quantity: 1 }],
+  }
+
+  it("is no cart: retrieveCart answers null and drops the cookie that holds it", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: completed })
+
+    await expect(retrieveCart()).resolves.toBeNull()
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+  })
+
+  it("leaves the cookie alone when it holds another cart", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: { ...completed, id: "cart_old" } })
+
+    await expect(retrieveCart("cart_old")).resolves.toBeNull()
+    expect(h.removeCartId).not.toHaveBeenCalled()
+  })
+
+  it("still reads as no cart while a page renders, where Next.js refuses to write cookies", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: completed })
+    h.removeCartId.mockRejectedValue(
+      new Error("Cookies can only be modified in a Server Action or Route Handler.")
+    )
+
+    await expect(retrieveCart()).resolves.toBeNull()
+  })
+
+  it("is replaced by a new cart when the buyer adds to cart, and the new line goes on the new cart", async () => {
+    h.getRegion.mockResolvedValue({ id: "reg_us" })
+    h.medusaFetch.mockResolvedValue({ cart: completed })
+    h.cartCreate.mockResolvedValue({ cart: { id: "cart_new", region_id: "reg_us", items: [] } })
+    h.cartCreateLineItem.mockResolvedValue({ cart: { id: "cart_new" } })
+
+    await addToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+
+    expect(h.cartCreate).toHaveBeenCalledWith({ region_id: "reg_us" }, {}, authed)
+    expect(h.setCartId).toHaveBeenCalledWith("cart_new")
+    // A new line on the new cart, not a quantity bump on the completed one.
+    expect(h.cartUpdateLineItem).not.toHaveBeenCalled()
+    expect(h.cartCreateLineItem).toHaveBeenCalledWith(
+      "cart_new",
+      { variant_id: "variant_1", quantity: 1 },
+      {},
+      authed
+    )
   })
 })
 
@@ -333,6 +396,106 @@ describe("placeOrder", () => {
     await placeOrder("cart_1")
     expect(h.removeCartId).toHaveBeenCalled()
     expect(h.redirect).toHaveBeenCalledWith("/order/order_1/confirmed")
+  })
+
+  it("drops the cookie before it redirects: a redirect throws, so nothing after it runs", async () => {
+    const order: string[] = []
+    h.removeCartId.mockImplementation(async () => {
+      order.push("forget")
+    })
+    h.redirect.mockImplementation(() => {
+      order.push("redirect")
+    })
+    h.fetchQuery.mockResolvedValue({ data: { order_set: { orders: [{ id: "order_1" }] } } })
+
+    await placeOrder("cart_1")
+
+    expect(order).toEqual(["forget", "redirect"])
+  })
+})
+
+/**
+ * The main checkout's 409s (backend SD-147). Their bodies as
+ * `backend/src/api/middlewares/cart-completion-guards.ts` and
+ * `backend/src/lib/cart-completion.ts` write them, as fetchQuery hands them on.
+ */
+describe("placeOrder on the main checkout's 409s", () => {
+  const ALREADY_PLACED_MESSAGE =
+    "Your order for this cart has already been placed. You can find it under Orders in your account, or in your order confirmation email."
+  const INCOMPLETE_MESSAGE =
+    "Your order could not be completed, and no payment was taken. If your card shows a pending authorization, it will be released. Please try again, or contact support if it happens again."
+  const CHECK_FAILED_MESSAGE =
+    "Your order was not placed, because we could not check your cart just now. Please try again in a moment."
+
+  const refusal = (error: Record<string, unknown>) => ({
+    ok: false,
+    status: 409,
+    requestId: null,
+    data: null,
+    error: { type: error.code, requestId: null, ...error },
+  })
+
+  it("sends the buyer to the order a cart already became, and forgets the cart", async () => {
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE, orderId: "order_9" })
+    )
+
+    await placeOrder()
+
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+    expect(h.redirect).toHaveBeenCalledWith("/order/order_9/confirmed")
+    expect(h.revalidatePath).toHaveBeenCalledWith("/user/orders")
+  })
+
+  it("sends a signed-in buyer to the confirmation page too: the account's order page is keyed by order set, which that order has none of", async () => {
+    h.getAuthHeaders.mockResolvedValue(authed)
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE, orderId: "order_9" })
+    )
+
+    await placeOrder()
+
+    expect(h.redirect).toHaveBeenCalledWith("/order/order_9/confirmed")
+  })
+
+  it("tells a guest where the order is without pointing at an account they do not have, when no order is named", async () => {
+    h.getAuthHeaders.mockResolvedValue(null)
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE })
+    )
+
+    const res = await placeOrder()
+
+    expect(h.redirect).not.toHaveBeenCalled()
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+    expect(res?.error?.message).toBe(ALREADY_PLACED_GUEST_MESSAGE)
+    expect(res?.error?.message).not.toMatch(/account/i)
+    expect(res?.error?.code).toBe("cart_already_completed")
+  })
+
+  it("keeps the backend's wording for a signed-in buyer when no order is named", async () => {
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE })
+    )
+
+    const res = await placeOrder()
+
+    expect(res?.error?.message).toBe(ALREADY_PLACED_MESSAGE)
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ["cart_completion_incomplete", INCOMPLETE_MESSAGE],
+    ["cart_completion_check_failed", CHECK_FAILED_MESSAGE],
+  ])("on %s shows the message and keeps the cart, so the buyer can try again", async (code, message) => {
+    const answer = refusal({ code, message })
+    h.fetchQuery.mockResolvedValue(answer)
+
+    const res = await placeOrder()
+
+    expect(res).toEqual(answer)
+    expect(h.removeCartId).not.toHaveBeenCalled()
+    expect(h.redirect).not.toHaveBeenCalled()
   })
 })
 

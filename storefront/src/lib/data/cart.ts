@@ -18,11 +18,40 @@ import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
 import { applyAttributionToCart } from "./attribution"
 import { applyBookingToCart } from "./booking"
 import { CART_FIELDS } from "./cart-query"
+import {
+  ALREADY_PLACED_GUEST_MESSAGE,
+  CART_ALREADY_COMPLETED,
+  orderConfirmationPath,
+} from "@/lib/helpers/cart-completion"
+
+/**
+ * Drops the cart cookie when it still names `cartId`, so the next add to cart
+ * starts a new cart instead of writing to this one.
+ *
+ * Best effort by design: Next.js lets only a Server Action or a Route Handler
+ * write cookies, and `retrieveCart` also runs while a page renders, where the
+ * write throws. There the completed cart is simply treated as no cart, and
+ * the next Server Action that reads it (an add to cart) replaces the cookie.
+ */
+async function forgetCart(cartId: string) {
+  try {
+    if ((await getCartId()) === cartId) {
+      await removeCartId()
+    }
+  } catch {
+    // A page render: cookies are read-only there. See above.
+  }
+}
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
+ *
+ * A cart with `completed_at` is no cart: it is already an order, the backend
+ * refuses every change to it ("Cart … is already completed."), and the cookie
+ * holding it would otherwise last its full seven days. It is answered as null,
+ * and the cookie is dropped where Next.js allows it (`forgetCart`).
  * @param cartId - optional - The ID of the cart to retrieve.
- * @returns The cart object if found, or null if not found.
+ * @returns The cart object if found and still open, or null.
  */
 export async function retrieveCart(cartId?: string) {
   const id = cartId || (await getCartId())
@@ -35,7 +64,7 @@ export async function retrieveCart(cartId?: string) {
     ...(await getAuthHeaders()),
   }
 
-  return await medusaFetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
+  const cart = await medusaFetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
     method: "GET",
     query: {
       fields: CART_FIELDS,
@@ -45,8 +74,20 @@ export async function retrieveCart(cartId?: string) {
   })
     .then(({ cart }) => cart)
     .catch(() => null)
+
+  if (cart?.completed_at) {
+    await forgetCart(id)
+    return null
+  }
+
+  return cart
 }
 
+/**
+ * The visitor's open cart, created when there is none. A completed cart in
+ * the cookie reads as none (`retrieveCart`), so it is replaced here with a new
+ * one rather than written to.
+ */
 export async function getOrSetCart(countryCode: string) {
   const region = await getRegion(countryCode)
 
@@ -545,8 +586,20 @@ export async function setAddresses(
 
 /**
  * Places an order for a cart. If no cart ID is provided, it will use the cart ID from the cookies.
+ *
+ * What the main checkout answers (lib/helpers/cart-completion.ts):
+ * - an order set: the order is placed. The cart is forgotten and the buyer
+ *   is sent to the confirmation page.
+ * - 409 `cart_already_completed`: the cart was already an order, placed on
+ *   another path. It is forgotten too, and the buyer is sent to that order
+ *   when the answer names it (`order_id`); otherwise the message is returned,
+ *   in guest wording for a buyer who is not signed in.
+ * - anything else (409 `cart_completion_incomplete`,
+ *   `cart_completion_check_failed`, a guard's 400): nothing was placed. The
+ *   response is returned for the button to show its message, and the cart is
+ *   kept so that the buyer can try again.
  * @param cartId - optional - The ID of the cart to place an order for.
- * @returns The cart object if the order was successful, or null if not.
+ * @returns The completion response when the buyer is not sent anywhere.
  */
 export async function placeOrder(cartId?: string) {
   const id = cartId || (await getCartId())
@@ -570,8 +623,19 @@ export async function placeOrder(cartId?: string) {
   if (res?.data?.order_set) {
     revalidatePath("/user/reviews")
     revalidatePath("/user/orders")
-    removeCartId()
-    redirect(`/order/${res?.data?.order_set.orders[0].id}/confirmed`)
+    await forgetCart(id)
+    return redirect(orderConfirmationPath(res.data.order_set.orders[0].id))
+  }
+
+  if (res?.error?.code === CART_ALREADY_COMPLETED) {
+    revalidatePath("/user/orders")
+    await forgetCart(id)
+    if (res.error.orderId) {
+      return redirect(orderConfirmationPath(res.error.orderId))
+    }
+    if (!("Authorization" in headers)) {
+      return { ...res, error: { ...res.error, message: ALREADY_PLACED_GUEST_MESSAGE } }
+    }
   }
 
   return res
@@ -608,8 +672,8 @@ export async function placeTicketOrder(cartId?: string) {
   if (res?.data?.order?.id) {
     revalidatePath("/user/reviews")
     revalidatePath("/user/orders")
-    removeCartId()
-    redirect(`/order/${res.data.order.id}/confirmed`)
+    await forgetCart(id)
+    return redirect(orderConfirmationPath(res.data.order.id))
   }
 
   return res
