@@ -7,7 +7,7 @@ import useGetAllSearchParams from "@/hooks/useGetAllSearchParams"
 import { getProductPrice } from "@/lib/helpers/get-product-price"
 import { purchasableQuantity } from "@/lib/helpers/variant-stock"
 import { useState } from "react"
-import { addToCart } from "@/lib/data/cart"
+import { tryAddToCart } from "@/lib/data/cart"
 import { Chat } from "@/components/organisms/Chat/Chat"
 import { SellerProps } from "@/types/seller"
 import { WishlistButton } from "../WishlistButton/WishlistButton"
@@ -115,20 +115,26 @@ export const ProductDetailsHeader = ({
       if (!isVariantStockMaxLimitReached) {
         onAddToCart(storeCartLineItem, variantPrice?.currency_code || "eur")
       }
-      await addToCart({
+      // The backend's reason when it refuses (stock, a price missing in the
+      // region, a seller not taking orders), not one guess for every refusal.
+      const result = await tryAddToCart({
         variantId: variantId,
         quantity: 1,
         countryCode: locale,
       })
-      // Success feedback for user
-      toast.success({
-        title: "Added to cart!",
-        description: `${product.title} has been added to your cart`,
-      })
-    } catch (error) {
+      if (result.ok) {
+        toast.success({
+          title: "Added to cart!",
+          description: `${product.title} has been added to your cart`,
+        })
+      } else {
+        toast.error({ title: "Error adding to cart", description: result.error })
+      }
+    } catch {
+      // The request itself failed (offline, the server unreachable).
       toast.error({
         title: "Error adding to cart",
-        description: "Some variant does not have the required inventory",
+        description: "This item could not be added to your cart. Please try again.",
       })
     } finally {
       setIsAdding(false)

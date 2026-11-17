@@ -281,6 +281,35 @@ export async function addToCart({
   }
 }
 
+/** What `tryAddToCart` hands a page. */
+export type AddToCartResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * `addToCart` for a page that tells the buyer why adding failed: the outcome
+ * as data, with the backend's message ("Some variant does not have the
+ * required inventory.", a price missing in the region, ...).
+ *
+ * Returned, not thrown, because an error a Server Action throws reaches a
+ * production page without its message: React replaces it with "An error
+ * occurred in the Server Components render…", so a page that catches it can
+ * only guess. `addToCart` itself still throws, for the server-side callers
+ * that pass the failure on (the subscription and order-cycle flows).
+ */
+export async function tryAddToCart(
+  input: Parameters<typeof addToCart>[0]
+): Promise<AddToCartResult> {
+  try {
+    await addToCart(input)
+    return { ok: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message.trim() : ""
+    return {
+      ok: false,
+      error: message || "This item could not be added to your cart. Please try again.",
+    }
+  }
+}
+
 export async function updateLineItem({
   lineId,
   quantity,

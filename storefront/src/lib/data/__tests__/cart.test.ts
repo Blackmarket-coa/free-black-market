@@ -71,6 +71,7 @@ import {
   retrieveCart,
   setCartTier,
   setShippingMethod,
+  tryAddToCart,
   updateCart,
   updateLineItem,
 } from "@/lib/data/cart"
@@ -162,6 +163,32 @@ describe("a completed cart in the cookie", () => {
       {},
       authed
     )
+  })
+})
+
+describe("tryAddToCart (the product page's add to cart)", () => {
+  beforeEach(() => {
+    h.getRegion.mockResolvedValue({ id: "reg_us" })
+    h.medusaFetch.mockResolvedValue({ cart: { id: "cart_1", region_id: "reg_us", items: [] } })
+  })
+
+  it("answers ok when the line is added", async () => {
+    h.cartCreateLineItem.mockResolvedValue({ cart: { id: "cart_1" } })
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: true })
+  })
+
+  it("hands back the backend's message instead of throwing it, so a production page can show it", async () => {
+    h.cartCreateLineItem.mockRejectedValue({
+      status: 400,
+      response: { data: { message: "Variants with IDs variant_1 do not have a price" } },
+    })
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: "Variants with IDs variant_1 do not have a price." })
   })
 })
 
