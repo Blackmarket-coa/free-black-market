@@ -22,11 +22,24 @@ export default function CartPromotionCode({
       if (res) {
         toast.success({ title: "Promotion code applied" })
       } else {
-        toast.error({ title: "Promotion code not found" })
+        // The backend knows the code (an unknown one is refused, below) but
+        // it took nothing off this cart, so Medusa did not keep it. A code
+        // for shipping always lands here on this page: no delivery option is
+        // chosen yet, and the code is not tried again once one is.
+        toast.error({
+          title: "This code doesn't apply to your cart",
+          description: "It was not added. Check what the code is for, or try another one.",
+        })
       }
       setPromotionCode("")
     } catch (err) {
+      // An unknown code ("The promotion code … is invalid"), or the request
+      // failed. Said to the buyer: this used to go to the log only.
       logger.info(err)
+      toast.error({
+        title: "We couldn't apply that code",
+        description: "Check the code and try again.",
+      })
     } finally {
       setIsLoading(false)
     }
