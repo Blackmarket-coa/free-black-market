@@ -37,7 +37,7 @@ jest.setTimeout(240 * 1000)
  * store's web address: names that differ only outside a-z and 0-9 share one.
  *
  * Approvals go through POST /admin/requests/:id/approve with an admin token;
- * the filings spend 13 of the auth limiter's 20 a minute.
+ * the filings spend 14 of the auth limiter's 20 a minute.
  */
 
 medusaIntegrationTestRunner({
@@ -411,6 +411,30 @@ medusaIntegrationTestRunner({
         // The store it was removed from is as it was.
         expect(await sellersWithHandle(liveStore.name)).toEqual([expect.objectContaining({ id: liveStore.id })])
         expect(await metadataOf(liveStore.id)).toEqual(metadataBefore)
+      })
+
+      it("a removed member whose login holds the store's seller id files, and is approved onto a store of its own", async () => {
+        // A seller id acts only as the live member of that store at the
+        // login's address; with that member removed it names no store of
+        // this login's, like a removed member's id. The old seller-auth
+        // backfill wrote seller ids for invited members.
+        const owner = await login("owner")
+        const liveStore = await storeFor(owner, `Kept Farm ${uid()}`)
+        const removed = await login("removed")
+        const member = await acceptInvite(removed, liveStore)
+        await container().resolve(Modules.AUTH).updateAuthIdentities([{ id: removed.authIdentityId, app_metadata: { seller_id: liveStore.id } }])
+        await deleteMemberWorkflow.run({ container: container(), input: member.id })
+
+        stubMail()
+        const storeName = `Fresh Start Farm ${uid()}`
+        const filed = await file(removed, storeName)
+        expect(filed.status).toBe(201)
+
+        const approved = await approve(filed.data.request.id)
+        expect(approved.status).toBe(200)
+        expect(approved.data.seller).toMatchObject({ name: storeName })
+        expect(approved.data.seller.id).not.toBe(liveStore.id)
+        expect(await linkedSeller(removed.authIdentityId)).toBe(approved.data.seller.id)
       })
 
       it("a member removed from a store that was then closed is still told the store was closed", async () => {

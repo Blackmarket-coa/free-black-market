@@ -13,6 +13,7 @@ import {
   sellerIdForVendorActor,
 } from "../../src/shared/seller-actor"
 import { REFUSED_SELLER_ID_LINKS_SQL } from "../../src/shared/seller-auth-backfill"
+import { requireSellerId } from "../../src/shared/auth-helpers"
 import { createAuthenticatedSeller } from "./helpers/seller-auth"
 import { newTestPassword } from "./helpers/test-password"
 
@@ -554,6 +555,23 @@ medusaIntegrationTestRunner({
         expect(await sellerIdForVendorActor({ scope, auth_context: { auth_identity_id: owner.authIdentityId } }, store.id)).toBe(store.id)
         expect(await sellerIdForVendorActor({ scope }, active.memberId)).toBe(store.id)
         expect(await sellerIdForVendorActor({ scope }, removed.memberId)).toBeUndefined()
+
+        // requireSellerId, which most vendor routes call behind the gate, reads the same rule.
+        const resStub = () => {
+          const res: any = { statusCode: 200 }
+          res.status = (code: number) => ((res.statusCode = code), res)
+          res.json = (body: unknown) => ((res.body = body), res)
+          return res
+        }
+        const asking = (actorId: string, authIdentityId: string) => ({ auth_context: { actor_id: actorId, auth_identity_id: authIdentityId }, headers: {}, scope })
+        const ownerRes = resStub()
+        expect(await requireSellerId(asking(store.id, owner.authIdentityId), ownerRes)).toBe(store.id)
+        const removedRes = resStub()
+        expect(await requireSellerId(asking(store.id, removed.authIdentityId), removedRes)).toBeNull()
+        expect(removedRes.statusCode).toBe(401)
+        const removedMemberRes = resStub()
+        expect(await requireSellerId(asking(removed.memberId, removed.authIdentityId), removedMemberRes)).toBeNull()
+        expect(removedMemberRes.statusCode).toBe(401)
 
         await container().resolve(SELLER_MODULE).softDeleteSellers([store.id])
         expect(await liveSellerIdForActor(scope, active.memberId, active.authIdentityId)).toBeNull()
