@@ -11,7 +11,7 @@ import {
   setAuthToken,
 } from "../../lib/client"
 import { devLogger } from "../../lib/logger"
-import { isTakenEmailError, registerOrSignIn } from "../../lib/register-or-sign-in"
+import { filingRefusalMessage, registerOrSignIn } from "../../lib/register-or-sign-in"
 
 const fetchRegistrationStatus = async (token: string) => {
   const response = await fetch(
@@ -92,7 +92,11 @@ export const useSignInWithEmailPass = (
 }
 
 /**
- * Sign up with email/password and create vendor registration
+ * Sign up with email/password and create vendor registration.
+ *
+ * When the address already has a login, signs in to it with the password
+ * typed instead; a wrong password rejects with `ExistingAccountError`, and a
+ * filing refused with 409 rejects with the backend's message.
  */
 export const useSignUpWithEmailPass = (
   options?: UseMutationOptions<
@@ -123,33 +127,16 @@ export const useSignUpWithEmailPass = (
         node_operator_opt_in,
         ...authPayload
       } = payload
-      const normalizedEmail = payload.email.toLowerCase().trim()
-      const normalizedPassword = normalizePassword(payload.password)
-
-      try {
-        const token = await sdk.auth.register("seller", "emailpass", {
-          ...authPayload,
-          email: normalizedEmail,
-          password: normalizedPassword,
-        })
-
-        if (typeof token === "string") setAuthToken(token)
-        return token
-      } catch (error) {
-        if (isTakenEmailError(error)) {
-          const result = await sdk.auth.login("seller", "emailpass", {
-            ...authPayload,
-            email: normalizedEmail,
-            password: normalizedPassword,
-          })
-          if (typeof result === "string") {
-            setAuthToken(result)
-            return result
-          }
-        }
-
-        throw error
-      }
+      // A taken address signs in with the password typed instead, and a wrong
+      // password rejects with ExistingAccountError: the account exists, which
+      // "Invalid email or password" under the email field did not say.
+      const token = await registerOrSignIn(sdk.auth, "seller", {
+        ...authPayload,
+        email: payload.email.toLowerCase().trim(),
+        password: normalizePassword(payload.password),
+      })
+      setAuthToken(token)
+      return token
     },
     onSuccess: async (data, variables, context) => {
       try {
@@ -183,6 +170,13 @@ export const useSignUpWithEmailPass = (
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         })
       } catch (error) {
+        // A taken store name, or a login that already has a store: theirs to
+        // act on, so the sign-up fails with the backend's message rather than
+        // showing its success screen over an application that was not filed.
+        const refusal = filingRefusalMessage(error)
+        if (refusal) {
+          throw new Error(refusal)
+        }
         devLogger.error("Failed to create seller registration request:", error)
       }
 

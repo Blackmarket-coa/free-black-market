@@ -11115,12 +11115,16 @@
         },
         "alreadySeller": {
           "type": "string"
+        },
+        "existingAccount": {
+          "type": "string"
         }
       },
       "required": [
         "title",
         "hint",
-        "alreadySeller"
+        "alreadySeller",
+        "existingAccount"
       ],
       "additionalProperties": false
     },

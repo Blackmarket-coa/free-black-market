@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   ExistingAccountError,
+  filingRefusalMessage,
   isTakenEmailError,
   registerOrSignIn,
   type EmailPassAuth,
@@ -89,6 +90,30 @@ describe("registerOrSignIn", () => {
     })
     await expect(registerOrSignIn(auth, "seller", credentials)).rejects.toBe(invalid)
     expect(auth.login).not.toHaveBeenCalled()
+  })
+})
+
+describe("filingRefusalMessage", () => {
+  // The shape fetchQuery throws (lib/client/client.ts).
+  const failed = (status: number, backendMessage: string | null) =>
+    Object.assign(new Error(`${backendMessage} (POST /auth/seller/register-request (${status}))`), {
+      details: { status, backendMessage },
+    })
+
+  it("returns the backend's message for a 409, which the sign-up shows", () => {
+    const taken = 'A store named "Sunny Farm" already exists. Choose another store name.'
+    expect(filingRefusalMessage(failed(409, taken))).toBe(taken)
+  })
+
+  it("still says something for a 409 with no message", () => {
+    expect(filingRefusalMessage(failed(409, null))).toMatch(/Choose another store name/)
+  })
+
+  it("returns null for any other failure, which the sign-up only logs", () => {
+    expect(filingRefusalMessage(failed(500, "Server error"))).toBeNull()
+    expect(filingRefusalMessage(failed(401, "Unauthorized"))).toBeNull()
+    expect(filingRefusalMessage(new Error("network down"))).toBeNull()
+    expect(filingRefusalMessage(undefined)).toBeNull()
   })
 })
 

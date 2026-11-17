@@ -13,6 +13,22 @@ export const isTakenEmailError = (error: unknown): boolean => {
   return status === 409 || message.toLowerCase().includes("already exists")
 }
 
+/**
+ * What to tell an applicant whose filing (`POST /auth/seller/register-request`)
+ * was refused with 409: the store name is taken, or the login already has a
+ * store. Both are theirs to act on, so the sign-up shows the backend's message
+ * instead of its success screen. Null for any other failure, which the sign-up
+ * still only logs. Reads the `details` that `fetchQuery` attaches.
+ */
+export const filingRefusalMessage = (error: unknown): string | null => {
+  const details = (error as { details?: { status?: number; backendMessage?: string | null } } | null)
+    ?.details
+  if (details?.status !== 409) {
+    return null
+  }
+  return details.backendMessage || "This store could not be registered. Choose another store name."
+}
+
 /** The address has a login, and the password typed is not its password. */
 export class ExistingAccountError extends Error {
   constructor() {

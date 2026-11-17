@@ -2657,7 +2657,8 @@
   "register": {
     "title": "Join the Provider Portal",
     "hint": "Sign up to get started",
-    "alreadySeller": "Already have an account? - <0>Sign In</0>"
+    "alreadySeller": "Already have an account? - <0>Sign In</0>",
+    "existingAccount": "An account with this email already exists. Sign in with its password, or reset the password from the sign-in page."
   },
   "invite": {
     "title": "Welcome to the Provider Portal",
