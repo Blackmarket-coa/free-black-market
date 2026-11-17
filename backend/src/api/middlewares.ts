@@ -1278,8 +1278,10 @@ export default defineMiddlewares({
     // them (one matcher and method: the route sorter keeps declaration order).
     // 1. FBM's cart-completion guards, the tier, Coalition Credits and
     //    order-cycle ones, which Mercur's workflow never runs (SD-54,
-    //    SD-72 (a); src/api/middlewares/cart-completion-guards.ts). They only
-    //    read and refuse, so they go first.
+    //    SD-72 (a); src/api/middlewares/cart-completion-guards.ts). It also
+    //    answers 409 itself for a cart Medusa's own workflow completed (which
+    //    Mercur's run would cancel the payment of) and for a cart it cannot
+    //    check. It only reads and refuses, so it goes first.
     // 2. The payment-amount check, from the spread below (SD-115). It can
     //    write (it puts a refused cart's payment side right, and retires
     //    orphaned payments before a completion goes on), so it runs only for a
