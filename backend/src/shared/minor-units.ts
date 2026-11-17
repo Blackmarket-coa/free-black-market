@@ -46,6 +46,24 @@ export function toMinorUnits(amount: unknown, currencyCode: string | null | unde
 }
 
 /**
+ * The inverse: an integer in the currency's minor unit as a Medusa amount.
+ *
+ * For an API that takes cents and hands them to Medusa, which wants major
+ * units: `POST /v1/seller/launches` took `price: 1200` for $12.00 and
+ * created the variant price as 1200, a $1,200.00 product. 1200 USD is 12,
+ * 1200 JPY is 1200, 12345 KWD is 12.345. The result is rounded to the
+ * currency's minor unit, so a fractional input cannot price below a cent.
+ * Anything unreadable is NaN, for the caller to refuse; it is never priced
+ * as 0.
+ */
+export function fromMinorUnits(minor: unknown, currencyCode: string | null | undefined): number {
+  const value = Number(minor)
+  if (!Number.isFinite(value)) return Number.NaN
+  const digits = currencyMinorDigits(currencyCode)
+  return Number((value / 10 ** digits).toFixed(digits))
+}
+
+/**
  * The mark a row written in minor units since its store's fix carries:
  * `metadata.amount_unit = "minor"`. Set by `OrderDisputeService.open` and by
  * `subscribers/attribute-order-on-placed.ts`.

@@ -13,6 +13,7 @@ import { PRODUCER_MODULE } from "../../../../modules/producer"
 import type ProducerService from "../../../../modules/producer/service"
 import { COOPERATIVE_MODULE } from "../../../../modules/cooperative"
 import type CooperativeService from "../../../../modules/cooperative/service"
+import { fromMinorUnits } from "../../../../shared/minor-units"
 
 const slugRegex = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
 
@@ -221,6 +222,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   })
   const salesChannelId = channels?.[0]?.id
 
+  // `price` is minor units (the panel sends 1200 for $12.00); Medusa stores
+  // major units, so 1200 handed over as-is published a $1,200.00 product.
   const productInput: CreateProductWorkflowInputDTO = {
     title: data.title,
     status: "published",
@@ -230,11 +233,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       {
         title: "Default",
         manage_inventory: false,
-        prices: [{ amount: priceCents, currency_code: currency }],
+        prices: [{ amount: fromMinorUnits(priceCents, currency), currency_code: currency }],
         options: { "Default option": "Default" },
       },
     ],
-    ...(salesChannelId ? { sales_channel_ids: [salesChannelId] } : {}),
+    // createProductsWorkflow reads `sales_channels: [{ id }]`; the
+    // `sales_channel_ids` this passed was dropped without an error, leaving
+    // every launched product in no channel, so no storefront could list it.
+    ...(salesChannelId ? { sales_channels: [{ id: salesChannelId }] } : {}),
     metadata: { launch_id: launchId },
   }
 
