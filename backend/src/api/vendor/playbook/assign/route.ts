@@ -24,6 +24,8 @@ import {
   pluginSlugsFrom,
 } from "../../../../shared/extension-keys"
 import { preflightPlaybookSwitch } from "../../../../shared/playbook-preflight"
+// From the file, not the module index, so specs that mock the index keep it.
+import { RESOURCE_KEYS } from "../../../../modules/playbook/recommend-from-resources"
 import type { PlaybookPreflight } from "../../../../shared/playbook-preflight"
 
 type PostBody = {
@@ -45,18 +47,8 @@ type PostBody = {
 /** Cap on the stored `reason` so a stray paste can't bloat the history table. */
 const MAX_REASON_LENGTH = 2000
 
-const RESOURCE_KEYS = new Set([
-  "land",
-  "time",
-  "transportation",
-  "materials_skills",
-  "equipment",
-  "audience",
-  "network",
-  "organization",
-  "manufacturing",
-  "marketing",
-])
+/** The keys registration accepts too: one list, in the playbook module. */
+const RESOURCE_KEY_SET = new Set<string>(RESOURCE_KEYS)
 
 const SIZE_VALUES = new Set(["solo", "small", "medium", "federation"])
 const GOVERNANCE_VALUES = new Set([
@@ -205,7 +197,7 @@ export async function POST(
   if (body.resources !== undefined) {
     if (
       !Array.isArray(body.resources) ||
-      !body.resources.every((r) => typeof r === "string" && RESOURCE_KEYS.has(r))
+      !body.resources.every((r) => typeof r === "string" && RESOURCE_KEY_SET.has(r))
     ) {
       return res.status(400).json({
         type: "invalid_data",

@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
+import { RESOURCE_KEYS } from "../../../modules/playbook/recommend-from-resources"
 
 /**
  * Vendor types available for sellers.
@@ -33,25 +34,12 @@ export const playbookIdEnum = z.enum([
 ])
 
 /**
- * Resource keys captured by the "what do you have?" registration quiz.
+ * Resource keys captured by the "what do you have?" registration quiz: the
+ * playbook module's list, which `POST /vendor/playbook/assign` accepts too.
  * Must match ResourceKey in
  * vendor-panel/src/components/playbook/playbook-picker/recommend-from-resources.ts
  */
-export const resourceKeyEnum = z.enum([
-  "land",
-  "time",
-  "transportation",
-  "materials_skills",
-  "equipment",
-  "audience",
-  "network",
-  "organization",
-  "manufacturing",
-  "marketing",
-  "goods",
-  "creativity",
-  "capital",
-])
+export const resourceKeyEnum = z.enum(RESOURCE_KEYS)
 
 /**
  * Create Seller Registration Request Schema

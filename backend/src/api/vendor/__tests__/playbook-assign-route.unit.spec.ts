@@ -199,6 +199,35 @@ describe("POST /vendor/playbook/assign", () => {
     expect(mockWorkflowRun).not.toHaveBeenCalled()
   })
 
+  it("accepts every resource key registration accepts, goods, creativity and capital included", async () => {
+    // The wizard's "Change" re-runs the quiz with the registration's answers;
+    // the route's own list of ten answered those three 400.
+    const { createSellerRegistrationSchema } = jest.requireActual("../register/validators")
+    const { RESOURCE_KEYS } = jest.requireActual("../../../modules/playbook/recommend-from-resources")
+    const everyKey = [...RESOURCE_KEYS]
+    expect(
+      createSellerRegistrationSchema.parse({
+        name: "Bravo Pantry",
+        member: { name: "Bravo", email: "bravo@example.com" },
+        resources: everyKey,
+      }).resources
+    ).toEqual(everyKey)
+    expect(everyKey).toEqual(expect.arrayContaining(["goods", "creativity", "capital"]))
+
+    ;(requireSellerId as jest.Mock).mockResolvedValue("sel_123")
+    mockWorkflowRun.mockResolvedValue({
+      result: { playbook_assignment: { id: "pa_9", seller_id: "sel_123", recipe_id: "stall" } },
+    })
+    const res = createRes()
+    await POST(makeReq({ recipe_id: "stall", resources: everyKey }) as any, res as any)
+    expect(res.statusCode).toBe(200)
+    expect(mockWorkflowRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({ metadata: { resources: everyKey } }),
+      })
+    )
+  })
+
   it("rejects invalid resource keys with 400", async () => {
     ;(requireSellerId as jest.Mock).mockResolvedValue("sel_123")
     const res = createRes()

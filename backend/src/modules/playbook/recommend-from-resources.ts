@@ -14,20 +14,30 @@
 import type { PlaybookId } from "./recipes/types"
 import { PLAYBOOK_IDS } from "./recipes"
 
-export type ResourceKey =
-  | "land"
-  | "time"
-  | "transportation"
-  | "materials_skills"
-  | "equipment"
-  | "audience"
-  | "network"
-  | "organization"
-  | "manufacturing"
-  | "marketing"
-  | "goods"
-  | "creativity"
-  | "capital"
+/**
+ * Every resource the "what do you have?" quiz can report: the one list
+ * registration (`api/vendor/register/validators.ts`) and
+ * `POST /vendor/playbook/assign` accept. The assign route kept its own copy
+ * of ten, so re-running the quiz with goods, creativity or capital, which
+ * registration accepted, answered 400.
+ */
+export const RESOURCE_KEYS = [
+  "land",
+  "time",
+  "transportation",
+  "materials_skills",
+  "equipment",
+  "audience",
+  "network",
+  "organization",
+  "manufacturing",
+  "marketing",
+  "goods",
+  "creativity",
+  "capital",
+] as const
+
+export type ResourceKey = (typeof RESOURCE_KEYS)[number]
 
 export type ResourceRecommendation = {
   playbook: PlaybookId
