@@ -2,6 +2,7 @@ import { syncLotInventoryWorkflow } from "../../../../../../workflows/sync-lot-i
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import { AGRICULTURE_MODULE } from "../../../../../../modules/agriculture";
+import { forbidden } from "../../../../../../shared/community-read-access";
 import { ownedLot } from "../../../_access";
 
 // Type for agriculture service methods
@@ -95,9 +96,41 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
 
     if (!sellerProducts || sellerProducts.length === 0) {
-      return res
-        .status(403)
-        .json({ message: "You do not have access to this product" });
+      return forbidden(res);
+    }
+
+    // The variant and the location go to updateInventoryLevels when
+    // sync_inventory is set, so they must be the store's too: the variant one
+    // of the verified product's, the location one of the store's stock
+    // locations. Only the product was checked, so a store could overwrite
+    // another store's inventory level with its own lot's quantity (SD-145
+    // review: measured 50 to 3 on Postgres). Everything is checked before
+    // anything is written; the 400 for a missing location used to come after
+    // the window and its link were made.
+    if (sync_inventory && variant_id && (!location_id || typeof location_id !== "string")) {
+      return res.status(400).json({
+        message: "location_id is required when sync_inventory is enabled",
+      });
+    }
+    if (variant_id !== undefined && variant_id !== null && variant_id !== "") {
+      const { data: variants } = await query.graph({
+        entity: "product_variant",
+        fields: ["id", "product_id"],
+        filters: { id: String(variant_id) },
+      });
+      if (!variants?.length || variants[0].product_id !== product_id) {
+        return forbidden(res);
+      }
+    }
+    if (location_id !== undefined && location_id !== null && location_id !== "") {
+      const { data: locations } = await query.graph({
+        entity: "seller_stock_location",
+        fields: ["stock_location_id"],
+        filters: { seller_id: sellerId, stock_location_id: String(location_id) },
+      });
+      if (!locations?.length) {
+        return forbidden(res);
+      }
     }
 
     // Create availability window linking lot to product
@@ -128,14 +161,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       [AGRICULTURE_MODULE]: { availability_window_id: availabilityWindow.id },
     });
 
-    // If sync_inventory is true, update product variant inventory
-    if (sync_inventory && variant_id) {
-      if (!location_id || typeof location_id !== "string") {
-        return res.status(400).json({
-          message: "location_id is required when sync_inventory is enabled",
-        });
-      }
-
+    // If sync_inventory is true, update product variant inventory (variant and
+    // location checked above).
+    if (sync_inventory && variant_id && typeof location_id === "string") {
       const { result: syncResult } = await syncLotInventoryWorkflow(
         req.scope,
       ).run({

@@ -1,4 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { forbidden } from "../../../../../../shared/community-read-access"
 import { ownedLot } from "../../../_access"
 
 // Type for agriculture service methods
@@ -54,6 +56,20 @@ export async function POST(
       featured,
       is_active,
     } = req.body as Record<string, unknown>
+
+    // A product named here must be the store's own, as link-product requires:
+    // this took any store's product (SD-145 review, measured 201).
+    if (product_id !== undefined && product_id !== null && product_id !== "") {
+      const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+      const { data: sellerProducts } = await query.graph({
+        entity: "seller_product",
+        fields: ["product_id"],
+        filters: { seller_id: owned.caller.sellerId, product_id: String(product_id) },
+      })
+      if (!sellerProducts?.length) {
+        return forbidden(res)
+      }
+    }
 
     // Create the availability window
     const availabilityWindow = await agricultureService.createAvailabilityWindows({
