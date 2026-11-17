@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getSellerId } from "../../../quests/_helpers"
+import { deletedBody, ownedLot } from "../../_access"
+import { definedFields } from "../../../../../shared/defined-fields"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -21,30 +22,13 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Get producer ID for this seller
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
+    // A lot of the caller's farm, through its harvest, or 403 (`_access.ts`).
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    const producerId = producerLinks[0].producer_id
-
-    // Get the lot with its harvest to verify ownership
     const { data: lots } = await query.graph({
       entity: "lot",
       fields: [
@@ -73,26 +57,27 @@ export async function GET(
         "is_active",
         "created_at",
         "updated_at",
-        "harvest.producer_id",
-        "availability_windows.*",
       ],
       filters: {
         id: lotId,
       },
     })
+    // `harvest.producer_id` and `availability_windows.*` were asked of the lot
+    // itself, which the models do not relate ("Entity 'Lot' does not have
+    // property 'harvest'", measured): read on their own.
+    const { data: windows } = await query.graph({
+      entity: "availability_window",
+      fields: ["*"],
+      filters: { lot_id: lotId },
+    })
 
-    if (!lots || lots.length === 0) {
-      return res.status(404).json({ message: "Lot not found" })
-    }
-
-    const lot = lots[0] as typeof lots[0] & { harvest?: { producer_id: string } | null }
-
-    // Verify the lot belongs to this producer's harvest
-    if (lot.harvest?.producer_id !== producerId) {
-      return res.status(403).json({ message: "Access denied" })
-    }
-
-    res.json({ lot })
+    res.json({
+      lot: {
+        ...lots[0],
+        harvest: { id: owned.harvest.id, producer_id: owned.harvest.producer_id },
+        availability_windows: windows ?? [],
+      },
+    })
   } catch (error) {
     res.status(500).json({ 
       message: "Failed to fetch lot", 
@@ -109,28 +94,15 @@ export async function PUT(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership (simplified - in production, check harvest->producer chain)
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
+    // The lot must be the caller's own, through its harvest. This checked only
+    // that the caller had some farm profile, so any store with one could edit
+    // another store's lot (SD-145 review). Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     const {
       lot_number,
@@ -151,25 +123,28 @@ export async function PUT(
       is_active,
     } = req.body as Record<string, unknown>
 
-    // Update the lot
+    // Only the fields given (`shared/defined-fields.ts`): an omitted one,
+    // passed as undefined, made every partial update a 500.
     const lot = await agricultureService.updateLots({
       id: lotId,
-      lot_number,
-      batch_date,
-      grade,
-      size_class,
-      quantity_total,
-      quantity_available,
-      unit,
-      suggested_price_per_unit,
-      cost_per_unit,
-      allocation_type,
-      best_by_date,
-      use_by_date,
-      storage_location,
-      storage_requirements,
-      external_lot_id,
-      is_active,
+      ...definedFields({
+        lot_number,
+        batch_date,
+        grade,
+        size_class,
+        quantity_total,
+        quantity_available,
+        unit,
+        suggested_price_per_unit,
+        cost_per_unit,
+        allocation_type,
+        best_by_date,
+        use_by_date,
+        storage_location,
+        storage_requirements,
+        external_lot_id,
+        is_active,
+      }),
     })
 
     res.json({ lot })
@@ -189,33 +164,21 @@ export async function DELETE(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
+    // The lot must be the caller's own, as for PUT: this deleted any store's
+    // lot for a caller with any farm profile. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    // Delete the lot
     await agricultureService.deleteLots(lotId)
 
-    res.status(204).send()
+    // Medusa's deletion body. A 204 with no body made the panel's SDK, which
+    // parses every answer as JSON, report "Failed to delete" for a delete
+    // that had happened.
+    res.status(200).json(deletedBody("lot", lotId))
   } catch (error) {
     res.status(500).json({ 
       message: "Failed to delete lot", 

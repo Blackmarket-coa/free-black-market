@@ -1,6 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { buildFarmHarvestConsistencyIssues } from "../../consistency"
-import { getSellerId } from "../../../quests/_helpers"
+import { forbidden } from "../../../../../shared/community-read-access"
+import { deletedBody, lotsByHarvest, ownedHarvest } from "../../_access"
+import { definedFields } from "../../../../../shared/defined-fields"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -22,28 +24,13 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = await getSellerId(req)
   const harvestId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Get producer ID for this seller
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    const producerId = producerLinks[0].producer_id
+    // A harvest of the caller's farm, or 403 (`_access.ts`).
+    const owned = await ownedHarvest(req, res, harvestId)
+    if (!owned) return
+    const producerId = owned.caller.producerId
 
     // Get the harvest
     const { data: harvests } = await query.graph({
@@ -72,7 +59,6 @@ export async function GET(
         "published_at",
         "created_at",
         "updated_at",
-        "lots.*",
       ],
       filters: {
         id: harvestId,
@@ -81,10 +67,12 @@ export async function GET(
     })
 
     if (!harvests || harvests.length === 0) {
-      return res.status(404).json({ message: "Harvest not found" })
+      return forbidden(res)
     }
 
-    res.json({ harvest: harvests[0] })
+    // Its lots, read on their own: the models define no relation.
+    const lots = await lotsByHarvest(req, [harvestId])
+    res.json({ harvest: { ...harvests[0], lots: lots.get(harvestId) ?? [] } })
   } catch (error: any) {
     res.status(500).json({ 
       message: "Failed to fetch harvest", 
@@ -103,28 +91,13 @@ export async function PUT(
 ) {
   const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const harvestId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    const producerId = producerLinks[0].producer_id
+    // A harvest of the caller's farm, or 403 (`_access.ts`).
+    const owned = await ownedHarvest(req, res, harvestId)
+    if (!owned) return
+    const producerId = owned.caller.producerId
 
     const { data: producers } = await query.graph({
       entity: "producer",
@@ -133,20 +106,6 @@ export async function PUT(
       pagination: { take: 1 },
     })
     const producerProfile = (producers && producers[0]) || {}
-
-    // Verify harvest belongs to this producer
-    const { data: existingHarvests } = await query.graph({
-      entity: "harvest",
-      fields: ["id"],
-      filters: {
-        id: harvestId,
-        producer_id: producerId,
-      },
-    })
-
-    if (!existingHarvests || existingHarvests.length === 0) {
-      return res.status(404).json({ message: "Harvest not found" })
-    }
 
     const {
       crop_name,
@@ -183,28 +142,33 @@ export async function PUT(
       })
     }
 
-    // Update the harvest
+    // Only the fields given (`shared/defined-fields.ts`): an omitted one,
+    // passed as undefined, made every partial update a 500. `published_at`
+    // follows `visibility_status` only when that is given.
     const harvest = await agricultureService.updateHarvests({
       id: harvestId,
-      crop_name,
-      variety,
-      category,
-      harvest_date,
-      planted_date,
-      season,
-      year,
-      growing_method,
-      field_name,
-      farmer_notes,
-      weather_notes,
-      taste_notes,
-      usage_tips,
-      photo,
-      gallery,
-      expected_yield_quantity,
-      expected_yield_unit,
-      visibility_status,
-      published_at: visibility_status === "PUBLIC" ? new Date().toISOString() : null,
+      ...definedFields({
+        crop_name,
+        variety,
+        category,
+        harvest_date,
+        planted_date,
+        season,
+        year,
+        growing_method,
+        field_name,
+        farmer_notes,
+        weather_notes,
+        taste_notes,
+        usage_tips,
+        photo,
+        gallery,
+        expected_yield_quantity,
+        expected_yield_unit,
+        visibility_status,
+        published_at:
+          visibility_status === undefined ? undefined : visibility_status === "PUBLIC" ? new Date().toISOString() : null,
+      }),
     })
 
     res.json({ harvest, consistency_issues })
@@ -224,57 +188,22 @@ export async function DELETE(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const harvestId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
+    // A harvest of the caller's farm, or 403 (`_access.ts`).
+    const owned = await ownedHarvest(req, res, harvestId)
+    if (!owned) return
 
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    const producerId = producerLinks[0].producer_id
-
-    const { data: producers } = await query.graph({
-      entity: "producer",
-      fields: ["id", "year_established", "country_code", "state"],
-      filters: { id: producerId },
-      pagination: { take: 1 },
-    })
-    const _producerProfile = (producers && producers[0]) || {}
-
-    // Verify harvest belongs to this producer
-    const { data: existingHarvests } = await query.graph({
-      entity: "harvest",
-      fields: ["id"],
-      filters: {
-        id: harvestId,
-        producer_id: producerId,
-      },
-    })
-
-    if (!existingHarvests || existingHarvests.length === 0) {
-      return res.status(404).json({ message: "Harvest not found" })
-    }
-
-    // Delete the harvest (will cascade to lots)
+    // Deletes the harvest row only: the models define no relation, so its
+    // lots are not cascaded.
     await agricultureService.deleteHarvests(harvestId)
 
-    res.status(204).send()
+    // Medusa's deletion body. A 204 with no body made the panel's SDK, which
+    // parses every answer as JSON, report "Failed to delete" for a delete
+    // that had happened.
+    res.status(200).json(deletedBody("harvest", harvestId))
   } catch (error: any) {
     res.status(500).json({ 
       message: "Failed to delete harvest", 

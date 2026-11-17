@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getSellerId } from "../../../../quests/_helpers"
+import { ownedLot } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -20,41 +20,15 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    // Verify lot exists
-    const { data: lots } = await query.graph({
-      entity: "lot",
-      fields: ["id", "harvest_id"],
-      filters: {
-        id: lotId,
-      },
-    })
-
-    if (!lots || lots.length === 0) {
-      return res.status(404).json({ message: "Lot not found" })
-    }
+    // The lot must be the caller's own, through its harvest: this checked only
+    // that the lot existed and the caller had some farm profile, so a window
+    // could be opened on another store's lot. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     const {
       product_id,
@@ -127,26 +101,13 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
+    // The lot must be the caller's own: this listed any lot's windows for a
+    // caller with some farm profile. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     // Get availability windows for this lot
     const { data: windows } = await query.graph({

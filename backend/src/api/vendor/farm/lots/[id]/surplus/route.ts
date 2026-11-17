@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getSellerId } from "../../../../quests/_helpers"
+import { ownedLot } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -20,28 +20,14 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
+    // The lot must be the caller's own, through its harvest: this checked only
+    // that the caller had some farm profile. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     const { reason } = req.body as Record<string, unknown>
 
@@ -70,28 +56,14 @@ export async function DELETE(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = await getSellerId(req)
   const lotId = req.params.id
 
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
-
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
+    // The lot must be the caller's own, through its harvest: this checked only
+    // that the caller had some farm profile. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     // Update the lot to remove surplus flag
     const lot = await agricultureService.updateLots({

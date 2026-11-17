@@ -1,6 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { AGRICULTURE_MODULE } from "../../../../modules/agriculture"
+import { PRODUCER_MODULE } from "../../../../modules/producer"
 import { buildFarmHarvestConsistencyIssues } from "../consistency"
 import { getSellerId } from "../../quests/_helpers"
+import { lotsByHarvest, storeProducerId } from "../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -36,20 +40,12 @@ export async function GET(
   const { limit = 50, offset = 0 } = req.query as Record<string, any>
 
   try {
-    // Get producer ID for this seller
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
+    // The store's farm profile (`_access.ts`).
+    const producerId = await storeProducerId(req, sellerId)
 
-    if (!producerLinks || producerLinks.length === 0) {
+    if (!producerId) {
       return res.json({ harvests: [], count: 0 })
     }
-
-    const producerId = producerLinks[0].producer_id
 
     // Get harvests for this producer
     const { data: harvests } = await query.graph({
@@ -77,7 +73,6 @@ export async function GET(
         "published_at",
         "created_at",
         "updated_at",
-        "lots.*",
       ],
       filters: {
         producer_id: producerId
@@ -89,8 +84,11 @@ export async function GET(
       }
     })
 
+    // Each harvest's lots, read on their own: the models define no relation.
+    const lots = await lotsByHarvest(req, (harvests ?? []).map((h) => String(h.id)))
+
     res.json({ 
-      harvests: harvests || [],
+      harvests: (harvests ?? []).map((h) => ({ ...h, lots: lots.get(String(h.id)) ?? [] })),
       count: harvests?.length || 0,
       limit: parseInt(limit as string, 10),
       offset: parseInt(offset as string, 10),
@@ -112,8 +110,8 @@ export async function POST(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const linkService = req.scope.resolve("link") as LinkServiceType
+  const agricultureService = req.scope.resolve(AGRICULTURE_MODULE) as AgricultureServiceType
+  const linkService = req.scope.resolve(ContainerRegistrationKeys.LINK) as LinkServiceType
   const sellerId = await getSellerId(req)
 
   if (!sellerId) {
@@ -121,22 +119,14 @@ export async function POST(
   }
 
   try {
-    // Get producer ID for this seller
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
+    // The store's farm profile (`_access.ts`).
+    const producerId = await storeProducerId(req, sellerId)
 
-    if (!producerLinks || producerLinks.length === 0) {
+    if (!producerId) {
       return res.status(400).json({ 
         message: "Please create a farm profile first" 
       })
     }
-
-    const producerId = producerLinks[0].producer_id
 
     const { data: producers } = await query.graph({
       entity: "producer",
@@ -204,13 +194,19 @@ export async function POST(
       visibility_status: visibility_status || "DRAFT",
     })
 
-    // Link harvest to producer
-    await linkService.create({
-      harvest_producer: {
-        harvest_id: harvest.id,
-        producer_id: producerId,
-      }
-    })
+    // Link harvest to producer, by module key: `{ harvest_producer: ... }`
+    // is not a shape Medusa's Link reads and threw a TypeError (measured),
+    // after the harvest was written. A harvest whose link cannot be made is
+    // removed again, so a retry does not duplicate it.
+    try {
+      await linkService.create({
+        [PRODUCER_MODULE]: { producer_id: producerId },
+        [AGRICULTURE_MODULE]: { harvest_id: harvest.id },
+      })
+    } catch (linkError) {
+      await agricultureService.deleteHarvests(harvest.id)
+      throw linkError
+    }
 
     res.status(201).json({ harvest, consistency_issues })
   } catch (error: any) {

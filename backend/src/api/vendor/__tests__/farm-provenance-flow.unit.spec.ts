@@ -32,12 +32,14 @@ describe("farm + storefront provenance flow", () => {
           if (key === "query") {
             return {
               graph: async ({ entity }: { entity: string }) => {
-                if (entity === "producer_seller") return { data: [{ producer_id: "prod_1" }] }
                 if (entity === "producer") return { data: [{ id: "prod_1", year_established: 2022 }] }
                 return { data: [] }
               },
             }
           }
+          // The store's farm profile is the producer whose seller_id is the
+          // store (vendor/farm/_access.ts).
+          if (key === "producer") return { listProducers: async () => [{ id: "prod_1" }] }
           if (key === "agriculture") return { createHarvests: jest.fn() }
           if (key === "link") return { create: jest.fn() }
           return {}
