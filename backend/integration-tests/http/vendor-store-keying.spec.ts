@@ -5,14 +5,17 @@ import { createRegionsWorkflow } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { createSellerWorkflow, deleteMemberWorkflow } from "@mercurjs/b2c-core/workflows"
 import { ACCOUNTS_RECEIVABLE_MODULE } from "../../src/modules/accounts-receivable"
+import { COTTAGE_FOOD_MODULE } from "../../src/modules/cottage-food"
 import { DEMAND_POOL_MODULE } from "../../src/modules/demand-pool"
 import { FUND_ACCOUNTING_MODULE } from "../../src/modules/fund-accounting"
+import { HAWALA_LEDGER_MODULE } from "../../src/modules/hawala-ledger"
 import { ORDER_CYCLE_MODULE } from "../../src/modules/order-cycle"
 import PrintfulClient from "../../src/modules/printful-fulfillment/client"
 import { SUPPLIER_FORWARDING_MODULE } from "../../src/modules/supplier-forwarding"
 import { VENDOR_RULES_MODULE } from "../../src/modules/vendor-rules"
 import rekeyScript, {
   HELD_FOR_DECISION,
+  MEMBER_OWNED_SELLER_EARNINGS_SQL,
   REKEY_TARGETS,
   rekeyMemberKeyedStoreData,
   type RekeySummary,
@@ -50,7 +53,7 @@ jest.setTimeout(300 * 1000)
 
 medusaIntegrationTestRunner({
   inApp: true,
-  env: { FF_FUND_ACCOUNTING_V1: "true" },
+  env: { FF_FUND_ACCOUNTING_V1: "true", FF_POS_V1: "true" },
   testSuite: ({ api, getContainer }) => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const container = () => getContainer() as any
@@ -181,7 +184,7 @@ medusaIntegrationTestRunner({
 
     beforeAll(async () => {
       // A fixture, not FBM's behaviour (SD-63): on a database built from the
-      // migrations these two tables lack the raw_* companions Medusa writes
+      // migrations these three tables lack the raw_* companions Medusa writes
       // for their bigNumber fields, so no insert into them can work at all
       // (module-schema-drift.spec.ts lists them in KNOWN_DRIFT). The keying
       // checked here is independent of that; without the columns,
@@ -194,6 +197,9 @@ medusaIntegrationTestRunner({
           ADD COLUMN IF NOT EXISTS "raw_target_price" JSONB NULL,
           ADD COLUMN IF NOT EXISTS "raw_total_bounty_amount" JSONB NULL,
           ADD COLUMN IF NOT EXISTS "raw_total_escrowed" JSONB NULL;
+        ALTER TABLE "supplier_proposal"
+          ADD COLUMN IF NOT EXISTS "raw_delivery_cost" JSONB NULL,
+          ADD COLUMN IF NOT EXISTS "raw_unit_price" JSONB NULL;
       `)
     })
 
@@ -411,6 +417,39 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("pos/checkout (Posture A hold)", () => {
+      it("refuses every vendor-to-vendor payment, even from a member-owned earnings account with a balance, and moves nothing", async () => {
+        const a = await team(`Till Farm ${uid()}`)
+        const b = await team(`Payee Farm ${uid()}`)
+        const hawala = container().resolve(HAWALA_LEDGER_MODULE)
+        // The account GET /vendor/farm/grower-dashboard minted for a member
+        // before SD-145, with a balance as processGroupPurchase would credit
+        // it (the balance is a fixture).
+        const memberAccount = await hawala.getOrCreateSellerEarnings(a.member.memberId, "USD")
+        await pg().raw(`UPDATE hawala_ledger_account SET balance = 40, available_balance = 40 WHERE id = ?`, [memberAccount.id])
+        const payeeAccount = await hawala.getOrCreateSellerEarnings(b.store.id, "USD")
+        const balanceOf = async (id: string) =>
+          (await pg().raw(`SELECT available_balance::text AS v FROM hawala_ledger_account WHERE id = ?`, [id])).rows[0].v
+
+        for (const [who, token] of [["member", a.member.token], ["owner", a.owner.token]] as const) {
+          const res = await call(api.post("/vendor/pos/checkout", { payee_vendor_id: b.store.id, amount: 25, payment_method: "cash" }, bearer(token)))
+          expect({ who, status: res.status, body: res.data }).toEqual({
+            who,
+            status: 403,
+            body: {
+              message:
+                "Vendor-to-vendor payments are not available. Record the payment outside FBM or invoice the other vendor instead.",
+              type: "not_allowed",
+            },
+          })
+        }
+        expect(Number(await balanceOf(memberAccount.id))).toBe(40)
+        expect(Number(await balanceOf(payeeAccount.id))).toBe(0)
+        const { rows: payments } = await pg().raw(`SELECT id FROM hawala_vendor_payment WHERE payee_vendor_id = ?`, [b.store.id])
+        expect(payments).toEqual([])
+      })
+    })
+
     describe("(b) imports", () => {
       it("a Printful import by a member links the products to the store, with Printful's API stubbed", async () => {
         const a = await team(`Print Shop ${uid()}`)
@@ -514,6 +553,33 @@ medusaIntegrationTestRunner({
           .resolve(DEMAND_POOL_MODULE)
           .createDemandPosts([{ creator_id: `cus_${uid()}`, title: "Bulk oats", description: "Oats", target_quantity: 100, min_quantity: 10, selected_supplier_id: active }])
 
+        // Proposals to that pool: the one it selected (the active member's)
+        // stays with the pool's member id, so the pair stays consistent until
+        // the decision; the leaver's, which no pool selected, moves.
+        const proposals = container().resolve(DEMAND_POOL_MODULE)
+        const [selectedProposal] = await proposals.createSupplierProposals([
+          { demand_post_id: pool.id, supplier_id: active, unit_price: 3, min_quantity: 10, submitted_at: new Date() },
+        ])
+        const [openProposal] = await proposals.createSupplierProposals([
+          { demand_post_id: pool.id, supplier_id: leaver.memberId, unit_price: 4, min_quantity: 10, submitted_at: new Date() },
+        ])
+        // Two members' cottage-food profiles: unique per store, so they clash
+        // and are kept, and the sales entry naming one is kept with it; an
+        // entry naming no profile moves.
+        const cottage = container().resolve(COTTAGE_FOOD_MODULE)
+        const ownerProfile = await cottage.createCottageFoodProfiles({ seller_id: owner })
+        const activeProfile = await cottage.createCottageFoodProfiles({ seller_id: active })
+        const [profiledSale] = await cottage.createCottageFoodSalesEntries([
+          { seller_id: owner, profile_id: ownerProfile.id, occurred_at: new Date(), amount_cents: 500 },
+        ])
+        const [looseSale] = await cottage.createCottageFoodSalesEntries([{ seller_id: active, occurred_at: new Date(), amount_cents: 700 }])
+        // A member-owned SELLER_EARNINGS account, as GET /vendor/farm/grower-dashboard
+        // minted one before SD-145, holding a balance as processGroupPurchase
+        // would credit it (the balance itself is a fixture).
+        const hawala = container().resolve(HAWALA_LEDGER_MODULE)
+        const memberEarnings = await hawala.getOrCreateSellerEarnings(active, "USD")
+        await pg().raw(`UPDATE hawala_ledger_account SET balance = 12.5, available_balance = 12.5 WHERE id = ?`, [memberEarnings.id])
+
         // The leaver is removed after writing; its rows still belong to the store.
         await deleteMemberWorkflow.run({ container: container(), input: leaver.memberId })
 
@@ -527,6 +593,12 @@ medusaIntegrationTestRunner({
           funds: (await funds.listFunds({ id: [ownerFund.id, leaverFund.id, otherFund.id] })).map((f: any) => [f.id, f.seller_id]).sort(),
           entries: (await funds.listFundTransactions({ id: [leaverEntry.id, otherEntry.id] })).map((e: any) => [e.id, e.seller_id]).sort(),
           pool: (await container().resolve(DEMAND_POOL_MODULE).listDemandPosts({ id: pool.id }))[0].selected_supplier_id,
+          proposals: (await proposals.listSupplierProposals({ id: [selectedProposal.id, openProposal.id] })).map((x: any) => [x.id, x.supplier_id]).sort(),
+          profiles: (await cottage.listCottageFoodProfiles({ id: [ownerProfile.id, activeProfile.id] })).map((x: any) => [x.id, x.seller_id]).sort(),
+          sales: (await cottage.listCottageFoodSalesEntries({ id: [profiledSale.id, looseSale.id] })).map((x: any) => [x.id, x.seller_id]).sort(),
+          earnings: await pg()
+            .raw(`SELECT owner_id, available_balance FROM hawala_ledger_account WHERE id = ?`, [memberEarnings.id])
+            .then((r: any) => ({ owner_id: r.rows[0].owner_id, available: Number(r.rows[0].available_balance) })),
         })
         const before = await snapshot()
 
@@ -572,6 +644,38 @@ medusaIntegrationTestRunner({
         expect(lines.some((l) => l.startsWith("vendor_customer_tier.seller_id") && l.includes("would rekey"))).toBe(true)
         expect(lines.some((l) => l.includes(`left alone (no such member) ${ghostTier.id}`))).toBe(true)
         expect(lines.some((l) => l.startsWith("HELD demand_post.selected_supplier_id"))).toBe(true)
+        const proposalReport = reportOf(dry, "supplier_proposal")
+        expect(proposalReport.keptByRule.map((r) => [r.id, r.reason])).toEqual([[selectedProposal.id, "a held pool selected it"]])
+        expect(ids(proposalReport.rekey)).toContain(openProposal.id)
+        expect(ids(reportOf(dry, "cottage_food_profile").conflicts)).toEqual(expect.arrayContaining([ownerProfile.id, activeProfile.id]))
+        const salesReport = reportOf(dry, "cottage_food_sales_entry")
+        expect(ids(salesReport.keptWithParent)).toContain(profiledSale.id)
+        expect(ids(salesReport.rekey)).toContain(looseSale.id)
+        // The read-only list of member-owned SELLER_EARNINGS accounts, from the
+        // script and from the query the operator runs.
+        const listed = dry.memberOwnedEarnings.find((r) => r.ledger_account_id === memberEarnings.id)
+        expect(listed).toMatchObject({ member_id: active, store_id: s.store.id, member_removed: false, no_such_member: false, currency_code: "USD" })
+        expect(Number(listed?.available_balance)).toBe(12.5)
+        const { rows: earningsRows } = await pg().raw(MEMBER_OWNED_SELLER_EARNINGS_SQL)
+        expect(earningsRows.map((r: { ledger_account_id: string }) => r.ledger_account_id)).toContain(memberEarnings.id)
+        expect(lines.some((l) => l.startsWith("HELD member-owned SELLER_EARNINGS accounts:"))).toBe(true)
+
+        // A writer holding a table: apply waits at most the lock timeout, rolls
+        // that table back, reports it, and goes on with the rest.
+        const holder = await pg().transaction()
+        await holder.raw(`LOCK TABLE "vendor_customer_tier" IN ROW EXCLUSIVE MODE`)
+        let blocked: RekeySummary
+        try {
+          blocked = await rekeyMemberKeyedStoreData(container(), { apply: true, timeouts: { lockTimeoutMs: 300 } })
+        } finally {
+          await holder.rollback()
+        }
+        const tierBlocked = reportOf(blocked, "vendor_customer_tier")
+        expect({ status: tierBlocked.status, rekeyed: tierBlocked.rekey.length }).toEqual({ status: "failed", rekeyed: 0 })
+        expect(tierBlocked.error).toMatch(/lock timeout/)
+        expect((await tiers.listVendorCustomerTiers({ id: activeTier.id }))[0].seller_id).toBe(active)
+        expect(reportOf(blocked, "enterprise_fee").status).toBe("applied")
+        expect((await cycles.retrieveEnterpriseFee(leaverFee.id)).seller_id).toBe(s.store.id)
 
         const applied = await rekeyMemberKeyedStoreData(container(), { apply: true, log: (l) => lines.push(l) })
         expect(applied.targets.filter((t) => t.status === "failed")).toEqual([])
@@ -595,6 +699,12 @@ medusaIntegrationTestRunner({
           entries: [[leaverEntry.id, leaver.memberId], [otherEntry.id, S]].sort(),
           // Held for an operator and counsel: never rewritten.
           pool: active,
+          // The proposal the held pool selected stays with it; the other moves.
+          proposals: [[selectedProposal.id, active], [openProposal.id, S]].sort(),
+          profiles: [[ownerProfile.id, owner], [activeProfile.id, active]].sort(),
+          sales: [[profiledSale.id, owner], [looseSale.id, S]].sort(),
+          // Never touched: a ledger account, listed for the decision.
+          earnings: { owner_id: active, available: 12.5 },
         })
         expect(lines.some((l) => l.includes(`changed ${activeTier.id} ${active} -> ${S}`))).toBe(true)
 
