@@ -61,9 +61,9 @@ jest.setTimeout(240 * 1000)
  * bearer with a live seller's cookie read the store's invoices and wrote one,
  * and listed the store's promotions through Mercur's fetchSellerByAuthActorId.
  *
- * Members are removed with Mercur's own deleteMemberWorkflow. Spends 16 of the
- * auth limiter's 20 a minute (seller register, real sign-ins and two sessions;
- * the other tokens carry the claims Medusa mints).
+ * Members are removed with Mercur's own deleteMemberWorkflow. Spends 17 of the
+ * auth limiter's 20 a minute (seller register, real sign-ins and three
+ * sessions; the other tokens carry the claims Medusa mints).
  */
 
 medusaIntegrationTestRunner({
@@ -691,6 +691,23 @@ medusaIntegrationTestRunner({
           listed: [200, [created.data?.invoice?.id]],
           underTheSessionsMember: 0,
         })
+      })
+
+      it("an admin's session cookie next to a seller's bearer is not refused: no seller authenticate reads it", async () => {
+        // The admin panel signs in with a session cookie on the same backend,
+        // and the vendor panel sends cookies with every request; an operator
+        // signed in to both would otherwise lose the vendor panel.
+        const { owner, ownerMemberId, store } = await storeOf(`Operator Farm ${uid()}`)
+        const order = await orderFor(store)
+        const adminCookie = await sessionCookie(await adminToken())
+        const both = withSession(tokenFor(owner, ownerMemberId), adminCookie)
+
+        const me = await call(api.get("/vendor/me", both))
+        const orders = await call(api.get("/vendor/orders", both))
+        expect({
+          member: [me.status, me.data?.member?.id],
+          orders: [orders.status, (orders.data?.orders ?? []).map((o: { id: string }) => o.id)],
+        }).toEqual({ member: [200, ownerMemberId], orders: [200, [order.id]] })
       })
 
       it("an owner and a member still on the team, with a bearer alone, read and write invoices and orders", async () => {
