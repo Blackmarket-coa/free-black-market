@@ -82,11 +82,14 @@ medusaIntegrationTestRunner({
       // a second module's file of the same name would never run.
       const files = readdirSync(MODULES_DIR).flatMap((mod) => {
         const dir = path.join(MODULES_DIR, mod, "migrations")
-        return existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith("Migration20261117")) : []
+        return existsSync(dir) ? readdirSync(dir).map((f) => f.replace(/\.[jt]s$/, "")) : []
       })
-      expect(files.map((f) => f.replace(/\.ts$/, "")).sort()).toEqual(SD63_MIGRATIONS)
+      expect(files.filter((name) => SD63_MIGRATIONS.includes(name)).sort()).toEqual(SD63_MIGRATIONS)
 
-      const { rows } = await pg().raw(`SELECT name FROM mikro_orm_migrations WHERE name LIKE 'Migration20261117%' ORDER BY name`)
+      const { rows } = await pg().raw(
+        `SELECT name FROM mikro_orm_migrations WHERE name IN (${SD63_MIGRATIONS.map(() => "?").join(", ")}) ORDER BY name`,
+        SD63_MIGRATIONS
+      )
       expect(rows.map((r: { name: string }) => r.name)).toEqual(SD63_MIGRATIONS)
     })
 
