@@ -94,6 +94,9 @@ describe("registerOrSignIn", () => {
   })
 })
 
+const latinRequired =
+  "A store name needs at least one Latin letter or digit, which the store's web address uses."
+
 // The shape fetchQuery throws (lib/client/client.ts).
 const failed = (status: number, backendMessage: string | null) =>
   Object.assign(new Error(`${backendMessage} (POST /auth/seller/register-request (${status}))`), {
@@ -113,6 +116,9 @@ describe("filingFailureMessage", () => {
 
   it("passes on another 4xx's message", () => {
     expect(filingFailureMessage(failed(400, "Seller name is required"))).toBe("Seller name is required")
+    // A store name whose web address would have no letter or digit, such as
+    // «Ферма Два» (backend/src/shared/store-handle.ts STORE_NAME_NEEDS_LATIN).
+    expect(filingFailureMessage(failed(400, latinRequired))).toBe(latinRequired)
     expect(filingFailureMessage(failed(401, "Create your account or sign in before applying to sell."))).toBe(
       "Create your account or sign in before applying to sell."
     )
@@ -158,6 +164,7 @@ describe("finishSellerSignUp", () => {
       [failed(409, 'A store named "Sunny Farm" already exists. Choose another store name.'), /Choose another store name/],
       [failed(429, "Too many requests"), /Wait a minute/],
       [failed(400, "Seller name is required"), /Seller name is required/],
+      [failed(400, latinRequired), /needs at least one Latin letter or digit/],
       [failed(500, "Internal error"), /Press the button again to finish/],
       [new TypeError("Failed to fetch"), /Press the button again to finish/],
     ]
