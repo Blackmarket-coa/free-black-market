@@ -2,6 +2,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ORDER_CYCLE_MODULE } from "../../../../modules/order-cycle"
 import OrderCycleModuleService from "../../../../modules/order-cycle/service"
 import { getSellerId } from "../../quests/_helpers"
+import { definedFields } from "../../../../shared/defined-fields"
 
 interface UpdateEnterpriseFeeBody {
   name?: string
@@ -48,15 +49,11 @@ export const PUT = async (req: MedusaRequest<UpdateEnterpriseFeeBody>, res: Medu
 
     const { name, description, fee_type, calculator_type, amount, currency_code, is_active } = req.body
 
+    // Only the fields given: an omitted one passed as undefined made every
+    // partial update a 500 (`shared/defined-fields.ts`).
     const enterprise_fee = await orderCycleService.updateEnterpriseFees({
       id,
-      name,
-      description,
-      fee_type,
-      calculator_type,
-      amount,
-      currency_code,
-      is_active,
+      ...definedFields({ name, description, fee_type, calculator_type, amount, currency_code, is_active }),
     })
 
     res.json({ enterprise_fee })

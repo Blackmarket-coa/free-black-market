@@ -357,15 +357,12 @@ medusaIntegrationTestRunner({
         expect(ownerFees.data.enterprise_fees.map((f: { id: string }) => f.id)).toContain(feeId)
         const ownerRead = await call(api.get(`/vendor/enterprise-fees/${feeId}`, bearer(a.owner.token)))
         expect(ownerRead.status).toBe(200)
-        // The route passes every field through to the update, so it is sent whole.
-        const repriced = await call(
-          api.put(
-            `/vendor/enterprise-fees/${feeId}`,
-            { name: fee.data.enterprise_fee.name, fee_type: "packing", calculator_type: "flat_rate", amount: 3, currency_code: "usd", is_active: true },
-            bearer(a.owner.token)
-          )
-        )
+        // A partial update: it answered 500 ("You must pass a non-undefined
+        // value to the property name of entity EnterpriseFee") because the
+        // route passed every field through, given or not.
+        const repriced = await call(api.put(`/vendor/enterprise-fees/${feeId}`, { amount: 3 }, bearer(a.owner.token)))
         expect({ status: repriced.status, body: repriced.data }).toMatchObject({ status: 200 })
+        expect(repriced.data.enterprise_fee).toMatchObject({ name: fee.data.enterprise_fee.name, fee_type: "packing" })
 
         const rivalFees = await api.get("/vendor/enterprise-fees", bearer(b.owner.token))
         expect(rivalFees.data.enterprise_fees.map((f: { id: string }) => f.id)).not.toContain(feeId)
