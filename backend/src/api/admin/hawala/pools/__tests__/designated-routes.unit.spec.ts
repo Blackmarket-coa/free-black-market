@@ -124,6 +124,7 @@ type ReqShape = {
   headers?: Record<string, string>
   auth_context?: { actor_id: string }
   _seller_id?: string
+  _sellerContextResolved?: boolean
 }
 
 const ADMIN = { auth_context: { actor_id: "user_admin" } }
@@ -386,7 +387,7 @@ describe("GET /admin/hawala/summary", () => {
 
 describe("POST /vendor/hawala/pools/:id/withdraw", () => {
   const withdraw = (ctx: Ctx, poolId = "pool_1") =>
-    call(vendorWithdraw as unknown as Handler, ctx, { params: { id: poolId }, _seller_id: "sel_1", auth_context: { actor_id: "sel_1" }, headers: {}, body: { amount: 25 } })
+    call(vendorWithdraw as unknown as Handler, ctx, { params: { id: poolId }, _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, headers: {}, body: { amount: 25 } })
 
   function spied(ledger: PoolLedger) {
     const svc = ledger.service as unknown as Record<string, unknown>

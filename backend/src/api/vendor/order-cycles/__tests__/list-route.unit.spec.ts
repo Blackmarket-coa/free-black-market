@@ -44,6 +44,8 @@ const makeReq = (
   overrides: { actorId?: string; sellerId?: string; query?: Record<string, unknown> } = {}
 ) => ({
   _seller_id: overrides.sellerId,
+  // The vendor guard attaches `_seller_id` only once it has resolved the actor.
+  _sellerContextResolved: overrides.sellerId ? true : undefined,
   auth_context: overrides.actorId ? { actor_id: overrides.actorId } : undefined,
   query: overrides.query ?? {},
   scope: {

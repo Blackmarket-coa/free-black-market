@@ -452,7 +452,7 @@ describe("POST /vendor/hawala/pools/:id/withdraw", () => {
     svc.listLedgerAccounts = accountReads
     svc.createAccount = accountCreate
     const ctx = makeCtx({ ledger })
-    const res = await call(vendorWithdraw as unknown as Handler, ctx, { params: { id: "pool_c" }, _seller_id: "sel_1", auth_context: { actor_id: "sel_1" }, headers: {}, body: { amount: 25 } })
+    const res = await call(vendorWithdraw as unknown as Handler, ctx, { params: { id: "pool_c" }, _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, headers: {}, body: { amount: 25 } })
     expect(res.statusCode).toBe(409)
     expect(res.body).toMatchObject({ type: "carried_pool", message: expect.stringContaining("ground_up_liberation_project") })
     expect(balanceRead).not.toHaveBeenCalled()
@@ -467,7 +467,7 @@ describe("POST /vendor/hawala/pools/:id/withdraw", () => {
       accounts: [makePoolAccount("acc-pool_1", { balance: 100, available_balance: 100 }), makeAccount("acc-earn", { account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: "sel_1", balance: 0, available_balance: 0 })],
     })
     const ctx = makeCtx({ ledger })
-    const res = await call(vendorWithdraw as unknown as Handler, ctx, { params: { id: "pool_1" }, _seller_id: "sel_1", auth_context: { actor_id: "sel_1" }, headers: {}, body: { amount: 25 } })
+    const res = await call(vendorWithdraw as unknown as Handler, ctx, { params: { id: "pool_1" }, _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, headers: {}, body: { amount: 25 } })
     expect(res.statusCode).toBe(200)
     expect(ledger.entries).toHaveLength(1)
     expect(ledger.entries[0]).toMatchObject({ entry_type: "WITHDRAWAL", debit_account_id: "acc-pool_1", credit_account_id: "acc-earn", amount: 25 })

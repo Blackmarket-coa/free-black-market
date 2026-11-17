@@ -79,7 +79,7 @@ const liveReq = (
   body: Record<string, unknown>,
   scopeMap: Record<string, unknown>
 ) => ({
-  auth_context: { actor_id: "sel_1" },
+  _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" },
   body,
   scope: makeScope(scopeMap),
 })
@@ -91,7 +91,7 @@ describe("vendor creator credits convert-xp route", () => {
 
   it("is dark when the flag is off: 404 and no service resolution", async () => {
     const resolve = jest.fn()
-    const req = { auth_context: { actor_id: "sel_1" }, body: {}, scope: { resolve } }
+    const req = { _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, body: {}, scope: { resolve } }
 
     const res = createRes()
     await invoke(req, res)

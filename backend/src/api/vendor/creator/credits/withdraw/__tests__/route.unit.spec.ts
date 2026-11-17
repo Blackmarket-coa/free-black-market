@@ -42,7 +42,7 @@ const makeHawala = (createTransfer: jest.Mock) => ({
 })
 
 const liveReq = (body: Record<string, unknown>, hawala: unknown) => ({
-  auth_context: { actor_id: "sel_1" },
+  _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" },
   body,
   scope: makeScope({ [HAWALA_LEDGER_MODULE]: hawala }),
 })
@@ -54,7 +54,7 @@ describe("vendor creator credits withdraw route", () => {
 
   it("is dark when the flag is off: 404 and no service resolution", async () => {
     const resolve = jest.fn()
-    const req = { auth_context: { actor_id: "sel_1" }, body: { credits: 100 }, scope: { resolve } }
+    const req = { _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, body: { credits: 100 }, scope: { resolve } }
 
     const res = createRes()
     await invoke(req, res)

@@ -6,6 +6,8 @@ type Mocks = {
   sellers: Record<string, { id: string; store_status?: string | null }>
   membersByEmail: Record<string, string>
   membersById: Record<string, string>
+  /** `${sellerId}|${address}` -> member id: the live member a seller id acts as for that address. */
+  membersAtAddress?: Record<string, string>
   identities: Array<Record<string, unknown>>
   requests: Array<Record<string, unknown>>
 }
@@ -15,6 +17,18 @@ const buildReq = (
   mocks: Mocks
 ) => {
   const pgRaw = jest.fn(async (sql: string, params: unknown[]) => {
+    // shared/seller-actor.ts liveMemberAtAddress: (seller id, login address).
+    if (sql.includes("LOWER(TRIM(m.email))")) {
+      const key = `${String(params[0])}|${String(params[1] ?? "").trim().toLowerCase()}`
+      const memberId = mocks.membersAtAddress?.[key]
+      return { rows: memberId ? [{ id: memberId }] : [] }
+    }
+    // The accepted-request relink's lookup by address.
+    if (sql.includes("LOWER(TRIM(email))")) {
+      const email = String(params[0] ?? "").trim().toLowerCase()
+      const sellerId = mocks.membersByEmail[email]
+      return { rows: sellerId ? [{ id: `mem_of_${sellerId}`, seller_id: sellerId }] : [] }
+    }
     if (sql.includes("LOWER(email)")) {
       const email = String(params[0] ?? "").toLowerCase()
       const sellerId = mocks.membersByEmail[email]
@@ -98,8 +112,14 @@ describe("getSellerRegistrationStatus", () => {
         membersByEmail: {},
         membersById: {},
         identities: [
-          { id: "authid_1", app_metadata: { seller_id: "sel_live" } },
+          {
+            id: "authid_1",
+            app_metadata: { seller_id: "sel_live" },
+            provider_identities: [{ provider: "emailpass", entity_id: "owner@x.com" }],
+          },
         ],
+        // A seller id acts only through the live member at the login's address.
+        membersAtAddress: { "sel_live|owner@x.com": "mem_owner" },
         requests: [],
       }
     )
@@ -166,13 +186,14 @@ describe("getSellerRegistrationStatus", () => {
       String(sql).includes("FROM member")
     )
     expect(memberLookups.length).toBeGreaterThan(0)
-    expect(String(memberLookups[0][0])).toContain("LOWER(email)")
+    expect(String(memberLookups[0][0])).toContain("LOWER(TRIM(email))")
 
-    // The re-link must merge, not replace, app_metadata
+    // The re-link must merge, not replace, app_metadata, and names the member
+    // (as Mercur links one), not its store.
     expect(authModule.updateAuthIdentities).toHaveBeenCalledWith([
       {
         id: "authid_1",
-        app_metadata: { customer_id: "cus_1", seller_id: "sel_live" },
+        app_metadata: { customer_id: "cus_1", seller_id: "mem_of_sel_live" },
       },
     ])
   })

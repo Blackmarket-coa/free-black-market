@@ -18,7 +18,9 @@ const makeReq = (opts: {
   }))
   return {
     req: {
+      // The guard attaches `_seller_id` only once it has resolved the actor.
       _seller_id: opts.sellerId,
+      _sellerContextResolved: opts.sellerId ? true : undefined,
       auth_context: opts.actorId ? { actor_id: opts.actorId } : undefined,
       scope: { resolve: () => ({ raw }) },
     } as any,
@@ -46,10 +48,13 @@ describe("resolveVendorSellerId", () => {
     await expect(resolveVendorSellerId(req)).resolves.not.toBe("mem_9")
   })
 
-  it("passes a sel_ actor id through untouched", async () => {
+  it("does not take a sel_ actor id as the store unless the guard resolved it", async () => {
+    // A seller id acts only as the live member of that store at the login's
+    // address (shared/seller-actor.ts). It used to pass through untouched,
+    // which let any login holding it act for the store.
     const { req, raw } = makeReq({ actorId: "sel_1" })
 
-    await expect(resolveVendorSellerId(req)).resolves.toBe("sel_1")
+    await expect(resolveVendorSellerId(req)).resolves.toBeUndefined()
     expect(raw).not.toHaveBeenCalled()
   })
 

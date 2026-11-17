@@ -192,6 +192,10 @@ export const getSellerRegistrationStatus = async (
         "[GET /auth/seller/registration-status] Seller ID present in token but not found; trying identity-based resolution:",
         sellerId
       )
+    } else if (typeof rawActorId === "string" && rawActorId.startsWith("sel_")) {
+      // A seller id that acts as no member for this login is as stale as one
+      // whose store is gone, and is answered the same way below.
+      staleSellerClaim = rawActorId
     }
 
     const staleClaimResult = (): { status: RegistrationStatusResponse; statusCode: number } => ({

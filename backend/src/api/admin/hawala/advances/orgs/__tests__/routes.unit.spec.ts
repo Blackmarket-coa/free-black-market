@@ -426,7 +426,7 @@ describe("GET /vendor/hawala/advances", () => {
       accounts: [{ id: "acc-earn", account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: "sel_1", currency_code: "USD", balance: 0, pending_balance: 0, available_balance: 0 }],
     })
     const ctx = makeCtx({ ledger })
-    const res = await call(vendorAdvances as unknown as Handler, ctx, { _seller_id: "sel_1", auth_context: { actor_id: "sel_1" }, headers: {} })
+    const res = await call(vendorAdvances as unknown as Handler, ctx, { _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1" }, headers: {} })
     expect(res.statusCode).toBe(200)
     const advances = res.body.advances as Array<{ id: string }>
     expect(advances.map((a) => a.id)).toEqual(["adv_seller"])
