@@ -370,9 +370,9 @@ async function handleAcceptedRequest(
 
     const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
 
-    const findMemberSellerIdByEmail = async (
+    const findLiveMemberByEmail = async (
       email?: string | null
-    ): Promise<string | null> => {
+    ): Promise<{ id: string; seller_id: string } | null> => {
       if (!email) {
         return null
       }
@@ -380,15 +380,15 @@ async function handleAcceptedRequest(
       // login to the store it was removed from.
       const memberResult = await pgConnection.raw(
         `
-        SELECT seller_id
+        SELECT id, seller_id
         FROM member
-        WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL
+        WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) AND deleted_at IS NULL
         ORDER BY created_at DESC
         LIMIT 1
         `,
         [email]
       )
-      return memberResult.rows?.[0]?.seller_id ?? null
+      return memberResult.rows?.[0] ?? null
     }
 
     // Load the identity once: provider email for the lookup fallback, and the
@@ -404,9 +404,9 @@ async function handleAcceptedRequest(
       log.warn("[Accepted request] Could not load auth identity:", err?.message)
     }
 
-    let sellerId = await findMemberSellerIdByEmail(requestEmail)
+    let member = await findLiveMemberByEmail(requestEmail)
 
-    if (!sellerId) {
+    if (!member) {
       // The request-payload email can drift from the login email (case
       // differences, admin edits). Try the identity's provider email too.
       const providerEmail = identity?.provider_identities
@@ -416,11 +416,12 @@ async function handleAcceptedRequest(
         providerEmail &&
         providerEmail.toLowerCase() !== requestEmail?.toLowerCase()
       ) {
-        sellerId = await findMemberSellerIdByEmail(providerEmail)
+        member = await findLiveMemberByEmail(providerEmail)
       }
     }
 
-    if (sellerId) {
+    if (member) {
+      const sellerId = member.seller_id
       const seller = await findSellerById(req, sellerId)
       if (seller) {
         if (identity) {
@@ -432,7 +433,7 @@ async function handleAcceptedRequest(
               // customer (customer_id) or carry provider metadata.
               app_metadata: {
                 ...(identity.app_metadata ?? {}),
-                seller_id: sellerId,
+                seller_id: member.id,
               },
             },
           ])
@@ -443,6 +444,9 @@ async function handleAcceptedRequest(
             sellerId,
             seller,
             requestId: latestRequest.id,
+              // The member, as Mercur links one: it acts with its own role.
+              // The seller id this wrote acted as whichever member the gates
+              // chose for it.
             message: "Your seller account is approved. You can access the vendor dashboard.",
           }),
         }
