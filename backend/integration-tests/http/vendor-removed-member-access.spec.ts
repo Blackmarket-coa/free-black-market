@@ -260,15 +260,17 @@ medusaIntegrationTestRunner({
         const res = await backfill()
         expect(res.status).toBe(200)
         expect(res.data.summary).toMatchObject({ updated: 1, errors: 0 })
-        expect(await linkOf(invited.authIdentityId)).toBe(invited.memberId)
-        expect(await linkOf(owner.authIdentityId)).toBe(ownerMemberId)
 
+        // Who the login acts as, first: a seller-id link would make it the owner.
         const token = await signIn(invited)
-        expect(jwt.decode(token)).toMatchObject({ actor_id: invited.memberId })
         const me = await api.get("/vendor/me", bearer(token))
         expect(me.data.member).toMatchObject({ id: invited.memberId, role: "member", seller_id: store.id })
+        expect(me.data.member.id).not.toBe(ownerMemberId)
         const profile = await api.get("/vendor/sellers/me", bearer(token))
         expect(profile.data.seller.id).toBe(store.id)
+        expect(jwt.decode(token)).toMatchObject({ actor_id: invited.memberId })
+        expect(await linkOf(invited.authIdentityId)).toBe(invited.memberId)
+        expect(await linkOf(owner.authIdentityId)).toBe(ownerMemberId)
       })
 
       it("does not hand a removed member its old store back after approval cleared its link and then failed", async () => {
