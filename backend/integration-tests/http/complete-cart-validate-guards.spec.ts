@@ -235,7 +235,7 @@ medusaIntegrationTestRunner({
 
         const { orderId, errors } = await completeCart(cart.id)
         expect(orderId).toBeUndefined()
-        expect(messages(errors)).toMatch(/3 Coalition Credits reserved, and credit tender is not yet wired into payment/)
+        expect(messages(errors)).toMatch(/Your cart has 3 Coalition Credits applied, but paying with Coalition Credits is not available yet/)
         expect(await ordersOf(customer.id)).toEqual([])
         expect(await paymentsOf(collection.id)).toEqual([])
         expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at ?? null).toBeNull()
@@ -267,7 +267,7 @@ medusaIntegrationTestRunner({
 
         const response = await api.post(`/store/carts/${cart.id}/complete-tickets`, {}, pak).catch((e: any) => e.response)
         expect(response.status).toBe(400)
-        expect(String(response.data?.message)).toMatch(/2 Coalition Credits reserved/)
+        expect(String(response.data?.message)).toMatch(/Your cart has 2 Coalition Credits applied/)
         expect(await ordersOf(customer.id)).toEqual([])
         expect(await paymentsOf(collection.id)).toEqual([])
       })

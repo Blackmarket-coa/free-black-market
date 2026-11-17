@@ -165,6 +165,45 @@ describe("validateOrderCycleOnCompleteCart", () => {
     ).rejects.toThrow(/no longer exists/i)
   })
 
+  /** The refusal's message, which the storefront shows the buyer as it is. */
+  const refusalOf = (ctx: ReturnType<typeof makeCtx>) =>
+    run(ctx).then(
+      () => "",
+      (e: Error) => e.message
+    )
+
+  it("names the lines of a cycle that no longer exists by the titles the buyer sees, never by the cycle's id", async () => {
+    const one = await refusalOf(
+      makeCtx({
+        cart: cartWith([{ title: "Tomatoes", variant_id: "v1", quantity: 1, metadata: { order_cycle_id: "oc_1" } }]),
+        cycle: null,
+      })
+    )
+    expect(one).toBe('"Tomatoes" in your cart is from an order cycle that no longer exists. Remove it and check out again.')
+
+    const two = await refusalOf(
+      makeCtx({
+        cart: cartWith([
+          { title: "Tomatoes", variant_id: "v1", quantity: 1, metadata: { order_cycle_id: "oc_1" } },
+          { title: "Kale", variant_id: "v2", quantity: 2, metadata: { order_cycle_id: "oc_1" } },
+          { title: "Tomatoes", variant_id: "v1", quantity: 1, metadata: { order_cycle_id: "oc_1" } },
+          { title: "Bread", variant_id: "v3", quantity: 1 },
+        ]),
+        cycle: null,
+      })
+    )
+    expect(two).toBe('"Tomatoes", "Kale" in your cart are from an order cycle that no longer exists. Remove them and check out again.')
+
+    const untitled = await refusalOf(
+      makeCtx({
+        cart: cartWith([{ variant_id: "v1", quantity: 1, metadata: { order_cycle_id: "oc_1" } }]),
+        cycle: null,
+      })
+    )
+    expect(untitled).toBe("Some items in your cart are from an order cycle that no longer exists. Remove them and check out again.")
+    for (const message of [one, two, untitled]) expect(message).not.toContain("oc_1")
+  })
+
   it("refuses a quantity past what is left — D9-1's preventable half", async () => {
     await expect(
       run(

@@ -57,16 +57,33 @@ describe("validateCcrReservation", () => {
     await expect(run).rejects.toBeInstanceOf(MedusaError)
     await expect(run).rejects.toMatchObject({ type: MedusaError.Types.NOT_ALLOWED })
     await expect(run).rejects.toThrow(
-      /3 Coalition Credits reserved, and credit tender is not yet wired into payment/
+      "Your cart has 3 Coalition Credits applied, but paying with Coalition Credits is not available yet, so " +
+        "checking out now would charge the full price and use up the credits as well. Remove the credits from " +
+        "your cart, then place your order again to pay the full price."
     )
-    await expect(run).rejects.toThrow("DELETE /store/carts/cart_1/credits")
     expect(graphCalls).toEqual([{ entity: "cart", fields: ["id", "metadata"], filters: { id: "cart_1" } }])
+  })
+
+  it("speaks to the buyer, who sees it as it is: no cart id, no API path", async () => {
+    const message = await validateCcrReservation(ARGS, ctxWith({ [CCR_RESERVATION_METADATA_KEY]: 3 })).then(
+      () => "",
+      (e: Error) => e.message
+    )
+    expect(message).toMatch(/Remove the credits from your cart/)
+    expect(message).not.toContain("cart_1")
+    expect(message).not.toMatch(/\/store\/|DELETE|reservation/)
   })
 
   it("refuses a reservation stored as a numeric string", async () => {
     await expect(
       validateCcrReservation(ARGS, ctxWith({ [CCR_RESERVATION_METADATA_KEY]: "2" }))
-    ).rejects.toThrow(/2 Coalition Credits reserved/)
+    ).rejects.toThrow(/Your cart has 2 Coalition Credits applied/)
+  })
+
+  it("counts one credit in the singular", async () => {
+    await expect(
+      validateCcrReservation(ARGS, ctxWith({ [CCR_RESERVATION_METADATA_KEY]: 1 }))
+    ).rejects.toThrow(/Your cart has 1 Coalition Credit applied,/)
   })
 
   it.each([
