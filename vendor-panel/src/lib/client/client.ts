@@ -225,9 +225,12 @@ export const fetchQuery = async (
       devLogger.error("[Vendor fetchQuery] Request failed", errorDetails)
     }
 
-    // Drop the token only if it is still the one this request carried: a
-    // sign-in that finished while the request was in flight stored a newer
-    // token, which this 401 says nothing about.
+    // Drop the stored token only if it is unchanged since this request read
+    // it: a sign-in that finished while the request was in flight stored a
+    // newer token, which this 401 says nothing about. The comparison is with
+    // the stored token, not with the Authorization the request carried: a
+    // caller that sends its own (invites.tsx, on /vendor/invites/accept)
+    // still has an unchanged stored token dropped by a 401.
     if (!isPublic && response.status === 401 && getAuthToken() === token) {
       clearAuthToken()
     }

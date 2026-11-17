@@ -26,12 +26,14 @@ import {
  * The SDK does nothing on a 401, so this does what `fetchQuery` does: a 401
  * from a route that is not exempt drops the token, and the protected layout
  * then sends the seller to sign in. It drops it only if the stored token is
- * still the one this request carried: a sign-in that finished while the
+ * unchanged since this request read it: a sign-in that finished while the
  * request was in flight stored a newer token, which the 401 says nothing
- * about. Any other failure (another status, a network error, an abort, a 204
- * the SDK cannot parse as JSON) leaves the token alone. The error is rethrown
- * as it came, a `FetchError` with its status, which the route ErrorBoundary
- * and the query client's retry rule read.
+ * about. The comparison is with the stored token, not with the Authorization
+ * the request carried, which a caller's own header replaces (none of this
+ * client's callers sends one). Any other failure (another status, a network
+ * error, an abort, a 204 the SDK cannot parse as JSON) leaves the token alone.
+ * The error is rethrown as it came, a `FetchError` with its status, which the
+ * route ErrorBoundary and the query client's retry rule read.
  */
 export const sdk = {
   client: {
