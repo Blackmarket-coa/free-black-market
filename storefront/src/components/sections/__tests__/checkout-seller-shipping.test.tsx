@@ -179,6 +179,19 @@ describe("the delivery step", () => {
     expect(h.buttons[CONTINUE]?.disabled).toBe(true)
   })
 
+  it("names no seller as having no options when the options could not be fetched", () => {
+    const html = renderToStaticMarkup(
+      <CartShippingMethodsSection
+        cart={cartWith([A, B], ["so_a"]) as Parameters<Section>[0]["cart"]}
+        availableShippingMethods={null}
+      />
+    )
+
+    expect(html).not.toContain('data-testid="sellers-without-delivery-options"')
+    // Still one method for two sellers: Continue stays shut.
+    expect(h.buttons[CONTINUE]?.disabled).toBe(true)
+  })
+
   it("asks the backend nothing from the browser: the eligibility check is a server action", () => {
     const source = readFileSync(
       path.join(__dirname, "../CartShippingMethodsSection/CartShippingMethodsSection.tsx"),

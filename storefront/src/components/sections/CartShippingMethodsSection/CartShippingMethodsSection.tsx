@@ -181,10 +181,12 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   })
 
   // Which sellers still need a method: Mercur refuses the order, after
-  // authorizing the card, unless every seller in the cart has one.
+  // authorizing the card, unless every seller in the cart has one. When the
+  // options could not be fetched (null), nothing is known about who has
+  // options, so the rule only counts and names no one.
   const coverage = useMemo(
-    () => shippingCoverage(cart, _allMethods, chosenOptionSellers),
-    [cart, _allMethods, chosenOptionSellers]
+    () => shippingCoverage(cart, availableShippingMethods ? _allMethods : null, chosenOptionSellers),
+    [cart, availableShippingMethods, _allMethods, chosenOptionSellers]
   )
   const sellerNames = (sellers: { name: string }[]) =>
     sellers.map((seller) => seller.name || "a seller in your cart")
