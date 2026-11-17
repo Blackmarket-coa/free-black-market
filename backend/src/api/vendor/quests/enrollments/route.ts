@@ -12,7 +12,7 @@ import { getSellerId, makeAwardXp } from "../_helpers"
  * (persists stage events, best-effort XP).
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)
@@ -49,7 +49,7 @@ export const POST = async (
   req: MedusaRequest<{ quest_key: string; collective_id?: string }>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const { quest_key, collective_id } = req.body ?? ({} as { quest_key?: string; collective_id?: string })

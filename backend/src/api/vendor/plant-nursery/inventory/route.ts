@@ -17,7 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
  * Matches the nursery-portal `useInventory` hook contract.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(

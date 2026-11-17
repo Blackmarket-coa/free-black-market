@@ -16,7 +16,7 @@ import { formatBytes, measureFileBytes } from "../../../shared/file-size"
 
 /** GET /vendor/vault — a vendor's uploaded evidence documents (opt-in). */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<DocumentVaultModuleService>(DOCUMENT_VAULT_MODULE)
@@ -61,7 +61,7 @@ interface CreateDocBody {
  * only reflects a real admin check (FBM never fabricates verification).
  */
 export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as CreateDocBody)

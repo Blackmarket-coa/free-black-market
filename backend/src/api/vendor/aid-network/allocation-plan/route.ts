@@ -22,7 +22,7 @@ interface PlanBody {
  * diffed before anyone approves a transfer.
  */
 export const POST = async (req: MedusaRequest<PlanBody>, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as PlanBody)

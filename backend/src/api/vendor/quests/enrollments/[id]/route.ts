@@ -6,7 +6,7 @@ import { getSellerId, makeAwardXp } from "../../_helpers"
 
 /** GET /vendor/quests/enrollments/:id — enrollment detail + live evaluation. */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)
@@ -31,7 +31,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
  * Sets status = DROPPED; NEVER deletes the vendor's substrate records.
  */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)

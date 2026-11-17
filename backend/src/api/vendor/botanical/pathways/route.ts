@@ -13,7 +13,7 @@ const ACTIVE_RUN_STATUSES = ["planned", "in_progress", "curing", "testing"]
  * Returns `{ pathways }` to match the `useActivePathways` hook contract.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const makerId = getSellerId(req)
+  const makerId = await getSellerId(req)
   if (!makerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<BotanicalModuleService>(BOTANICAL_MODULE)
@@ -58,7 +58,7 @@ export const POST = async (
   req: MedusaRequest<ActivateBody>,
   res: MedusaResponse
 ) => {
-  const makerId = getSellerId(req)
+  const makerId = await getSellerId(req)
   if (!makerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? {}

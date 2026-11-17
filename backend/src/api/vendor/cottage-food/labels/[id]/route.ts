@@ -29,7 +29,7 @@ async function loadOwnedLabel(
  * what's still missing.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<CottageFoodModuleService>(COTTAGE_FOOD_MODULE)
@@ -66,7 +66,7 @@ export const PATCH = async (
   req: MedusaRequest<UpdateLabelBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<CottageFoodModuleService>(COTTAGE_FOOD_MODULE)
@@ -117,7 +117,7 @@ export const PATCH = async (
  * DELETE /vendor/cottage-food/labels/:id
  */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<CottageFoodModuleService>(COTTAGE_FOOD_MODULE)

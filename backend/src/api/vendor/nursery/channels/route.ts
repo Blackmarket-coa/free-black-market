@@ -23,7 +23,7 @@ type VendorRulesLike = {
  * table). Only WHOLESALE tiers tagged with a nursery channel are returned.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const vendorRules = req.scope.resolve<VendorRulesLike>("vendorRules")
@@ -59,7 +59,7 @@ export const POST = async (
   req: MedusaRequest<CreateChannelBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as CreateChannelBody)

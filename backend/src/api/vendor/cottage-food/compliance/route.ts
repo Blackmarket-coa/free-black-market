@@ -19,7 +19,7 @@ import { getSellerId } from "../../quests/_helpers"
  * response that any caller should treat as permission to sell or not sell.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<CottageFoodModuleService>(COTTAGE_FOOD_MODULE)

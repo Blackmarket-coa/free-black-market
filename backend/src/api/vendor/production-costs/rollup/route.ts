@@ -13,7 +13,7 @@ import { resolveOwnedBatch } from "../_helpers"
  * given sale price would realize.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const batchId = req.query.production_batch_id

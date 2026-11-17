@@ -5,7 +5,7 @@ import { getSellerId } from "../../../quests/_helpers"
 
 /** PUT /vendor/nursery/products/:id — update an attribute row (seller-scoped). */
 export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)
@@ -20,7 +20,7 @@ export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
 
 /** DELETE /vendor/nursery/products/:id — remove nursery attributes for a product. */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)

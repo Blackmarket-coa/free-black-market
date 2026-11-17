@@ -9,7 +9,7 @@ import { getSellerId } from "../_helpers"
  * Collectives the caller owns or is an enrolled member of.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)
@@ -39,7 +39,7 @@ export const POST = async (
   req: MedusaRequest<{ quest_key: string; title: string }>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const { quest_key, title } = req.body ?? ({} as { quest_key?: string; title?: string })

@@ -12,7 +12,7 @@ import { parseDemands } from "../_helpers"
  * committed, so the list is genuinely surplus rather than everything on hand.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const rawDays = req.query.within_days

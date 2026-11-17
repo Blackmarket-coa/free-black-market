@@ -5,7 +5,7 @@ import { getSellerId } from "../../quests/_helpers"
 
 /** DELETE /vendor/production-batches/:id — remove a production batch (seller-scoped). */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<ProductionLedgerModuleService>(PRODUCTION_LEDGER_MODULE)

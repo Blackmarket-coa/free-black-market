@@ -57,7 +57,7 @@ function toNurseryOrder(o: SellerOrder) {
  * live in the Blackout repo and are not fabricated here.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(

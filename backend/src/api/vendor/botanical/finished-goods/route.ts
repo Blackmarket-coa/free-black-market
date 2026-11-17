@@ -10,7 +10,7 @@ import { getSellerId } from "../../quests/_helpers"
  * contract.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const makerId = getSellerId(req)
+  const makerId = await getSellerId(req)
   if (!makerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<BotanicalModuleService>(BOTANICAL_MODULE)

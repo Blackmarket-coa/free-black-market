@@ -9,7 +9,7 @@ import { getSellerId } from "../../../quests/_helpers"
  * array to match the nursery-portal `usePropagation` hook contract.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(

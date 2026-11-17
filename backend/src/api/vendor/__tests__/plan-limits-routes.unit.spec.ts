@@ -222,7 +222,14 @@ describe("GET /vendor/analytics/embed", () => {
 })
 
 describe("POST /vendor/vault", () => {
-  const authed = { auth_context: { actor_id: "sel_1" }, body: { label: "Lease" } }
+  // A request the vendor gate let through for store sel_1 (SD-145: the vault
+  // keys documents by the store the gate resolved, never by the actor).
+  const authed = {
+    auth_context: { actor_id: "mem_1" },
+    _seller_id: "sel_1",
+    _sellerContextResolved: true,
+    body: { label: "Lease" },
+  }
 
   it("records a document while under the cap", async () => {
     const { req, createVaultDocuments } = makeReq(

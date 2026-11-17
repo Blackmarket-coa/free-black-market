@@ -16,7 +16,7 @@ const SOURCES = new Set<string>(Object.values(CostSource))
  * Pass `?production_batch_id=` to scope to one batch.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<ProductionCostingModuleService>(
@@ -57,7 +57,7 @@ export const POST = async (
   req: MedusaRequest<CreateCostBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as CreateCostBody)

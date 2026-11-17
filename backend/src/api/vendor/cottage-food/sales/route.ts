@@ -8,7 +8,7 @@ import { getSellerId } from "../../quests/_helpers"
  * The seller's compliance ledger, newest first.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const limit = Math.min(Number(req.query.limit) || 100, 500)
@@ -46,7 +46,7 @@ export const POST = async (
   req: MedusaRequest<ManualSaleBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const body = req.body ?? {}

@@ -8,7 +8,7 @@ const NODE_TYPES = new Set<string>(Object.values(NodeType))
 
 /** GET /vendor/aid-network/nodes — the seller's hubs. */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<AidNetworkModuleService>(AID_NETWORK_MODULE)
@@ -42,7 +42,7 @@ export const POST = async (
   req: MedusaRequest<CreateNodeBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as CreateNodeBody)

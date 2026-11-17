@@ -9,7 +9,7 @@ const REASONS = new Set<string>(Object.values(TransferReason))
 
 /** GET /vendor/aid-network/transfers — the seller's transfers. */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<AidNetworkModuleService>(AID_NETWORK_MODULE)
@@ -37,7 +37,7 @@ export const POST = async (
   req: MedusaRequest<TransferBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as TransferBody)

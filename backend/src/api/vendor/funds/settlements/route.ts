@@ -13,7 +13,7 @@ import { listSellerSettlements } from "../_settlements"
  * "$200.00 · $10.00 attributed · $190.00 available" rather than a bare id.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const settlements = await listSellerSettlements(req)
