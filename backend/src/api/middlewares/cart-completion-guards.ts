@@ -1,5 +1,11 @@
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
+import {
+  CART_COMPLETION_INCOMPLETE,
+  type CartCompletionEvidence,
+  cartCompletionIncompleteResponse,
+  judgeCartCompletion,
+} from "../../lib/cart-completion"
 import { CART_ALREADY_COMPLETED } from "../../lib/cart-payment-amount"
 import { createLogger } from "../../shared/logger"
 import { runMainCheckoutGuards } from "../../workflows/hooks/complete-cart-guards"
@@ -49,23 +55,34 @@ const log = createLogger("api/middlewares/cart-completion-guards")
  *   compensation then cancels the payment Medusa's order was placed on,
  *   calling Stripe's cancel, on every retry alike (SD-72 (b)'s mirror,
  *   measured through `POST /store/carts/:id/complete-digital` and then this
- *   route). It is answered here, 409 `cart_already_completed`, with the id
- *   of the order the cart's `order_cart` link names when it has one, as
- *   Medusa's own complete route hands back the order of a completed cart.
- *   Mercur's own runs never leave this state: they write the order set
+ *   route). It is answered here, and what it is answered depends on the
+ *   order the cart's `order_cart` link names, judged as FBM judges every
+ *   completion (`judgeCartCompletion`, `lib/cart-completion.ts`, on the
+ *   order's total and payment count, read as
+ *   `workflows/steps/require-completed-cart-order.ts` reads them). When the
+ *   judge says the completion yielded an order that may be acted on (there,
+ *   and paid whenever it owes money), 409 `cart_already_completed` with that
+ *   order's id, as Medusa's own complete route hands back the order of a
+ *   completed cart. Otherwise 409 `cart_completion_incomplete`
+ *   (`cartCompletionIncompleteResponse`) with no order id: a Medusa
+ *   completion the engine stalled (SD-53) leaves the order, the link and
+ *   `completed_at` with no payment and no confirmation email, and one still
+ *   running is in that state until it authorizes, so "already placed" would
+ *   be false; a retry gets the true answer once the run has ended. A cart
+ *   linked to no order gets the same, as the judge refuses a completion that
+ *   names none. Mercur's own runs never leave this state: they write the order set
  *   before `completed_at` (`createOrderSetStep` runs before the block that
  *   holds `updateCartsStep`), and their compensation puts `completed_at` back
  *   and deletes the order set (read in `split-and-complete-cart.js` and
  *   core-flows' `update-carts.js`).
  * - A cart that does not exist: Mercur's route answers for it, as before.
  *
- * Fails closed. When the cart, its order sets or its order link cannot be
- * read, or a guard fails without refusing (anything but its `not_allowed` or
- * `invalid_data` refusal), the completion does not run and the buyer is
- * answered 409 `cart_completion_check_failed`: the order was not placed, try
- * again shortly. The order link is read only to answer a completed cart, so
- * a failure there drops the order id from that answer rather than the
- * answer. Two guards fail open inside on infrastructure errors (the CCR
+ * Fails closed. When the cart, its order sets, a completed cart's order link
+ * or that order cannot be read, or a guard fails without refusing (anything
+ * but its `not_allowed` or `invalid_data` refusal), the completion does not
+ * run and the buyer is answered 409 `cart_completion_check_failed`: the
+ * order was not placed, try again shortly. Never "already placed" on
+ * evidence that could not be read. Two guards fail open inside on infrastructure errors (the CCR
  * guard's cart read; the order-cycle guard's cart read, its module
  * resolution and its stock read), as they do on the hook; that is theirs,
  * not this middleware's.
@@ -109,12 +126,28 @@ export async function refuseGuardedCartCompletion(
   if (cart.completed_at) {
     // Completed by Medusa's completeCartWorkflow, whose validate hook ran the
     // guards at that completion. Answered here: Mercur's run on it would
-    // cancel that order's payment.
-    const orderId = await orderOfCompletedCart(query, cartId)
-    const refusal = cartAlreadyCompletedAtCheckoutResponse(orderId)
-    log.warn(
-      `[cart-completion] cart ${cartId}: POST /store/carts/:id/complete on a cart completed without an order set (Medusa's workflow, order ${orderId ?? "unknown"}); answered ${refusal.status} ${refusal.body.code}, Mercur not called`,
-      { cart_id: cartId, order_id: orderId }
+    // cancel that order's payment. Whether the order was placed is judged on
+    // what that completion left.
+    let evidence: CartCompletionEvidence
+    try {
+      evidence = await evidenceOfCompletedCart(query, cartId)
+    } catch (error) {
+      return answerCheckFailed(res, cartId, "its order link or order could not be read", error)
+    }
+    const verdict = judgeCartCompletion(evidence)
+    if (verdict.ok) {
+      const answer = cartAlreadyCompletedAtCheckoutResponse(verdict.order_id)
+      log.warn(
+        `[cart-completion] cart ${cartId}: POST /store/carts/:id/complete on a cart Medusa's workflow completed into order ${verdict.order_id}; answered ${answer.status} ${answer.body.code}, Mercur not called`,
+        { cart_id: cartId, order_id: verdict.order_id }
+      )
+      res.status(answer.status).json(answer.body)
+      return
+    }
+    const refusal = cartCompletionIncompleteResponse({ code: CART_COMPLETION_INCOMPLETE, reason: verdict.reason })
+    log.error(
+      `[cart-completion] cart ${cartId}: POST /store/carts/:id/complete on a cart completed without an order set whose completion yielded no order to act on (${verdict.reason}): ${verdict.detail}; answered ${refusal.status} ${refusal.body.code}, Mercur not called`,
+      { cart_id: cartId, order_id: evidence.order_id ?? null, reason: verdict.reason }
     )
     res.status(refusal.status).json(refusal.body)
     return
@@ -138,15 +171,21 @@ export async function refuseGuardedCartCompletion(
  */
 export const CART_ALREADY_COMPLETED_AT_CHECKOUT_STATUS = 409
 
-/** What the buyer is told: the order exists, and where they can see it. */
+/**
+ * What the buyer is told: the order exists, and where they can see it. Sent
+ * only when `judgeCartCompletion` passes the order the cart is linked to
+ * (there, its total known, paid whenever it owes money), so that holds; a
+ * completion that left an unpaid order, which also sent no confirmation
+ * email, gets `cart_completion_incomplete` instead.
+ */
 export const CART_ALREADY_COMPLETED_AT_CHECKOUT_MESSAGE =
   "Your order for this cart has already been placed. You can find it under Orders in your account, or in your order confirmation email."
 
 /**
- * The answer to a cart Medusa's workflow completed. The order's id, when the
- * cart's `order_cart` link names one, and no other order data: Medusa's own
- * complete route hands back the whole order of a completed cart to whoever
- * holds the cart's id, which is all this route asks for too.
+ * The answer to a cart Medusa's workflow completed into an order the judge
+ * passes. The order's id and no other order data: Medusa's own complete
+ * route hands back the whole order of a completed cart to whoever holds the
+ * cart's id, which is all this route asks for too.
  */
 export function cartAlreadyCompletedAtCheckoutResponse(orderId?: string | null): {
   status: typeof CART_ALREADY_COMPLETED_AT_CHECKOUT_STATUS
@@ -218,19 +257,40 @@ async function completionStateOf(scope: MedusaRequest["scope"], cartId: string):
   return { query, cart, hasOrderSet: orderSets.length > 0 }
 }
 
-/** The order the cart's `order_cart` link names, read as `completeCartWorkflow` reads it; null when there is none or it cannot be read. */
-async function orderOfCompletedCart(query: QueryLike, cartId: string): Promise<string | null> {
-  try {
-    const { data } = await query.graph({ entity: "order_cart", fields: ["cart_id", "order_id"], filters: { cart_id: cartId } })
-    const orderId = (data[0] as { order_id?: unknown } | undefined)?.order_id
-    return typeof orderId === "string" && orderId ? orderId : null
-  } catch (error) {
-    log.warn(
-      `[cart-completion] cart ${cartId}: its order link could not be read, so the completed-cart answer goes without an order id: ${(error as Error)?.message ?? error}`,
-      { cart_id: cartId }
-    )
-    return null
-  }
+type LinkedOrderRow = {
+  id: string
+  total?: number | string | null
+  payment_collections?: Array<{ payments?: Array<{ id: string } | null> | null } | null> | null
+}
+
+/**
+ * What a completed cart's completion left, for `judgeCartCompletion`: the
+ * order its `order_cart` link names (read as `completeCartWorkflow` reads the
+ * link), and that order's total and payment count (read as
+ * `workflows/steps/require-completed-cart-order.ts` reads them). A cart linked
+ * to no order is evidence of none. A read that fails throws: the caller
+ * answers that the check could not be made.
+ */
+async function evidenceOfCompletedCart(query: QueryLike, cartId: string): Promise<CartCompletionEvidence> {
+  const { data: links } = await query.graph({ entity: "order_cart", fields: ["cart_id", "order_id"], filters: { cart_id: cartId } })
+  const linked = (links[0] as { order_id?: unknown } | undefined)?.order_id
+  const orderId = typeof linked === "string" && linked ? linked : null
+  if (!orderId) return { cart_id: cartId, order_id: null, linked_order_id: null }
+
+  const { data: orders } = await query.graph({
+    entity: "order",
+    fields: ["id", "total", "payment_collections.id", "payment_collections.payments.id"],
+    filters: { id: orderId },
+  })
+  const row = orders[0] as LinkedOrderRow | undefined
+  const order = row
+    ? {
+        id: row.id,
+        total: row.total,
+        payments: (row.payment_collections ?? []).flatMap((c) => c?.payments ?? []).filter((p) => !!p).length,
+      }
+    : null
+  return { cart_id: cartId, order_id: orderId, order, linked_order_id: orderId }
 }
 
 type QueryLike = {
