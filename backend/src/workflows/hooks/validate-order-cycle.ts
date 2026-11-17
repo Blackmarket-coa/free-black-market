@@ -39,7 +39,8 @@ import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
  * before Mercur's `splitAndCompleteCartWorkflow` authorizes anything; that
  * workflow never calls the hook. Two exceptions to "before payment". Medusa's
  * payment webhook captures before it runs the workflow, so a refusal there
- * leaves a captured payment for the workflow's compensation to refund. And on
+ * leaves a captured payment for the workflow's compensation to try to refund
+ * (`complete-cart-validate.ts`). And on
  * the storefront's card flow the buyer's card is confirmed in the browser
  * (`stripe.confirmCardPayment`, `PaymentButton.tsx`) before the main checkout
  * is called, so a refusal there leaves an uncaptured hold on the card. It is

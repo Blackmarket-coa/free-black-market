@@ -39,7 +39,12 @@ import { runMainCheckoutGuards } from "../../workflows/hooks/complete-cart-guard
  *   hook ran the guards then. Checking again would refuse on the cart's own
  *   sale, as above. Mercur's workflow does not read `completed_at`: it goes
  *   on with such a cart as with any other, which is SD-72 (b)'s mirror image
- *   and is left as it was.
+ *   and is left as it was. What that does on Mercur 1.5.0 (measured, and
+ *   pinned in integration-tests/http/main-checkout-guards.spec.ts): its run
+ *   fails linking its order to the cart's payment collection, which Medusa's
+ *   order already holds (400 "Cannot create multiple links between 'order'
+ *   and 'payment'"), and its compensation cancels the payment Medusa's order
+ *   was placed on.
  *
  * A cart that does not exist is not checked either: Mercur's route answers
  * for it, as before.
