@@ -377,6 +377,17 @@ export class SellerApprovalService {
         "This login is linked to a store that was closed, so this application cannot be approved. Nothing was created or linked. Reject it, and ask the applicant to contact support."
       )
     }
+    // A seller id naming an open store where the login has no member at its
+    // address, live or removed: an owner whose member email drifted from the
+    // login's address holds one. Clearing it and approving, as for a removed
+    // member, left that store's member row live and linked to no login
+    // (follow-up re-review, R-b).
+    if (linked.kind === "unmatched") {
+      throw new SellerApprovalRefusedError(
+        409,
+        `This login's link to the existing store "${linked.seller.name}" (${linked.seller.id}) needs support to fix: no member of that store, live or removed, has the login's address, so approving would leave that store's members linked to no login. Nothing was created or changed. Fix the link or the member's email first.`
+      )
+    }
     // The one store approval resumes onto: the one an earlier approval of
     // this application created and linked before a later step failed.
     const resumeOnto =
@@ -407,16 +418,17 @@ export class SellerApprovalService {
     // After every refusal that needs no store made, so none of them changes
     // anything (a name clash, which only the workflow finds, refuses with the
     // link already cleared). A link that acts as no member of a store that is
-    // still open (a removed member's, or a seller id with no live member at
-    // the login's address) names no store of this login's, and Mercur's
-    // setAuthAppMetadataStep refuses any login whose seller_id is set ("Key
-    // seller_id already exists in app metadata"). Approval used to refuse it
-    // as "linked to a store that was closed" while the store was live.
+    // still open because its member was removed (a removed member's id, or a
+    // seller id whose member at the login's address was removed) names no
+    // store of this login's, and Mercur's setAuthAppMetadataStep refuses any
+    // login whose seller_id is set ("Key seller_id already exists in app
+    // metadata"). Approval used to refuse it as "linked to a store that was
+    // closed" while the store was live.
     // `undefined` removes the key: the auth module merges app_metadata, so
     // leaving the key out keeps it, and null keeps it set (measured).
     if (linked.kind === "removed") {
       log.warn(
-        `[SellerApproval] Login ${data.auth_identity_id}'s link ${linked.actor} acts as no member of store ${linked.seller.id} (a removed member, or a seller id with no live member at the login's address); clearing that link before creating its own store (request ${requestId})`
+        `[SellerApproval] Login ${data.auth_identity_id}'s link ${linked.actor} acts as no member of store ${linked.seller.id} (a removed member's id, or a seller id whose member at the login's address was removed); clearing that link before creating its own store (request ${requestId})`
       )
       await authModule.updateAuthIdentities([
         { id: data.auth_identity_id, app_metadata: { seller_id: undefined } },

@@ -30,8 +30,10 @@ jest.setTimeout(240 * 1000)
  * of the login was approved), so an invite into a same-named store, as owner
  * too, is refused. A link to a member removed from a store that is still open
  * is no link: the login files and is approved onto a store of its own. A
- * store name with no Latin letter or digit is refused, at filing and at
- * approval, because its handle would have none.
+ * seller-id link to an open store with no member at the login's address, live
+ * or removed, is refused at filing and at approval, with nothing changed,
+ * until support fixes it. A store name with no Latin letter or digit is
+ * refused, at filing and at approval, because its handle would have none.
  *
  * A name whose handle another store has is refused naming that handle, the
  * store's web address: names that differ only outside a-z and 0-9 share one.
@@ -435,6 +437,40 @@ medusaIntegrationTestRunner({
         expect(approved.data.seller).toMatchObject({ name: storeName })
         expect(approved.data.seller.id).not.toBe(liveStore.id)
         expect(await linkedSeller(removed.authIdentityId)).toBe(approved.data.seller.id)
+      })
+
+      it("a login holding the seller id of a store where it has no member at its address is refused at filing and at approval, and nothing changes", async () => {
+        // The re-review's R-b: an owner whose member email no longer matches
+        // the login's address (the backfill report's no_member_at_login_address).
+        // Counted as a removed member's link, filing took it (201) and
+        // approval replaced the link with a new store (200), leaving the old
+        // store's owner row live and linked to no login.
+        const drifted = await login("drifted")
+        const store = await storeFor(drifted, `Drifted Farm ${uid()}`)
+        const sellers = container().resolve(SELLER_MODULE)
+        const [ownerMember] = await sellers.listMembers({ seller_id: store.id })
+        await sellers.updateMembers([{ id: ownerMember.id, email: `changed-${uid()}@example.com` }])
+        await container().resolve(Modules.AUTH).updateAuthIdentities([{ id: drifted.authIdentityId, app_metadata: { seller_id: store.id } }])
+        const mail = stubMail()
+        const storeName = `Second Start Farm ${uid()}`
+
+        const filed = await file(drifted, storeName)
+        expect(filed.status).toBe(409)
+        expect(filed.data.message).toMatch(/link to an existing store needs support to fix/)
+        expect(filed.data.message).toMatch(/Nothing was created or changed/)
+        expect(await container().resolve(REQUEST_MODULE).listRequests({ submitter_id: drifted.authIdentityId })).toEqual([])
+
+        const pending = await application(drifted, storeName)
+        const refused = await approve(pending.id)
+        expect(refused.status).toBe(409)
+        expect(refused.data.message).toMatch(/link to the existing store .* needs support to fix/)
+        expect(refused.data.message).toMatch(/Nothing was created or changed/)
+        expect(await requestStatus(pending.id)).toBe("pending")
+        expect(await linkedSeller(drifted.authIdentityId)).toBe(store.id)
+        expect(await sellersWithHandle(storeName)).toEqual([])
+        const { rows } = await pg().raw(`SELECT deleted_at FROM member WHERE id = ?`, [ownerMember.id])
+        expect(rows[0].deleted_at).toBeNull()
+        expect(mail).not.toHaveBeenCalled()
       })
 
       it("a member removed from a store that was then closed is still told the store was closed", async () => {

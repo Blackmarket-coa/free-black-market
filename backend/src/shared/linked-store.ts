@@ -19,11 +19,20 @@ type Seller = { id: string; name: string; handle: string }
  *   the one a member id names, or for a seller id the live member of that
  *   store at the login's own address, as the gates resolve it
  *   (shared/seller-actor.ts).
- * - `removed`: the link acts as no member of a store that is still open: a
- *   member id naming a removed member (Mercur's deleteMemberStep soft-deletes
- *   the member and leaves the login's link pointing at it), or a seller id
- *   with no live member at the login's address. Filing and approval treat the
- *   login as having no store; approval clears the link before creating one.
+ * - `removed`: the link acts as no member of a store that is still open,
+ *   because the member it acted as was removed: a member id naming a removed
+ *   member (Mercur's deleteMemberStep soft-deletes the member and leaves the
+ *   login's link pointing at it), or a seller id with no live member at the
+ *   login's address and a removed one. Filing and approval treat the login as
+ *   having no store; approval clears the link before creating one.
+ * - `unmatched`: a seller id naming a store that is still open, with no
+ *   member at the login's address, live or removed (or a login with no
+ *   address). Nothing says the login was ever a member there: an owner whose
+ *   member email no longer matches the login's address holds one (the
+ *   seller-auth backfill reports it as `no_member_at_login_address`), and
+ *   replacing that link left the owner's member row live and linked to no
+ *   login (follow-up re-review, R-b). Filing and approval refuse it, and
+ *   change nothing, until support fixes the link.
  * - `closed`: the link names a store that is gone (a removed member's
  *   included), a member that is gone without a trace, or an id of neither
  *   kind.
@@ -32,7 +41,15 @@ export type LinkedStore =
   | { kind: "none" }
   | { kind: "live"; seller: Seller; memberId: string }
   | { kind: "removed"; seller: Seller; actor: string }
+  | { kind: "unmatched"; seller: Seller; actor: string }
   | { kind: "closed"; actor: string }
+
+/**
+ * Said at filing, and in substance at approval, to a login whose link is
+ * `unmatched`.
+ */
+export const LINK_NEEDS_SUPPORT =
+  "This account's link to an existing store needs support to fix before you can apply. Nothing was created or changed. Contact support."
 
 type Rows<T> = { rows?: T[] }
 
@@ -79,8 +96,24 @@ export async function resolveLinkedStore(
   }
   if (actor.startsWith("sel_")) {
     const address = await loginAddressOf(container, authIdentityId)
-    const memberId = address ? await liveMemberAtAddress(container, found.id, address) : null
-    return memberId ? { kind: "live", seller: found, memberId } : { kind: "removed", seller: found, actor }
+    if (!address) {
+      return { kind: "unmatched", seller: found, actor }
+    }
+    const memberId = await liveMemberAtAddress(container, found.id, address)
+    if (memberId) {
+      return { kind: "live", seller: found, memberId }
+    }
+    // The same test as the seller-auth backfill's `removed_member` reason.
+    const removedAtAddress: Rows<{ id: string }> = await pg.raw(
+      `SELECT id FROM member
+        WHERE seller_id = ? AND deleted_at IS NOT NULL
+          AND LOWER(TRIM(email)) = LOWER(TRIM(?))
+        LIMIT 1`,
+      [found.id, address]
+    )
+    return removedAtAddress.rows?.length
+      ? { kind: "removed", seller: found, actor }
+      : { kind: "unmatched", seller: found, actor }
   }
   return { kind: "live", seller: found, memberId: actor }
 }

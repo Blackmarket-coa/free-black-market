@@ -19,7 +19,7 @@ import {
   CreateSellerRegistrationInput,
 } from "../vendor/register/validators"
 import { maskEmail } from "../../shared/seller-approval-service"
-import { resolveLinkedStore } from "../../shared/linked-store"
+import { LINK_NEEDS_SUPPORT, resolveLinkedStore } from "../../shared/linked-store"
 import { STORE_NAME_NEEDS_LATIN, storeHandleFor } from "../../shared/store-handle"
 
 /**
@@ -142,7 +142,10 @@ export const handleSellerRegistration = async (
     // store that was closed cannot apply here either, and is told why. A
     // login whose link names a member removed from a store that is still open
     // has no store, and applies like any other: it used to be told its store
-    // "was closed" while the store was live.
+    // "was closed" while the store was live. A seller-id link to an open
+    // store with no member at the login's address, live or removed, waits for
+    // support: approving it replaced the link and left that store's member
+    // linked to no login (follow-up re-review, R-b).
     const linked = await resolveLinkedStore(
       req.scope,
       authIdentity.app_metadata as Record<string, unknown> | undefined,
@@ -159,6 +162,12 @@ export const handleSellerRegistration = async (
         type: "conflict",
         message: "This account is linked to a store that was closed. Contact support to reopen it or to apply again.",
       })
+    }
+    if (linked.kind === "unmatched") {
+      log.warn(
+        `[Seller registration] Refused: login ${authIdentity.id}'s link ${linked.actor} names store ${linked.seller.id}, which has no member at the login's address`
+      )
+      return res.status(409).json({ type: "conflict", message: LINK_NEEDS_SUPPORT })
     }
 
     // The store's handle is toHandle(name), as Mercur's createSellerStep makes
