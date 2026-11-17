@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * GET /vendor/farm/stats
@@ -11,7 +12,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

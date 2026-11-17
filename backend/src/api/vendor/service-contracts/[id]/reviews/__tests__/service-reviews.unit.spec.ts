@@ -77,7 +77,9 @@ const makeReq = (
   }
   const req = {
     _seller_id: "sel_client",
-    auth_context: { actor_id: "sel_client" },
+    // The gate attaches `_seller_id` only once it has resolved the actor.
+    _sellerContextResolved: true,
+    auth_context: { actor_id: "mem_client" },
     params: { id: "sc_1", sellerId: "sel_provider" },
     body: { rating: 5, comment: "Excellent work" },
     scope: {
@@ -172,7 +174,7 @@ describe("POST /vendor/service-contracts/:id/reviews", () => {
   })
 
   it("only the contract's client may review (403)", async () => {
-    const { req } = makeReq({ _seller_id: "sel_stranger", auth_context: { actor_id: "sel_stranger" } })
+    const { req } = makeReq({ _seller_id: "sel_stranger", _sellerContextResolved: true, auth_context: { actor_id: "mem_stranger" } })
     const res = createRes()
     await createContractReview(req, res as any)
     expect(res.statusCode).toBe(403)

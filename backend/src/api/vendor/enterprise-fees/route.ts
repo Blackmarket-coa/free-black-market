@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../types"
+import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
 import OrderCycleModuleService from "../../../modules/order-cycle/service"
+import { getSellerId } from "../quests/_helpers"
 
 interface CreateEnterpriseFeeBody {
   name: string
@@ -15,8 +16,8 @@ interface CreateEnterpriseFeeBody {
 
 // GET /vendor/enterprise-fees - List enterprise fees for vendor
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const orderCycleService: OrderCycleModuleService = req.scope.resolve(ORDER_CYCLE_MODULE)
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -38,8 +39,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
 // POST /vendor/enterprise-fees - Create enterprise fee
 export const POST = async (req: MedusaRequest<CreateEnterpriseFeeBody>, res: MedusaResponse) => {
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const orderCycleService: OrderCycleModuleService = req.scope.resolve(ORDER_CYCLE_MODULE)
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

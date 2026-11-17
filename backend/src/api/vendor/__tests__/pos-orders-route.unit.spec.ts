@@ -1,5 +1,8 @@
 import { POST } from "../pos/orders/route"
 
+/** What the vendor gate attaches once it has resolved the caller's store. */
+const gateResolved = { auth_context: { actor_id: "mem_1" }, _seller_id: "seller_1", _sellerContextResolved: true }
+
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
   res.status = (code: number) => {
@@ -22,7 +25,7 @@ describe("vendor pos orders — auth + validation", () => {
   })
 
   it("400s on an empty payload", async () => {
-    const req: any = { body: {}, auth_context: { actor_id: "seller_1" } }
+    const req: any = { body: {}, ...gateResolved }
     const res = createRes()
     await POST(req, res)
     expect(res.statusCode).toBe(400)
@@ -32,7 +35,7 @@ describe("vendor pos orders — auth + validation", () => {
   it("400s when an item has neither variant_id nor title", async () => {
     const req: any = {
       body: { items: [{ unit_price: 100 }] },
-      auth_context: { actor_id: "seller_1" },
+      ...gateResolved,
     }
     const res = createRes()
     await POST(req, res)
@@ -42,7 +45,7 @@ describe("vendor pos orders — auth + validation", () => {
   it("400s on a negative unit_price", async () => {
     const req: any = {
       body: { items: [{ variant_id: "v", unit_price: -5 }] },
-      auth_context: { actor_id: "seller_1" },
+      ...gateResolved,
     }
     const res = createRes()
     await POST(req, res)
@@ -55,11 +58,25 @@ describe("vendor pos orders — auth + validation", () => {
     const req: any = {
       body: { items: [{ variant_id: "v", unit_price: 100 }] },
       _seller_id: "seller_ctx",
+      _sellerContextResolved: true,
       auth_context: undefined,
       scope: undefined,
     }
     const res = createRes()
     await POST(req, res)
     expect(res.statusCode).toBe(500)
+  })
+
+  it("never takes the raw actor as the store", async () => {
+    // Behind the vendor gate the actor is a member id. `_seller_id || actor_id`
+    // stamped it on the order as the seller (SD-145); an actor the gate did
+    // not resolve to a store is now refused before anything is read.
+    const req: any = {
+      body: { items: [{ variant_id: "v", unit_price: 100 }] },
+      auth_context: { actor_id: "seller_1" },
+    }
+    const res = createRes()
+    await POST(req, res)
+    expect(res.statusCode).toBe(401)
   })
 })

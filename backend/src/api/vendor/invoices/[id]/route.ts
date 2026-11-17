@@ -6,12 +6,9 @@ import { InvoiceStateError } from "../../../../modules/accounts-receivable/servi
 import { InvoiceStatus } from "../../../../modules/accounts-receivable/terms"
 import { loadTiersForSeller } from "../../../../shared/ar-tiers"
 import { isAllowedInvoiceTransition } from "../route"
+import { getSellerId } from "../../quests/_helpers"
 
 const log = createLogger("api/vendor/invoices/[id]")
-
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
 
 /**
  * Load an invoice and prove it belongs to the calling vendor.
@@ -25,7 +22,7 @@ async function loadOwned(
   res: MedusaResponse,
   ar: AccountsReceivableService
 ) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) {
     res.status(401).json({ message: "Unauthorized" })
     return null

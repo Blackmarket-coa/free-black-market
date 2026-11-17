@@ -5,6 +5,7 @@ import { SUPPLIER_FORWARDING_MODULE } from "../../../../../modules/supplier-forw
 import SupplierForwardingModuleService from "../../../../../modules/supplier-forwarding/service"
 import { ManualFulfillmentStatus } from "../../../../../modules/supplier-forwarding/models"
 import { isAllowedManualFulfillmentTransition } from "../../../../../modules/supplier-forwarding/manual-fulfillment-transitions"
+import { getSellerId } from "../../../quests/_helpers"
 
 const transitionSchema = z.object({
   supplier_id: z.string().optional(),
@@ -34,9 +35,7 @@ async function loadOwnedOrder(
   req: MedusaRequest,
   res: MedusaResponse
 ): Promise<{ order: OwnedOrder } | null> {
-  const sellerId = (
-    req as unknown as { auth_context?: { actor_id?: string } }
-  ).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) {
     res.status(401).json({ message: "Unauthorized" })
     return null

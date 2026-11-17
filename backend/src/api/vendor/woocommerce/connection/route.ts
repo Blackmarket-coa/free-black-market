@@ -1,17 +1,17 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { connectWooCommerceWorkflow } from "../../../../workflows/woocommerce-import/connect-woocommerce"
 import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
 import { assertPublicHttpUrl, BlockedUrlError } from "../../../../shared/safe-fetch"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * GET /vendor/woocommerce/connection
  * Get the current vendor's WooCommerce connection status.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -59,7 +59,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * Connect a WooCommerce store (validate + save credentials).
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -122,7 +122,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * Remove the WooCommerce connection for the current vendor.
  */
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

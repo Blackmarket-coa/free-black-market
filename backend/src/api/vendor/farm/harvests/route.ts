@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { buildFarmHarvestConsistencyIssues } from "../consistency"
+import { getSellerId } from "../../quests/_helpers"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -26,7 +27,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -113,7 +114,7 @@ export async function POST(
   const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
   const linkService = req.scope.resolve("link") as LinkServiceType
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

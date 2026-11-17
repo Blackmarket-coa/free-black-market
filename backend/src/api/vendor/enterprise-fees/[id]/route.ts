@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../types"
+import { ORDER_CYCLE_MODULE } from "../../../../modules/order-cycle"
 import OrderCycleModuleService from "../../../../modules/order-cycle/service"
+import { getSellerId } from "../../quests/_helpers"
 
 interface UpdateEnterpriseFeeBody {
   name?: string
@@ -15,8 +16,8 @@ interface UpdateEnterpriseFeeBody {
 // GET /vendor/enterprise-fees/:id
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const { id } = req.params
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const orderCycleService: OrderCycleModuleService = req.scope.resolve(ORDER_CYCLE_MODULE)
+  const sellerId = await getSellerId(req)
 
   try {
     const enterprise_fee = await orderCycleService.retrieveEnterpriseFee(id)
@@ -35,8 +36,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 // PUT /vendor/enterprise-fees/:id
 export const PUT = async (req: MedusaRequest<UpdateEnterpriseFeeBody>, res: MedusaResponse) => {
   const { id } = req.params
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const orderCycleService: OrderCycleModuleService = req.scope.resolve(ORDER_CYCLE_MODULE)
+  const sellerId = await getSellerId(req)
 
   try {
     // Verify ownership
@@ -67,8 +68,8 @@ export const PUT = async (req: MedusaRequest<UpdateEnterpriseFeeBody>, res: Medu
 // DELETE /vendor/enterprise-fees/:id
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   const { id } = req.params
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const orderCycleService: OrderCycleModuleService = req.scope.resolve(ORDER_CYCLE_MODULE)
+  const sellerId = await getSellerId(req)
 
   try {
     // Verify ownership

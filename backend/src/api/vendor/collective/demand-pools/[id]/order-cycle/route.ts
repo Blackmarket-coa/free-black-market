@@ -1,5 +1,4 @@
 import { createLogger } from "../../../../../../shared/logger"
-import type { VendorRequest } from "../../../../types"
 const log = createLogger("api/vendor/collective/demand-pools/[id]/order-cycle")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
@@ -7,6 +6,7 @@ import { DEMAND_POOL_MODULE } from "../../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../../modules/demand-pool/service"
 import { ORDER_CYCLE_MODULE } from "../../../../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../../../../modules/order-cycle/service"
+import { getSellerId } from "../../../../quests/_helpers"
 
 const schema = z.object({
   order_cycle_id: z.string().min(1),
@@ -32,7 +32,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   try {
     const body = schema.parse(req.body)
-    const sellerId = (req as VendorRequest).auth_context?.actor_id
+    const sellerId = await getSellerId(req)
     if (!sellerId) {
       return res.status(401).json({ error: "Unauthorized" })
     }

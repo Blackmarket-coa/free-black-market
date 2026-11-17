@@ -1,15 +1,15 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../types"
 import { ODOO_IMPORT_MODULE } from "../../../../modules/odoo-import"
 import OdooImportModuleService from "../../../../modules/odoo-import/service"
 import { OdooApiClient } from "../../../../modules/odoo-import/lib/odoo-api-client"
 import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * GET /vendor/odoo/preview — how many products the connected Odoo store exposes.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   try {

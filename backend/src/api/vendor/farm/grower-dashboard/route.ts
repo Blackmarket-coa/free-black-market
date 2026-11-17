@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { GrowerPayoutService } from "../../../../modules/payout-breakdown/grower-payout"
 import { GrowerKarmaService } from "../../../../modules/progression/grower-karma"
 import { NON_SALE_ORDER_FILTERS } from "../../../../shared/seller-orders"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * Plant Network — Grower-node dashboard (Section 8).
@@ -15,9 +16,7 @@ import { NON_SALE_ORDER_FILTERS } from "../../../../shared/seller-orders"
  * units/top-SKU breakdown from the seller's recent orders.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (
-    req as unknown as { auth_context?: { actor_id: string } }
-  ).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

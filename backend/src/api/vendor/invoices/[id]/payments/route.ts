@@ -3,12 +3,9 @@ import { createLogger } from "../../../../../shared/logger"
 import { ACCOUNTS_RECEIVABLE_MODULE } from "../../../../../modules/accounts-receivable"
 import type AccountsReceivableService from "../../../../../modules/accounts-receivable/service"
 import { InvoiceStateError } from "../../../../../modules/accounts-receivable/service"
+import { getSellerId } from "../../../quests/_helpers"
 
 const log = createLogger("api/vendor/invoices/[id]/payments")
-
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
 
 /**
  * POST /vendor/invoices/:id/payments — record money received.
@@ -23,7 +20,7 @@ const getSellerId = (req: MedusaRequest) =>
  * requests are the same payment is the client that must name it.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const id = (req.params as { id?: string })?.id

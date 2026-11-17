@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import PrintfulClient from "../../../../modules/printful-fulfillment/client"
 import { getPrintfulApiKey, getPrintfulStoreId } from "../../../../modules/printful-fulfillment/env"
+import { getSellerId } from "../../quests/_helpers"
 
 type PrintfulImportBody = {
   product_ids?: Array<number | string>
@@ -9,7 +10,9 @@ type PrintfulImportBody = {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  // The store, not the actor: behind the vendor gate the actor is a member
+  // id, and products linked to it belonged to no store (SD-145).
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

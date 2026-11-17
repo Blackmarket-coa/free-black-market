@@ -8,12 +8,9 @@ import {
   QuoteStatus,
   type QuoteLineInput,
 } from "../../../../modules/quote/pricing"
+import { getSellerId } from "../../quests/_helpers"
 
 const log = createLogger("api/vendor/quotes/[id]")
-
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
 
 /**
  * Load a quote and prove it belongs to the calling vendor.
@@ -26,7 +23,7 @@ async function loadOwned(
   res: MedusaResponse,
   service: QuoteService
 ) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) {
     res.status(401).json({ message: "Unauthorized" })
     return null

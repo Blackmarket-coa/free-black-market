@@ -22,7 +22,11 @@ describe("farm + storefront provenance flow", () => {
         year: 2020,
         harvest_date: "2020-08-01",
       },
-      auth_context: { actor_id: "seller_1" },
+      // A request the vendor gate let through for store seller_1: the farm is
+      // the store's, and the storefront reads it by the product's seller.
+      auth_context: { actor_id: "mem_1" },
+      _seller_id: "seller_1",
+      _sellerContextResolved: true,
       scope: {
         resolve: (key: string) => {
           if (key === "query") {

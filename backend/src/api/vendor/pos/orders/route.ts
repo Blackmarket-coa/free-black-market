@@ -2,7 +2,7 @@ import { createLogger } from "../../../../shared/logger"
 const log = createLogger("api/vendor/pos/orders")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
-import type { VendorRequest } from "../../types"
+import { getSellerId } from "../../quests/_helpers"
 import { createPosOrderWorkflow } from "../../../../workflows/pos/create-pos-order"
 
 const ItemSchema = z
@@ -40,8 +40,9 @@ const Schema = z.object({
  * order metadata for receipts/audits).
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId =
-    (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
+  // The store, resolved. `_seller_id || actor_id` took the member id for a
+  // member-id login, most vendors, and stamped it on the order (SD-145).
+  const sellerId = await getSellerId(req)
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized", type: "unauthorized" })
   }

@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { daysUntil } from "../../../../shared/expiry"
+import { getSellerId } from "../../quests/_helpers"
 
 interface ProducerServiceType {
   createProducers: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -76,7 +77,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -119,7 +120,7 @@ export async function POST(
 ) {
   const producerService = req.scope.resolve("producer") as ProducerServiceType
   const linkService = req.scope.resolve("link") as unknown as { create: (data: Record<string, unknown>) => Promise<unknown[]> }
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -189,7 +190,7 @@ export async function PUT(
 ) {
   const query = req.scope.resolve("query")
   const producerService = req.scope.resolve("producer") as ProducerServiceType
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
