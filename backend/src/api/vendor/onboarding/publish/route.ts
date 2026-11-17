@@ -5,6 +5,7 @@ import type { IEventBusModuleService } from "@medusajs/framework/types"
 import { TENANCY_MODULE } from "../../../../modules/tenancy"
 import type TenancyModuleService from "../../../../modules/tenancy/service"
 import { sellerIdForVendorActor } from "../../../../shared/seller-actor"
+import { sellerOwnsProduct } from "../../../../shared/product-sellers"
 
 type Body = {
   listing_id: string
@@ -23,6 +24,20 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const body = (req.validatedBody || req.body || {}) as Body
   if (!body.listing_id) {
     return res.status(400).json({ message: "listing_id is required" })
+  }
+  // The wizard asks the vendor to paste a product id, and any string was
+  // recorded as the store's first published listing ("prod_does_not_exist"
+  // included, measured). It must name a product of this store; one answer
+  // for an id that names no product and one of another store, so the check
+  // says nothing about other stores' products.
+  if (
+    typeof body.listing_id !== "string" ||
+    !(await sellerOwnsProduct(req.scope, sellerId, body.listing_id))
+  ) {
+    return res.status(400).json({
+      type: "invalid_data",
+      message: "listing_id must be the id of a product in your store.",
+    })
   }
 
   const service = req.scope.resolve<TenancyModuleService>(TENANCY_MODULE)
