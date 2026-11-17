@@ -683,13 +683,17 @@ medusaIntegrationTestRunner({
           created: [created.status, created.data?.invoice?.seller_id],
           listed: [listed.status, (listed.data?.invoices ?? []).map((i: { id: string }) => i.id)],
           underTheSessionsMember: (await invoicesOf(first.ownerMemberId)).length,
+          underTheSessionsStore: (await invoicesOf(first.store.id)).length,
         }).toEqual({
           member: [200, secondMember.id, second.store.id],
           store: [200, second.store.id],
           orders: [200, [order.id]],
-          created: [201, secondMember.id],
+          // Keyed by the store the bearer's member acts for (SD-145), not by
+          // the member, as it was when this case was written.
+          created: [201, second.store.id],
           listed: [200, [created.data?.invoice?.id]],
           underTheSessionsMember: 0,
+          underTheSessionsStore: 0,
         })
       })
 
@@ -716,18 +720,23 @@ medusaIntegrationTestRunner({
         await assignSellerPlan(container(), store.id, "internal")
         const active = await teamMember(store, "active")
 
-        for (const [token, memberId, who] of [
-          [tokenFor(owner, ownerMemberId), ownerMemberId, "owner"],
-          [tokenFor(active, active.memberId), active.memberId, "member"],
+        const createdIds: string[] = []
+        for (const [token, who] of [
+          [tokenFor(owner, ownerMemberId), "owner"],
+          [tokenFor(active, active.memberId), "member"],
         ] as const) {
           const created = await call(api.post("/vendor/invoices", { total: 500, issue: false }, bearer(token)))
           expect({ who, status: created.status }).toEqual({ who, status: 201 })
-          expect({ who, keyedTo: created.data.invoice.seller_id }).toEqual({ who, keyedTo: memberId })
+          // Keyed by the store the member acts for (SD-145), not by the
+          // member, as it was when this case was written.
+          expect({ who, keyedTo: created.data.invoice.seller_id }).toEqual({ who, keyedTo: store.id })
+          createdIds.push(created.data.invoice.id)
           const listed = await call(api.get("/vendor/invoices", bearer(token)))
-          expect({ who, status: listed.status, ids: listed.data.invoices.map((i: { id: string }) => i.id) }).toEqual({
+          // Every invoice of the store so far, whichever member wrote it.
+          expect({ who, status: listed.status, ids: listed.data.invoices.map((i: { id: string }) => i.id).sort() }).toEqual({
             who,
             status: 200,
-            ids: [created.data.invoice.id],
+            ids: [...createdIds].sort(),
           })
           const orders = await call(api.get("/vendor/orders", bearer(token)))
           expect({ who, status: orders.status, ids: orders.data.orders.map((o: { id: string }) => o.id) }).toEqual({ who, status: 200, ids: [order.id] })
