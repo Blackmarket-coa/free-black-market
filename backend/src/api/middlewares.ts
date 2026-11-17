@@ -37,6 +37,7 @@ import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
+import { refuseGuardedCartCompletion } from "./middlewares/cart-completion-guards";
 import { cartPaymentMiddlewareRoutes } from "./middlewares/cart-payment-refresh";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
 import { refuseTakenEmailRegistration } from "./middlewares/refuse-taken-email-registration";
@@ -1272,6 +1273,25 @@ export default defineMiddlewares({
     ...mutualAidMiddlewareRoutes,
     ...storePublicFieldsMiddlewares,
     ...deliveryMiddlewareRoutes,
+    // The main checkout, POST /store/carts/:id/complete (Mercur's route), has
+    // three middlewares of FBM's, and they run in the order this file declares
+    // them (one matcher and method: the route sorter keeps declaration order).
+    // 1. FBM's cart-completion guards, the tier, Coalition Credits and
+    //    order-cycle ones, which Mercur's workflow never runs (SD-54,
+    //    SD-72 (a); src/api/middlewares/cart-completion-guards.ts). They only
+    //    read and refuse, so they go first.
+    // 2. The payment-amount check, from the spread below (SD-115). It can
+    //    write (it puts a refused cart's payment side right, and retires
+    //    orphaned payments before a completion goes on), so it runs only for a
+    //    cart the guards let through.
+    // 3. The SD-53 check that Mercur's run finished, further down.
+    // src/api/__tests__/main-checkout-middleware-order.unit.spec.ts pins this
+    // order with Medusa's own loader and sorter.
+    {
+      matcher: "/store/carts/:id/complete",
+      method: "POST",
+      middlewares: [refuseGuardedCartCompletion],
+    },
     ...cartPaymentMiddlewareRoutes,
     {
       matcher: "/vendor/hawala/payments*",
@@ -1636,7 +1656,9 @@ export default defineMiddlewares({
     // finished (a stalled one was answered 500); while the completion is
     // still unfinished after a settle window, whatever it answered is
     // replaced with 409 cart_completion_incomplete
-    // (src/api/middlewares/cart-completion-finished.ts).
+    // (src/api/middlewares/cart-completion-finished.ts). The last of the
+    // route's three middlewares (the guards and the payment-amount check run
+    // before it; see the entry above `...cartPaymentMiddlewareRoutes`).
     {
       matcher: "/store/carts/:id/complete",
       method: "POST",
