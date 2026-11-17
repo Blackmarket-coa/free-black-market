@@ -26,6 +26,15 @@ import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
  * (`storefront/src/lib/helpers/order-error-formatter.ts`), so it says what
  * happened and what to do in plain words, with no ids and no API paths.
  * Releasing the reservation is `DELETE /store/carts/:id/credits`.
+ *
+ * What it reads is the count the credits route writes into the cart's
+ * metadata, not the ledger, and a store client can overwrite cart metadata
+ * (`POST /store/carts/:id` takes `metadata`). A count that is not a finite
+ * number above zero is read as no reservation, so a cart whose count was
+ * overwritten with `"abc"` or `-1` completes at its full total while its
+ * credits stay in escrow (pinned in
+ * `integration-tests/http/main-checkout-guards.spec.ts`). The ledger escrow is
+ * the record; this guard is as good as the count.
  */
 export async function validateCcrReservation(
   args: CompleteCartValidateArgs,

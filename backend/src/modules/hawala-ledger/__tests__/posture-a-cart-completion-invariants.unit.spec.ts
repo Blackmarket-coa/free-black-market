@@ -25,7 +25,9 @@ import { validateCcrReservation } from "../../../workflows/hooks/validate-ccr-re
  *      them; the leg that would spend them on the order,
  *      `settleCartCredits` (a BURN against the order), has no caller in
  *      `src/`, and a cart that still carries a reservation is refused before
- *      any order exists (`workflows/hooks/validate-ccr-reservation.ts`) at
+ *      any order exists (`workflows/hooks/validate-ccr-reservation.ts`, which
+ *      reads the count in the cart's metadata: a store client can overwrite
+ *      it, and a count that is not a positive number reads as none) at
  *      both seams that complete carts: `completeCartWorkflow`'s validate
  *      hook, and, in front of Mercur's main checkout
  *      (`POST /store/carts/:id/complete`, whose workflow never calls that

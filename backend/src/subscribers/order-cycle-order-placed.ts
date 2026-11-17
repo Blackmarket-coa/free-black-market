@@ -124,11 +124,15 @@ export default async function orderPlacedHandler({
       // (`workflows/hooks/validate-order-cycle.ts`, D9-3), inside
       // `completeCartWorkflow`'s validate hook and in front of Mercur's main
       // checkout (`api/middlewares/cart-completion-guards.ts`). What still
-      // reaches this handler with a closed cycle is the race above, a cycle
-      // closed between that check and this event, and a line whose tag a
-      // client stripped or wrote onto the cart instead (Mercur copies line
-      // metadata onto its orders, never the cart's: such a line is checked
-      // under the cart's tag and recorded under none).
+      // reaches this handler as a cycle line of a closed cycle: the race
+      // above (the cycle closed between that check and this event); Mercur's
+      // workflow run through Medusa's generic admin workflow runner, which no
+      // FBM middleware stands in front of; and the no-cart-lock race at the
+      // main checkout, a tagged line written after the middleware's check and
+      // before Mercur's workflow reads the cart. (A line whose tag a client
+      // stripped, or whose cycle sits only in the cart's metadata, is not a
+      // cycle line here at all: Mercur copies line metadata onto its orders,
+      // never the cart's.)
       try {
         await orderCycleService.retrieveOrderCycle(orderCycleId)
       } catch {

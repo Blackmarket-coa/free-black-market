@@ -76,9 +76,14 @@ operator sets, which the 3%-of-a-dollar problem never could.
 > workflow (`splitAndCompleteCartWorkflow`) does not call that hook, until
 > SD-72 (a) was closed with a middleware in front of the route. Before then a
 > reserved cart completed there at its full total with the credits left in
-> the cart escrow. Medusa's generic admin workflow runner can still run that
-> workflow directly, past the middleware. See `docs/AUDIT_DEBT.md` SD-54 and
-> SD-72.
+> the cart escrow. Even now the refusal holds only while the cart's
+> `ccr_credits_reserved` count is intact: the guard reads that count from the
+> cart's metadata, which a store client can overwrite, and a count that is not
+> a positive number is read as no reservation (`"abc"` and `-1` complete,
+> measured; `"3.0"` is refused), with the credits still in escrow. The ledger
+> escrow is the record, not the count. Medusa's generic admin workflow runner
+> can still run that workflow directly, past the middleware. See
+> `docs/AUDIT_DEBT.md` SD-54 and SD-72.
 >
 > So this section's conclusion still holds: paying anyone in CCR before the
 > tender half exists recreates the shape it warns about.

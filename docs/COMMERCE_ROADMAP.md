@@ -79,9 +79,15 @@ nothing at any checkout, and the storefront's main checkout,
 `POST /store/carts/:id/complete`, runs Mercur's `splitAndCompleteCartWorkflow`,
 which never calls that hook: until SD-72 (a) was closed, with a middleware in
 front of the route, a reserved cart completed there at its full total with
-the credits left in the cart escrow. It now refuses on every store route.
-Medusa's generic admin workflow runner can still run Mercur's workflow
-directly, past the middleware. See `docs/AUDIT_DEBT.md` SD-54 and SD-72.*
+the credits left in the cart escrow. It now refuses on every store route,
+but only while the cart's `ccr_credits_reserved` count is intact: the guard
+reads that count from the cart's metadata, which a store client can
+overwrite (`POST /store/carts/:id` takes `metadata`), and a count that is not
+a positive number is read as no reservation (`"abc"` and `-1` complete,
+measured; `"3.0"` is refused), with the credits still in escrow. The ledger
+escrow is the record, not the count. Medusa's generic admin workflow runner
+can still run Mercur's workflow directly, past the middleware. See
+`docs/AUDIT_DEBT.md` SD-54 and SD-72.*
 
 ---
 

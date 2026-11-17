@@ -40,14 +40,12 @@ import { cartAlreadyCompleted, type CompleteCartValidateArgs } from "./complete-
  * to the list gets it without having to know about it.
  *
  * Every guard is called, not referenced: each entry's `run` calls its guard
- * with the composition's argument. For the CCR, order-cycle and
- * payment-amount guards that call is uncast, so tsc refuses a guard whose
- * argument shares no field with `CompleteCartValidateArgs` (see that type),
- * whatever the compiler's settings. A bare reference in the list would be
- * checked by another rule, which depends on them: with `strictFunctionTypes`
- * on (as `--strict` sets it), the original `{ input?: { cart_id?: string } }`
- * guard type-checks as a list element (tried with this repo's tsc). The
- * sliding-scale and rental guards predate that type and are still cast.
+ * with the composition's argument, as the hook's handler called each guard
+ * before the list existed. For the CCR, order-cycle and payment-amount
+ * guards that call is uncast, so tsc refuses a guard whose argument shares
+ * no field with `CompleteCartValidateArgs`, the check that type's comment
+ * describes. The sliding-scale and rental guards predate that type and are
+ * still cast.
  */
 
 type GuardContext = { container?: any }
