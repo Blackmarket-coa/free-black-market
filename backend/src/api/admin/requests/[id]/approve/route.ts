@@ -4,7 +4,10 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { REQUEST_MODULE } from "../../../../../modules/request"
 import RequestModuleService from "../../../../../modules/request/service"
 import { isSellerRequestType } from "../../../../../modules/request/validators"
-import { getSellerApprovalService } from "../../../../../shared/seller-approval-service"
+import {
+  getSellerApprovalService,
+  SellerApprovalRefusedError,
+} from "../../../../../shared/seller-approval-service"
 import { requireAdminId } from "../../../../../shared/auth-helpers"
 
 /**
@@ -67,6 +70,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       })
     }
   } catch (error) {
+    // Refused before anything was created or linked; the request is unchanged.
+    if (error instanceof SellerApprovalRefusedError) {
+      res.status(error.status).json({
+        message: error.message,
+        type: error.status === 409 ? "conflict" : "invalid_data",
+      })
+      return
+    }
+
     // Handle specific error types
     if (error.message === "Request not found") {
       res.status(404).json({ message: error.message })

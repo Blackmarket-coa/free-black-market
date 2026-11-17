@@ -43,6 +43,21 @@ export interface SellerApprovalResult {
 }
 
 /**
+ * An approval refused for a reason the reviewer can act on, with the status
+ * `POST /admin/requests/:id/approve` answers. Thrown before anything is
+ * created or linked: the request stays as it was.
+ */
+export class SellerApprovalRefusedError extends Error {
+  constructor(
+    readonly status: 400 | 409,
+    message: string
+  ) {
+    super(message)
+    this.name = "SellerApprovalRefusedError"
+  }
+}
+
+/**
  * Input for seller approval
  */
 export interface SellerApprovalInput {
@@ -296,10 +311,35 @@ export class SellerApprovalService {
 
     // Step 2.5: Verify auth identity exists before proceeding
     const authModule = this.container.resolve(Modules.AUTH)
-    const authIdentities = await authModule.listAuthIdentities({ id: [data.auth_identity_id] })
+    const authIdentities = await authModule.listAuthIdentities(
+      { id: [data.auth_identity_id] },
+      { relations: ["provider_identities"] }
+    )
     if (!authIdentities || authIdentities.length === 0) {
       log.error(`[SellerApproval] Auth identity not found: ${data.auth_identity_id}`)
       throw new Error(`Auth identity not found. The user may need to re-register.`)
+    }
+    const applicantLogin = authIdentities[0]
+
+    // Step 2.6: The application must be the one seller registration writes:
+    // filed by the login it names, under that login's own address. Rows from
+    // the doors closed by SD-127 (the generic request routes, a body email
+    // that picked the login) carry any login and any address, and approving
+    // one gives that login a store, or a store that address.
+    if (request.submitter_id !== data.auth_identity_id) {
+      throw new SellerApprovalRefusedError(
+        400,
+        "This application names a login other than the one that filed it, so it did not come through seller registration and cannot be approved. Reject it; the applicant can apply again from the vendor panel."
+      )
+    }
+    const loginEmail = applicantLogin.provider_identities?.find(
+      (p) => p.provider === "emailpass"
+    )?.entity_id
+    if (!loginEmail || loginEmail.trim().toLowerCase() !== data.member.email.trim().toLowerCase()) {
+      throw new SellerApprovalRefusedError(
+        400,
+        "This application's member email is not the address of the login it names, so it cannot be approved. Reject it; the applicant can apply again from the vendor panel."
+      )
     }
     log.info(`[SellerApproval] Auth identity verified: ${data.auth_identity_id}`)
 
@@ -338,79 +378,59 @@ export class SellerApprovalService {
         createdSeller = seller
         log.info(`[SellerApproval] Seller created with ID: ${seller.id}`)
       } catch (workflowError: any) {
-        // Check if it's a duplicate handle error - if so, try to find and link existing seller
+        // "already exists" is the seller handle's unique index: another store
+        // has the name's handle (Mercur's createSellerStep uses toHandle). It
+        // is this login's own store only when an earlier approval of it got
+        // as far as linking the login (a retry after a later step failed):
+        // its member row has this address and the login's seller_id names
+        // that member or its store. Any other store with that handle is
+        // someone else's. Linking to it, as a lookup by handle used to, gave
+        // the applicant that store, its members and its orders (SD-127
+        // review: reproduced on Postgres with a store's public name).
         if (workflowError.message?.includes("already exists")) {
-          log.info(`[SellerApproval] Seller already exists, attempting to find and link existing seller...`)
-
           const query = this.container.resolve(ContainerRegistrationKeys.QUERY)
           const pgConnection = this.container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
 
-          let existingSeller: { id: string; name: string; handle?: string } | undefined
-
-          // First try to find by member email via direct lookup
           const memberResult = await pgConnection.raw(
             `
-            SELECT seller_id
+            SELECT id, seller_id
             FROM member
-            WHERE email = ?
+            WHERE email = ? AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT 1
             `,
             [data.member.email]
           )
-          const sellerId = memberResult.rows?.[0]?.seller_id
-          if (sellerId) {
+          const member = memberResult.rows?.[0] as { id: string; seller_id: string | null } | undefined
+          const linkedActor = (applicantLogin.app_metadata as Record<string, unknown> | undefined)?.seller_id
+
+          let existingSeller: { id: string; name: string; handle?: string } | undefined
+          if (
+            member?.seller_id &&
+            typeof linkedActor === "string" &&
+            (linkedActor === member.seller_id || linkedActor === member.id)
+          ) {
             const { data: sellers } = await query.graph({
               entity: "seller",
               fields: ["id", "name", "handle"],
-              filters: { id: sellerId },
+              filters: { id: member.seller_id },
             })
-            existingSeller = sellers?.[0]
+            existingSeller = sellers?.[0] as typeof existingSeller
           }
 
-          // If not found by email, try to find by handle (derived from seller name)
           if (!existingSeller) {
-            log.info(`[SellerApproval] Seller not found by email, trying by handle...`)
-
-            // Generate expected handle from seller name (MercurJS uses kebab-case)
-            const expectedHandle = data.seller.name
-              .toLowerCase()
-              .trim()
-              .replace(/\s+/g, '-')
-              .replace(/[^a-z0-9-]/g, '')
-
-            const handleResult = await pgConnection.raw(
-              `
-              SELECT id, name, handle
-              FROM seller
-              WHERE handle = ? OR handle LIKE ?
-              ORDER BY length(handle) ASC
-              LIMIT 1
-              `,
-              [expectedHandle, `${expectedHandle}%`]
+            log.warn(
+              `[SellerApproval] Refused request ${requestId}: a store already has the handle of "${data.seller.name}" and it is not this login's`
             )
-            const handleMatch = handleResult.rows?.[0]
-            if (handleMatch) {
-              existingSeller = {
-                id: handleMatch.id,
-                name: handleMatch.name,
-                handle: handleMatch.handle,
-              }
-            }
-
-            if (existingSeller) {
-              log.info(`[SellerApproval] Found seller by handle: ${existingSeller.handle}`)
-            }
+            throw new SellerApprovalRefusedError(
+              409,
+              `A store named "${data.seller.name}" already exists. Nothing was approved or linked, and the application stays as it was: ask the applicant to apply again with another store name, or reject it.`
+            )
           }
 
-          if (existingSeller) {
-            log.info(`[SellerApproval] Found existing seller: ${existingSeller.id} (${existingSeller.name})`)
-            seller = { id: existingSeller.id, name: existingSeller.name, handle: existingSeller.handle }
-            createdSeller = seller
-          } else {
-            log.error(`[SellerApproval] Could not find existing seller to link. Email: ${data.member.email}, Name: ${data.seller.name}`)
-            throw new Error(`Seller creation workflow failed: ${workflowError.message}`)
-          }
+          log.info(`[SellerApproval] Resuming approval onto this login's own store: ${existingSeller.id}`)
+          seller = { id: existingSeller.id, name: existingSeller.name, handle: existingSeller.handle }
+          createdSeller = seller
         } else {
           log.error(`[SellerApproval] Workflow execution failed:`, workflowError.message)
           log.error(`[SellerApproval] Workflow error details:`, workflowError)

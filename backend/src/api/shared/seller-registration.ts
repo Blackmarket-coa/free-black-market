@@ -9,7 +9,7 @@ import {
   MedusaResponse,
 } from "@medusajs/framework/http"
 import type { AuthIdentityDTO, ConfigModule } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, toHandle } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../../modules/request"
 import RequestModuleService from "../../modules/request/service"
 import { RequestStatus } from "../../modules/request/models"
@@ -131,6 +131,34 @@ export const handleSellerRegistration = async (
       return res.status(403).json({
         type: "not_allowed",
         message: "Apply with the email address you signed in with.",
+      })
+    }
+
+    // A login that already has a store applies for no other: approving a
+    // second application relinked the login and re-ran the metadata and
+    // playbook steps over the existing store (SD-127 review).
+    const linkedSeller = (authIdentity.app_metadata as Record<string, unknown> | undefined)?.seller_id
+    if (typeof linkedSeller === "string" && linkedSeller) {
+      return res.status(409).json({
+        type: "conflict",
+        message: "This account already has a store. Sign in to the vendor panel to manage it.",
+      })
+    }
+
+    // The store's handle is toHandle(name), as Mercur's createSellerStep makes
+    // it, and handles are unique. Refused now with something the applicant can
+    // act on, rather than an approval that cannot create the store.
+    const handle = toHandle(body.name)
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+    const { data: sameHandle } = await query.graph({
+      entity: "seller",
+      fields: ["id"],
+      filters: { handle },
+    })
+    if (sameHandle.length > 0) {
+      return res.status(409).json({
+        type: "conflict",
+        message: `A store named "${body.name}" already exists. Choose another store name.`,
       })
     }
 
