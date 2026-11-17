@@ -428,6 +428,25 @@ medusaIntegrationTestRunner({
         expect(refiled.data.message).toMatch(/linked to a store that was closed/)
       })
 
+      it("the status check never relinks a login to a store through a membership that was removed", async () => {
+        // registration-status relinks a login whose latest application was
+        // approved, and whose link names no live store, to the store of the
+        // newest member row with its address. A removed member's row is not
+        // one: it would hand the login a seller-id link to the store it was
+        // removed from.
+        const owner = await login("owner")
+        const store = await storeFor(owner, `Former Farm ${uid()}`)
+        const removed = await login("removed")
+        const member = await acceptInvite(removed, store)
+        await deleteMemberWorkflow.run({ container: container(), input: member.id })
+        await application(removed, `Approved Farm ${uid()}`, { status: "accepted" })
+
+        const status = await registrationStatus(memberToken(removed, member.id))
+        expect(status.status).toBe("approved")
+        expect(status.seller_id).toBeUndefined()
+        expect(await linkedSeller(removed.authIdentityId)).toBe(member.id)
+      })
+
       it("a store name with no Latin letter or digit is refused at approval, and nothing is created", async () => {
         // Rows filed before the filing check. The first used to be approved
         // with handle "-", the second refused as a clash with it, and the
