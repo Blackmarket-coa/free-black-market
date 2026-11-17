@@ -103,19 +103,22 @@ medusaIntegrationTestRunner({
       const productId: string = launched.data.launch.product_id
 
       // Stored: Medusa's price is 12, in major units.
-      const {
-        data: [product],
-      } = await container.resolve(ContainerRegistrationKeys.QUERY).graph({
+      const { data } = await container.resolve(ContainerRegistrationKeys.QUERY).graph({
         entity: "product",
         fields: ["id", "handle", "status", "variants.prices.amount", "variants.prices.currency_code", "sales_channels.id"],
         filters: { id: productId },
       })
+      // `variants.prices` is a link field the generated product type leaves out.
+      const product = data[0] as unknown as {
+        handle: string
+        status: string
+        sales_channels: Array<{ id: string }>
+        variants: Array<{ prices: Array<{ amount: unknown; currency_code: string }> }>
+      }
       expect(product.status).toBe("published")
-      expect(product.sales_channels.map((c: { id: string }) => c.id)).toEqual([salesChannelId])
+      expect(product.sales_channels.map((c) => c.id)).toEqual([salesChannelId])
       expect(product.variants).toHaveLength(1)
-      expect(product.variants[0].prices.map((p: { amount: unknown; currency_code: string }) => [Number(p.amount), p.currency_code])).toEqual([
-        [12, "usd"],
-      ])
+      expect(product.variants[0].prices.map((p) => [Number(p.amount), p.currency_code])).toEqual([[12, "usd"]])
 
       // The storefront: its product page asks for the price in the region.
       const page = await safe(

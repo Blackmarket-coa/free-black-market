@@ -12,7 +12,8 @@ import {
 } from "../../src/lib/customer-data-registry"
 import { readCustomerDataAcrossRegistry } from "../../src/lib/customer-erasure"
 import { PASSWORD_HISTORY_MODULE } from "../../src/modules/password-history"
-import { COLLECTIVE_CAMPAIGN_MODULE } from "../../src/modules/collective-campaign"
+import { BackingMode, COLLECTIVE_CAMPAIGN_MODULE } from "../../src/modules/collective-campaign"
+import type CollectiveCampaignModuleService from "../../src/modules/collective-campaign/service"
 import { clearDeletedCustomersLeftovers } from "../../src/migration-scripts/clear-deleted-customers-review-names-and-password-history"
 
 jest.setTimeout(240 * 1000)
@@ -129,9 +130,9 @@ medusaIntegrationTestRunner({
     // id used here.
     async function insertBacking(backerId: string, amount: number) {
       const [backing] = await getContainer()
-        .resolve(COLLECTIVE_CAMPAIGN_MODULE)
-        .createBackings([{ campaign_id: "ccmp_registry_test", backer_id: backerId, mode: "PRE_ORDER", amount }])
-      return backing.id as string
+        .resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
+        .createBackings([{ campaign_id: "ccmp_registry_test", backer_id: backerId, mode: BackingMode.PRE_ORDER, amount }])
+      return backing.id
     }
 
     async function backingRow(id: string) {
