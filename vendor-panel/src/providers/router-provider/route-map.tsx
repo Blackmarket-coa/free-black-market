@@ -70,6 +70,15 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/sales-report"),
           },
           {
+            // The user menu's "Report a bug" links here.
+            path: "bug-report",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Report a bug",
+            },
+            lazy: () => import("../../routes/bug-report"),
+          },
+          {
             path: "creator-studio",
             errorElement: <ErrorBoundary />,
             handle: {
