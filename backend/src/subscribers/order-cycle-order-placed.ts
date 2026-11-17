@@ -130,9 +130,13 @@ export default async function orderPlacedHandler({
       // FBM middleware stands in front of; and the no-cart-lock race at the
       // main checkout, a tagged line written after the middleware's check and
       // before Mercur's workflow reads the cart. (A line whose tag a client
-      // stripped, or whose cycle sits only in the cart's metadata, is not a
-      // cycle line here at all: Mercur copies line metadata onto its orders,
-      // never the cart's.)
+      // stripped is not a cycle line here at all. A cycle kept only in the
+      // cart's metadata depends on whose order this is: Mercur copies line
+      // metadata onto its orders, never the cart's, so on Mercur's orders such
+      // a line is not a cycle line here either; Medusa's `complete-cart.js`
+      // copies `metadata: cart.metadata` onto its order, so on Medusa's orders
+      // the order-level fallback above sees the tag, for lines its validate
+      // hook has already checked under it.)
       try {
         await orderCycleService.retrieveOrderCycle(orderCycleId)
       } catch {
