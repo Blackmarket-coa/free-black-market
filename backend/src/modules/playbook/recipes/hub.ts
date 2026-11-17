@@ -26,6 +26,7 @@ export const HUB: PlaybookRecipe = {
     "bookable",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "A federation: many vendors, one storefront, governance shared across the network.",
 }

@@ -23,6 +23,7 @@ export const KITCHEN: PlaybookRecipe = {
     "wholesale",
     "bookable",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "Cooking that feeds the neighborhood. Pop-ups, takeout, tables when you can get one.",
 }

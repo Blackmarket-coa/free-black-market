@@ -10,9 +10,22 @@ the matrix). One product carries exactly one listing-type at any given
 time.
 
 The `listing-type` module module-links to Mercur's `Product` via
-`defineLink`. Allowed-types-per-playbook is enforced in a workflow step on
-`product.created` (and on `product.updated` when the listing-type
-changes), not via a DB CHECK constraint, so seeded data is never rejected.
+`defineLink` (`backend/src/links/listing-type-product.ts`).
+Allowed-types-per-playbook is enforced when a vendor creates a product, by a
+route middleware on `POST /vendor/products` and `POST /vendor/seller-products`
+(`backend/src/shared/listing-type-guard.ts`), not on update and not via a DB
+CHECK constraint, so seeded data is never rejected.
+
+A create request names its type in `additional_data.listing_type_id`. One
+that names none takes the seller's playbook's `default_listing_type`
+(`physical_product` on every playbook that allows it, `bookable` on Service);
+until 2026-11-17 it took `physical_product` whatever the playbook, and the
+vendor panel's product form names none, so a Service vendor could create
+nothing. `POST /vendor/seller-products` (the panel's create) links the new
+product to that type's `listing_type` row, which nothing did before;
+products made through Mercur's `POST /vendor/products` are still not linked,
+and an unlinked product reads as `physical_product`. The `listing_type`
+table is seeded on every boot by the module's loader (missing rows only).
 
 ## v1 ship list
 

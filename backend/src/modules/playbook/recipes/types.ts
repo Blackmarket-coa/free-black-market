@@ -85,5 +85,15 @@ export type PlaybookRecipe = {
   member_model: MemberModel
   default_features: PlaybookFeatureDefaults
   allowed_listing_types: ListingTypeId[]
+  /**
+   * The listing type a product gets when its create request names none: the
+   * vendor panel's product form sends no listing type, so every product a
+   * vendor makes there takes this one. Must be one of
+   * `allowed_listing_types`. That form builds a plain shippable, stocked
+   * product, so every playbook that allows `physical_product` defaults to
+   * it; Service, which does not, defaults to `bookable` (a slot of the
+   * practitioner's time, what the storefront embed lists as a service).
+   */
+  default_listing_type: ListingTypeId
   storefront_blurb_default: string
 }

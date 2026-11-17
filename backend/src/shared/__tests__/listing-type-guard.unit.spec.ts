@@ -4,9 +4,10 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import {
   resolveListingTypeId,
   assertListingTypeAllowed,
+  resolveAllowedListingType,
 } from "../listing-type-guard"
-import { PLAYBOOK_MODULE } from "../../modules/playbook"
-import { LISTING_TYPE_MODULE } from "../../modules/listing-type"
+import { PLAYBOOK_MODULE, getRecipe, type PlaybookId } from "../../modules/playbook"
+import { LISTING_TYPE_MODULE, getListingType } from "../../modules/listing-type"
 
 type PlaybookStub = {
   listPlaybookAssignments: jest.Mock
@@ -139,3 +140,66 @@ describe("assertListingTypeAllowed", () => {
     ).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
   })
 })
+
+/**
+ * A product whose create request names no listing type, which is every
+ * product the vendor panel's form makes. It took `physical_product` whatever
+ * the seller's playbook, so a Service vendor could create nothing (measured:
+ * 400 "Listing type \"physical_product\" is not allowed on the Service
+ * playbook"). These run the real recipes.
+ */
+describe("resolveAllowedListingType", () => {
+  const sellerOn = (recipe_id: PlaybookId | null) =>
+    ({
+      resolve: (key: string) => {
+        if (key === PLAYBOOK_MODULE) {
+          return {
+            listPlaybookAssignments: async () => (recipe_id ? [{ recipe_id }] : []),
+            getRecipe: (id: PlaybookId) => getRecipe(id),
+            isListingTypeAllowed: (id: PlaybookId, lt: string) =>
+              (getRecipe(id).allowed_listing_types as string[]).includes(lt),
+          }
+        }
+        if (key === LISTING_TYPE_MODULE) return { getDefinition: getListingType }
+        throw new Error(`unexpected resolve(${key})`)
+      },
+    }) as unknown as MedusaContainer
+
+  it("gives a Service seller's untyped product the Service playbook's default, a bookable slot", async () => {
+    await expect(resolveAllowedListingType(sellerOn("service"), { sellerId: "sel_1" })).resolves.toBe("bookable")
+    await expect(
+      resolveAllowedListingType(sellerOn("service"), { sellerId: "sel_1", additionalData: {} })
+    ).resolves.toBe("bookable")
+  })
+
+  it("gives every other playbook's untyped product its default, a physical product", async () => {
+    await expect(resolveAllowedListingType(sellerOn("stall"), { sellerId: "sel_1" })).resolves.toBe("physical_product")
+    await expect(resolveAllowedListingType(sellerOn("kitchen"), { sellerId: "sel_1" })).resolves.toBe("physical_product")
+  })
+
+  it("still refuses a type the request names that the playbook does not allow", async () => {
+    await expect(
+      resolveAllowedListingType(sellerOn("service"), {
+        sellerId: "sel_1",
+        additionalData: { listing_type_id: "physical_product" },
+      })
+    ).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
+  })
+
+  it("keeps a type the request names when the playbook allows it", async () => {
+    await expect(
+      resolveAllowedListingType(sellerOn("service"), {
+        sellerId: "sel_1",
+        additionalData: { listing_type_id: "event" },
+      })
+    ).resolves.toBe("event")
+  })
+
+  it("leaves a seller with no playbook, or none known, on physical_product, unchecked", async () => {
+    await expect(resolveAllowedListingType(sellerOn(null), { sellerId: "sel_1" })).resolves.toBe("physical_product")
+    await expect(resolveAllowedListingType(sellerOn("service"), { sellerId: undefined })).resolves.toBe(
+      "physical_product"
+    )
+  })
+})
+

@@ -21,6 +21,7 @@ export const STALL: PlaybookRecipe = {
     "unique_inventory",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "An independent maker bringing their work directly to you.",
 }

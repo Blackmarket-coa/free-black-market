@@ -25,6 +25,7 @@ export const CYCLE: PlaybookRecipe = {
     "bookable",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "A farm running seasonal shares. Subscribe for the harvest; the surplus comes through together.",
 }

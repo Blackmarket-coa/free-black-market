@@ -28,20 +28,37 @@ import { sellerIdForVendorActor } from "./seller-actor"
  *   - `additional_data.listing_type_id` (preferred), or
  *   - `additional_data.fbm_listing_type` (back-compat alias).
  *
- * When the field is absent the product defaults to `physical_product`
- * (the universal default). When the seller has no playbook assignment
- * (e.g. legacy seller pre-picker), validation is skipped — the vendor-
- * panel migration flow re-prompts these sellers.
+ * When the field is absent the product takes the seller's playbook's
+ * `default_listing_type`. It used to take `physical_product` whatever the
+ * playbook, and the vendor panel's product form sends no listing type, so
+ * every product a Service vendor made there was refused (Service does not
+ * allow physical products). When the seller has no playbook assignment
+ * (e.g. legacy seller pre-picker), validation is skipped and an untyped
+ * product is `physical_product` — the vendor-panel migration flow
+ * re-prompts these sellers.
  */
 
-export function resolveListingTypeId(
+/** The listing type a create request names, if it names one. */
+export function requestedListingTypeId(
   additionalData?: Record<string, unknown> | null
-): ListingTypeId {
+): string | undefined {
   const additional = additionalData ?? {}
-  const raw =
+  return (
     (additional.listing_type_id as string | undefined) ??
     (additional.fbm_listing_type as string | undefined)
-  return (raw ?? "physical_product") as ListingTypeId
+  )
+}
+
+/**
+ * The listing type a create request names, or `fallback` when it names
+ * none. Callers that know the seller pass the playbook's default
+ * ({@link resolveAllowedListingType} does).
+ */
+export function resolveListingTypeId(
+  additionalData?: Record<string, unknown> | null,
+  fallback: ListingTypeId = "physical_product"
+): ListingTypeId {
+  return (requestedListingTypeId(additionalData) ?? fallback) as ListingTypeId
 }
 
 /**
@@ -69,12 +86,24 @@ export async function assertListingTypeAllowed(
   container: MedusaContainer,
   args: { sellerId?: string; additionalData?: Record<string, unknown> | null }
 ): Promise<void> {
+  await resolveAllowedListingType(container, args)
+}
+
+/**
+ * The listing type a product being created takes: the one the request
+ * names, or the seller's playbook's default when it names none (and
+ * `physical_product` for a seller with no playbook, or none known). Throws
+ * `MedusaError(INVALID_DATA)` like {@link assertListingTypeAllowed} when the
+ * playbook does not allow it or the catalog does not know it.
+ */
+export async function resolveAllowedListingType(
+  container: MedusaContainer,
+  args: { sellerId?: string; additionalData?: Record<string, unknown> | null }
+): Promise<ListingTypeId> {
   const { sellerId } = args
   if (!sellerId) {
-    return
+    return resolveListingTypeId(args.additionalData)
   }
-
-  const listingTypeId = resolveListingTypeId(args.additionalData)
 
   const playbookService: any = container.resolve(PLAYBOOK_MODULE)
   const listingTypeService: any = container.resolve(LISTING_TYPE_MODULE)
@@ -84,10 +113,14 @@ export async function assertListingTypeAllowed(
   })
   if (!assignment) {
     // Legacy seller — skip; vendor-panel migration flow re-prompts.
-    return
+    return resolveListingTypeId(args.additionalData)
   }
 
   const recipeId = assignment.recipe_id as PlaybookId
+  const listingTypeId = resolveListingTypeId(
+    args.additionalData,
+    playbookService.getRecipe(recipeId).default_listing_type
+  )
   if (!playbookService.isListingTypeAllowed(recipeId, listingTypeId)) {
     const recipe = playbookService.getRecipe(recipeId)
     throw new MedusaError(
@@ -108,6 +141,7 @@ export async function assertListingTypeAllowed(
       `Unknown listing-type "${listingTypeId}". Pick one from the v1 catalog (see docs/LISTING_TYPES.md).`
     )
   }
+  return listingTypeId
 }
 
 /**
@@ -166,14 +200,14 @@ export async function enforceListingTypeAllowed(
     const sellerId = await resolveSellerId(req, actorId)
     const { additional_data, ...productData } = (req.body as any) ?? {}
 
-    await assertListingTypeAllowed(req.scope, {
+    const listingTypeId = await resolveAllowedListingType(req.scope, {
       sellerId,
       additionalData: additional_data,
     })
 
     // Data-integrity rule, independent of the seller's playbook: enforced for
     // every seller (including legacy sellers the playbook check skips).
-    assertUniqueInventoryConstraints(resolveListingTypeId(additional_data), productData)
+    assertUniqueInventoryConstraints(listingTypeId, productData)
 
     next()
   } catch (error) {

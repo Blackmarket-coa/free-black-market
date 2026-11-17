@@ -26,6 +26,7 @@ export const GROVE: PlaybookRecipe = {
     "unique_inventory",
     "bookable",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "Mutual-aid commerce: take what you need, give what you can, decide together.",
 }

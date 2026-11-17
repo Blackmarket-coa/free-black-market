@@ -27,6 +27,7 @@ export const HARVEST: PlaybookRecipe = {
     "bookable",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "A garden you can join. The work is shared, the harvest is shared, the season unfolds together.",
 }

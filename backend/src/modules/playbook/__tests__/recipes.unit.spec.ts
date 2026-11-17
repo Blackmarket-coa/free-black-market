@@ -34,6 +34,30 @@ describe("playbook recipe catalog", () => {
     }
   })
 
+  it("every recipe's default listing type is one it allows", () => {
+    for (const id of PLAYBOOK_IDS) {
+      const recipe = PLAYBOOK_RECIPES[id]
+      expect({ id, allowed: recipe.allowed_listing_types.includes(recipe.default_listing_type) }).toEqual({
+        id,
+        allowed: true,
+      })
+    }
+  })
+
+  it("an untyped product is a physical product wherever that is allowed, and a bookable slot on Service", () => {
+    // The vendor panel's product form sends no listing type and builds a
+    // plain shippable, stocked product; Service is the one playbook that
+    // does not allow physical products, and its offering is time.
+    for (const id of PLAYBOOK_IDS) {
+      const recipe = PLAYBOOK_RECIPES[id]
+      if (recipe.allowed_listing_types.includes("physical_product")) {
+        expect({ id, default: recipe.default_listing_type }).toEqual({ id, default: "physical_product" })
+      }
+    }
+    expect(PLAYBOOK_RECIPES.service.allowed_listing_types).not.toContain("physical_product")
+    expect(PLAYBOOK_RECIPES.service.default_listing_type).toBe("bookable")
+  })
+
   it("Stall does not allow sliding scale (zero-overhead invariant)", () => {
     expect(PLAYBOOK_RECIPES.stall.allow_sliding_scale).toBe(false)
   })

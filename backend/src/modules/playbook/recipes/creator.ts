@@ -24,6 +24,7 @@ export const CREATOR: PlaybookRecipe = {
     "unique_inventory",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "A creator sharing their work — memberships, digital goods, and live events.",
 }

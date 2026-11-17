@@ -25,6 +25,7 @@ export const WORKSHOP: PlaybookRecipe = {
     "bookable",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "Worker-owned. The people doing the work share the governance and the surplus.",
 }

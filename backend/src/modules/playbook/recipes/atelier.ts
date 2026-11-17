@@ -24,6 +24,7 @@ export const ATELIER: PlaybookRecipe = {
     "bookable",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "A small group of makers working together, sharing the workshop and the surplus.",
 }

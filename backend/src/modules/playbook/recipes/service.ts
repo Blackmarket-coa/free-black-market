@@ -23,6 +23,7 @@ export const SERVICE: PlaybookRecipe = {
     "recurring",
     "bookable",
   ],
+  default_listing_type: "bookable",
   storefront_blurb_default:
     "Time and skill offered on a schedule. Book a slot; pay what works for you.",
 }

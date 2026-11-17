@@ -27,6 +27,7 @@ export const COMMONS: PlaybookRecipe = {
     "bookable",
     "campaign",
   ],
+  default_listing_type: "physical_product",
   storefront_blurb_default:
     "A co-op where producers, workers, consumers, and supporters all have a seat at the table.",
 }

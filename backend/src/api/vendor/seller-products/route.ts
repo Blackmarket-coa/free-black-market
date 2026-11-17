@@ -7,6 +7,10 @@ import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { sellerIdForVendorActor } from "../../../shared/seller-actor"
+import { resolveAllowedListingType } from "../../../shared/listing-type-guard"
+import { LISTING_TYPE_MODULE } from "../../../modules/listing-type"
+import type { ListingTypeId } from "../../../modules/listing-type"
+import type ListingTypeService from "../../../modules/listing-type/service"
 
 type VariantPrice = {
   amount?: number | string | null
@@ -118,6 +122,43 @@ async function linkSellerInventoryItems(
   )
 }
 
+/**
+ * Link the product to its listing type's registry row
+ * (`links/listing-type-product.ts`), which the storefront's product page,
+ * the vendor page's service and digital grids, the playbook-switch preflight
+ * and the one-of-a-kind and consignment paths read. Nothing wrote the link,
+ * so the listing type a product was created with was checked and then lost.
+ * Best effort, after the product exists: a missing registry row or a failed
+ * write leaves the product untyped (read as a physical product) and is
+ * logged, rather than answering an error for a product that was made.
+ */
+async function linkListingType(
+  req: MedusaRequest,
+  productId: string,
+  listingTypeId: ListingTypeId
+) {
+  try {
+    const listingTypes = req.scope.resolve<ListingTypeService>(LISTING_TYPE_MODULE)
+    const [row] = await listingTypes.listListingTypes({ catalog_id: listingTypeId })
+    if (!row) {
+      log.warn(
+        `Product ${productId} left without a listing type: the listing-type registry has no "${listingTypeId}" row`
+      )
+      return
+    }
+    await req.scope.resolve(ContainerRegistrationKeys.LINK).create({
+      [Modules.PRODUCT]: { product_id: productId },
+      [LISTING_TYPE_MODULE]: { listing_type_id: row.id },
+    })
+  } catch (error) {
+    log.warn(
+      `Could not link product ${productId} to listing type "${listingTypeId}": ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
+  }
+}
+
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK)
@@ -151,6 +192,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       productData.variants = variants
     }
 
+    // The listing type the request names, or the seller's playbook's default
+    // (the vendor panel's form names none). The route middleware checked it
+    // too; read here as well so the link below records what was allowed.
+    const listingTypeId = await resolveAllowedListingType(req.scope, {
+      sellerId: resolvedSellerId,
+      additionalData: additional_data,
+    })
+
     const { result } = await createProductsWorkflow(req.scope).run({
       input: {
         products: [productData as CreateProductWorkflowInputDTO],
@@ -159,6 +208,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
 
     const createdProduct = result[0]
+
+    await linkListingType(req, createdProduct.id, listingTypeId)
 
     try {
       await remoteLink.create({
@@ -189,6 +240,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         "images.*",
         "variants.*",
         "variants.prices.*",
+        "listing_type.catalog_id",
       ],
       filters: { id: createdProduct.id },
     })
