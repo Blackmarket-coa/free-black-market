@@ -127,9 +127,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(401).json({ message: "Unauthorized" })
   }
 
-  // A member id resolves to its store only while the member and the store are
-  // live (shared/seller-actor.ts); a removed member's id used to be used as is.
-  const resolvedSellerId = await sellerIdForVendorActor(req.scope, sellerId)
+  // By the gates' rule (shared/seller-actor.ts): a member id only while the
+  // member and its store are live; a removed member's id used to be used as is.
+  const resolvedSellerId = await sellerIdForVendorActor(req, sellerId)
   if (!resolvedSellerId) {
     return res.status(401).json({ message: "Unauthorized" })
   }

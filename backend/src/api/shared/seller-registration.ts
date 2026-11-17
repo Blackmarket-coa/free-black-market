@@ -145,7 +145,8 @@ export const handleSellerRegistration = async (
     // "was closed" while the store was live.
     const linked = await resolveLinkedStore(
       req.scope,
-      authIdentity.app_metadata as Record<string, unknown> | undefined
+      authIdentity.app_metadata as Record<string, unknown> | undefined,
+      authIdentity.id
     )
     if (linked.kind === "live") {
       return res.status(409).json({

@@ -5,21 +5,34 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../modules/request"
 import RequestModuleService from "../modules/request/service"
 import { decodeAuthTokenFromAuthorizationWithError } from "./auth-helpers"
+import { liveSellerIdForActor } from "./seller-actor"
 
 /**
  * Resolve a potential member ID to a seller ID.
- * If the ID starts with "sel_", return it as-is (it's already a seller ID).
+ * If the ID starts with "sel_", it counts only as the gates count it: through
+ * the live member of that store at the login's own address
+ * (shared/seller-actor.ts). Otherwise this answered "approved" for a link the
+ * gates refuse, and the vendor panel went from the dashboard's 401 back to
+ * sign-in and round again.
  * If the ID starts with "mem_", look up the seller_id from the member table.
  * Otherwise, return the ID as-is (may be a seller ID with different prefix or invalid).
  */
-async function resolveToSellerId(req: MedusaRequest, id: string | null | undefined): Promise<string | null> {
+async function resolveToSellerId(
+  req: MedusaRequest,
+  id: string | null | undefined,
+  authIdentityId: string | null
+): Promise<string | null> {
   if (!id) {
     return null
   }
 
-  // If it's already a seller ID, return it directly
   if (id.startsWith("sel_")) {
-    return id
+    try {
+      return await liveSellerIdForActor(req.scope, id, authIdentityId)
+    } catch (err) {
+      log.error(`[SellerRegistration] Error resolving a seller-id link:`, err)
+      return null
+    }
   }
 
   // If it's a member ID, look up the seller_id from the member table
@@ -152,7 +165,7 @@ export const getSellerRegistrationStatus = async (
     // Get the raw ID which might be a member ID (mem_*) or seller ID (sel_*)
     const rawActorId = decodedToken?.sellerId ?? (req as any).auth_context?.actor_id ?? null
     // Resolve to actual seller ID (handles member ID to seller ID lookup)
-    const sellerId = await resolveToSellerId(req, rawActorId)
+    const sellerId = await resolveToSellerId(req, rawActorId, authIdentityId)
 
     // A token can carry a seller/member claim that no longer resolves to a
     // seller row (deleted seller, duplicate registration, stale backfill).
@@ -223,7 +236,7 @@ export const getSellerRegistrationStatus = async (
     if (appMetadata?.seller_id) {
       // The linked id may itself be a member id (Mercur links the member as
       // the seller actor), so resolve it the same way as the token claim.
-      const linkedSellerId = await resolveToSellerId(req, String(appMetadata.seller_id))
+      const linkedSellerId = await resolveToSellerId(req, String(appMetadata.seller_id), authIdentityId)
       const seller = linkedSellerId ? await findSellerById(req, linkedSellerId) : null
       if (!seller) {
         log.warn(
@@ -431,6 +444,9 @@ async function handleAcceptedRequest(
               id: authIdentityId,
               // Merge, don't replace: the same identity can also be a
               // customer (customer_id) or carry provider metadata.
+              // The member, as Mercur links one: it acts with its own role.
+              // The seller id this wrote acted as whichever member the gates
+              // chose for it.
               app_metadata: {
                 ...(identity.app_metadata ?? {}),
                 seller_id: member.id,
@@ -444,9 +460,6 @@ async function handleAcceptedRequest(
             sellerId,
             seller,
             requestId: latestRequest.id,
-              // The member, as Mercur links one: it acts with its own role.
-              // The seller id this wrote acted as whichever member the gates
-              // chose for it.
             message: "Your seller account is approved. You can access the vendor dashboard.",
           }),
         }

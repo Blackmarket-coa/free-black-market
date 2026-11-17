@@ -368,7 +368,8 @@ export class SellerApprovalService {
     const handle = toHandle(data.seller.name)
     const linked = await resolveLinkedStore(
       this.container,
-      applicantLogin.app_metadata as Record<string, unknown> | undefined
+      applicantLogin.app_metadata as Record<string, unknown> | undefined,
+      applicantLogin.id
     )
     if (linked.kind === "closed") {
       throw new SellerApprovalRefusedError(
@@ -405,8 +406,9 @@ export class SellerApprovalService {
     }
     // After every refusal that needs no store made, so none of them changes
     // anything (a name clash, which only the workflow finds, refuses with the
-    // link already cleared). A link to a member removed from a store that is
-    // still open names no store of this login's, and Mercur's
+    // link already cleared). A link that acts as no member of a store that is
+    // still open (a removed member's, or a seller id with no live member at
+    // the login's address) names no store of this login's, and Mercur's
     // setAuthAppMetadataStep refuses any login whose seller_id is set ("Key
     // seller_id already exists in app metadata"). Approval used to refuse it
     // as "linked to a store that was closed" while the store was live.
@@ -414,7 +416,7 @@ export class SellerApprovalService {
     // leaving the key out keeps it, and null keeps it set (measured).
     if (linked.kind === "removed") {
       log.warn(
-        `[SellerApproval] Login ${data.auth_identity_id} is linked to member ${linked.actor}, removed from store ${linked.seller.id}; clearing that link before creating its own store (request ${requestId})`
+        `[SellerApproval] Login ${data.auth_identity_id}'s link ${linked.actor} acts as no member of store ${linked.seller.id} (a removed member, or a seller id with no live member at the login's address); clearing that link before creating its own store (request ${requestId})`
       )
       await authModule.updateAuthIdentities([
         { id: data.auth_identity_id, app_metadata: { seller_id: undefined } },

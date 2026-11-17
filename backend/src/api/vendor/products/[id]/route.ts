@@ -41,7 +41,7 @@ export async function GET(
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
 
   if (!sellerId) {
@@ -95,7 +95,7 @@ export async function POST(
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
 
   if (!sellerId) {
@@ -159,7 +159,7 @@ export async function DELETE(
   res: MedusaResponse
 ) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
 
   if (!sellerId) {

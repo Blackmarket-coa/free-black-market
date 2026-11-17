@@ -17,7 +17,7 @@ const log = createLogger("api/vendor/_middlewares")
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { decodeAuthTokenFromAuthorization } from "../../shared/auth-helpers"
-import { firstLiveMemberIdOf, liveSellerIdOfMember } from "../../shared/seller-actor"
+import { liveSellerIdOfMember, resolveSellerActor } from "../../shared/seller-actor"
 import { handleSellerRegistration } from "../shared/seller-registration"
 
 export async function ensureSellerContext(
@@ -112,45 +112,54 @@ export async function ensureSellerContext(
   }
 
   if (authContext.actor_id?.startsWith("sel_")) {
-    // Store original seller ID for route handlers that need it
-    ;(req as VendorRequest)._seller_id = authContext.actor_id
-
-    // Try to convert seller ID to member ID for MercurJS compatibility.
-    // MercurJS storeActiveGuard queries sellers by members.id,
-    // so having a mem_* actor_id is preferred. However, the patched
-    // fetchSellerByAuthActorId (via scripts/patch-mercurjs.js) now handles
-    // sel_* IDs as a fallback, so this conversion is best-effort.
+    // A seller id acts as the live member of that store whose email is the
+    // login's own address, and as nothing without one (shared/seller-actor.ts).
+    // It used to act as the store's first live member, its owner, for any
+    // login holding it, a removed member's included; and finding none was
+    // not a refusal at all. Mercur's member-keyed guards get the matched
+    // member as the actor.
+    let matched: Awaited<ReturnType<typeof resolveSellerActor>> = null
     try {
-      // A removed member is never the one a seller id acts as.
-      const memberId = await firstLiveMemberIdOf(req.scope, authContext.actor_id)
-      if (memberId) {
-        const originalSellerId = authContext.actor_id
-        authContext.member_id = memberId
-        authContext.actor_id = memberId
-
-        // Intercept future auth_context assignments to ensure actor_id stays as member ID.
-        // MedusaJS authenticate middleware may replace req.auth_context with JWT data
-        // containing the original seller ID.
-        let _currentAuthContext = requestWithAuth.auth_context
-        Object.defineProperty(req, "auth_context", {
-          get() {
-            return _currentAuthContext
-          },
-          set(value) {
-            _currentAuthContext = value
-            if (value && value.actor_id === originalSellerId) {
-              value.actor_id = memberId
-            }
-          },
-          configurable: true,
-          enumerable: true,
-        })
-      }
-      // If no member found, continue anyway - the patched MercurJS code
-      // handles sel_* IDs via direct seller lookup as a fallback
-    } catch {
-      // Non-fatal: if member lookup fails, patched MercurJS handles it
+      matched = await resolveSellerActor(req.scope, authContext.actor_id, authContext.auth_identity_id)
+    } catch (error) {
+      log.error("[VENDOR AUTH] Failed to resolve a seller-id actor:", error)
+      res.status(500).json({
+        message: "Failed to validate seller context",
+        type: "server_error",
+      })
+      return
     }
+    if (!matched) {
+      res.status(401).json({
+        message: "Seller not found for authenticated user",
+        type: "unauthorized",
+      })
+      return
+    }
+    // The store, for route handlers that need it.
+    ;(req as VendorRequest)._seller_id = matched.sellerId
+    const memberId = matched.memberId
+    const originalSellerId = authContext.actor_id
+    authContext.member_id = memberId
+    authContext.actor_id = memberId
+
+    // Intercept future auth_context assignments to ensure actor_id stays as member ID.
+    // MedusaJS authenticate middleware may replace req.auth_context with JWT data
+    // containing the original seller ID.
+    let _currentAuthContext = requestWithAuth.auth_context
+    Object.defineProperty(req, "auth_context", {
+      get() {
+        return _currentAuthContext
+      },
+      set(value) {
+        _currentAuthContext = value
+        if (value && value.actor_id === originalSellerId) {
+          value.actor_id = memberId
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    })
   }
 
   const actorType = authContext.actor_type

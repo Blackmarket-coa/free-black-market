@@ -17,7 +17,7 @@ async function loadOwned(
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
   if (!id) return res.status(400).json({ message: "id is required" })
@@ -40,7 +40,7 @@ type PatchBody = {
 
 export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
   if (!id) return res.status(400).json({ message: "id is required" })
@@ -64,7 +64,7 @@ export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) 
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
   if (!id) return res.status(400).json({ message: "id is required" })

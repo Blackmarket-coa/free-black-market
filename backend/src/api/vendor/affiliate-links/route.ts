@@ -6,7 +6,7 @@ import { sellerIdForVendorActor } from "../../../shared/seller-actor"
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<CreatorAttributionService>(CREATOR_ATTRIBUTION_MODULE)
@@ -29,7 +29,7 @@ type Body = {
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const body = (req.validatedBody || req.body || {}) as Body

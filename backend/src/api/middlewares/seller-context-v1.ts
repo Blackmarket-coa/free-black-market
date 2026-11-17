@@ -19,10 +19,11 @@ import { liveSellerIdForActor } from "../../shared/seller-actor"
  *     touch MercurJS internals.
  *   - Exposes the canonical `sel_*` seller id as `req.seller_id` for handlers.
  *
- * Like the vendor gate, it resolves an actor only to a store that is open,
- * and a member only while it is still on the team (shared/seller-actor.ts).
- * It used to take any `sel_*` id as the seller and any `mem_*` row, deleted or
- * not: a removed member, and a member of a closed store, still got 200 here.
+ * Like the vendor gate, it resolves a member id only while the member and its
+ * store are live, and a seller id only to the live member of that store at the
+ * login's own address (shared/seller-actor.ts). It used to take any `sel_*` id
+ * as the seller and any `mem_*` row, deleted or not: a removed member, and a
+ * member of a closed store, still got 200 here.
  */
 export interface SellerAuthRequest extends MedusaRequest {
   seller_id?: string
@@ -61,7 +62,7 @@ export async function requireSellerContextV1(
 
   if (authContext.actor_id?.startsWith("sel_") || authContext.actor_id?.startsWith("mem_")) {
     try {
-      sellerId = await liveSellerIdForActor(req.scope, authContext.actor_id)
+      sellerId = await liveSellerIdForActor(req.scope, authContext.actor_id, authContext.auth_identity_id)
     } catch (err) {
       log.error("[v1 seller context] seller lookup failed", err)
     }
@@ -74,7 +75,7 @@ export async function requireSellerContextV1(
       const appMetadata = identities?.[0]?.app_metadata as
         | { seller_id?: string }
         | undefined
-      sellerId = await liveSellerIdForActor(req.scope, appMetadata?.seller_id)
+      sellerId = await liveSellerIdForActor(req.scope, appMetadata?.seller_id, authContext.auth_identity_id)
     } catch (err) {
       log.error("[v1 seller context] auth identity lookup failed", err)
     }

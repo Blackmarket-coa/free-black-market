@@ -21,7 +21,7 @@ async function verifySellerOwnsProduct(req: MedusaRequest, sellerId: string, pro
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
 
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
@@ -40,7 +40,7 @@ type Body = { code: ProductArchetypeCode }
 
 export async function PUT(req: MedusaRequest<Body>, res: MedusaResponse) {
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
   const body = (req.validatedBody || req.body) as Body
 

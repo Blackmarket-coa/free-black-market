@@ -45,17 +45,18 @@ export function resolveListingTypeId(
 }
 
 /**
- * Resolve the seller id behind a vendor request actor. A `mem_` actor is a
- * team member, resolved to its store only while neither is deleted; any other
- * id is passed through, as the vendor gate has already checked a seller id's
- * store (shared/seller-actor.ts). A removed member's id used to resolve to the
- * store it was removed from, or be passed on as if it were a seller id.
+ * Resolve the seller id behind a vendor request actor, by the rule both gates
+ * use (shared/seller-actor.ts): a member id only while the member and its
+ * store are live; a seller id only through the live member of that store at
+ * the login's address, which the vendor gate has already checked when it
+ * hands the store on as `_seller_id`. A removed member's id used to resolve to
+ * the store it was removed from, or be passed on as if it were a seller id.
  */
 export async function resolveSellerId(
   req: MedusaRequest,
   actorId?: string
 ): Promise<string | undefined> {
-  return sellerIdForVendorActor(req.scope, actorId)
+  return sellerIdForVendorActor(req, actorId)
 }
 
 /**

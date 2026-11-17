@@ -2,6 +2,7 @@ import { createLogger } from "../../../shared/logger"
 const log = createLogger("api/vendor/me")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { resolveSellerActor } from "../../../shared/seller-actor"
 
 interface AuthContext {
   actor_id?: string
@@ -61,9 +62,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       role: string | null
     } | null = null
 
+    // A seller id acts as the live member of that store at the login's own
+    // address (shared/seller-actor.ts), not as the store's first member: that
+    // gave any login holding the seller id the owner's profile.
+    const actingMemberId =
+      memberId ??
+      (sellerId
+        ? (await resolveSellerActor(req.scope, sellerId, authContext.auth_identity_id))?.memberId ?? null
+        : null)
+
     // Members that are still on the team, of stores that are still open: a
     // removed member's token named a row that is soft-deleted, not gone.
-    if (memberId) {
+    if (actingMemberId) {
       const result = await pgConnection.raw(
         `
         SELECT m.id, m.seller_id, m.name, m.email, m.photo, m.bio, m.phone, m.role
@@ -71,20 +81,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         JOIN seller s ON s.id = m.seller_id
         WHERE m.id = ? AND m.deleted_at IS NULL AND s.deleted_at IS NULL
         `,
-        [memberId]
-      )
-      member = result.rows?.[0] ?? null
-    } else if (sellerId) {
-      const result = await pgConnection.raw(
-        `
-        SELECT m.id, m.seller_id, m.name, m.email, m.photo, m.bio, m.phone, m.role
-        FROM member m
-        JOIN seller s ON s.id = m.seller_id
-        WHERE m.seller_id = ? AND m.deleted_at IS NULL AND s.deleted_at IS NULL
-        ORDER BY m.created_at ASC, m.id ASC
-        LIMIT 1
-        `,
-        [sellerId]
+        [actingMemberId]
       )
       member = result.rows?.[0] ?? null
     }

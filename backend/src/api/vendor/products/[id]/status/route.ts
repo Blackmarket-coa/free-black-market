@@ -10,7 +10,7 @@ import { sellerIdForVendorActor } from "../../../../../shared/seller-actor"
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  const sellerId = await sellerIdForVendorActor(req.scope, actorId)
+  const sellerId = await sellerIdForVendorActor(req, actorId)
   const { id } = req.params
 
   if (!sellerId) {

@@ -8,11 +8,13 @@ import { REQUEST_MODULE } from "../../src/modules/request"
 import backfillSellerAuth from "../../src/scripts/backfill-seller-auth"
 import seedPlaybooks from "../../src/scripts/seed-playbooks"
 import {
-  firstLiveMemberIdOf,
   liveSellerIdForActor,
+  resolveSellerActor,
   sellerIdForVendorActor,
 } from "../../src/shared/seller-actor"
+import { REFUSED_SELLER_ID_LINKS_SQL } from "../../src/shared/seller-auth-backfill"
 import { createAuthenticatedSeller } from "./helpers/seller-auth"
+import { newTestPassword } from "./helpers/test-password"
 
 jest.setTimeout(240 * 1000)
 
@@ -39,8 +41,15 @@ jest.setTimeout(240 * 1000)
  * removed member's link and then failed on a name clash, it handed the store
  * back as its owner (follow-up review, measured on Postgres).
  *
- * Members are removed with Mercur's own deleteMemberWorkflow. Spends 11 of the
- * auth limiter's 20 a minute (seller register and sign-ins).
+ * A login linked by seller id (what approval writes, and what the backfill
+ * used to write for any member) acts only as the live member of that store at
+ * the login's own address. It acted as the store's first live member, its
+ * owner, whoever held it: an invited member given the seller id acted as the
+ * owner, and kept every read after being removed (follow-up review, P1).
+ *
+ * Members are removed with Mercur's own deleteMemberWorkflow. Spends 14 of the
+ * auth limiter's 20 a minute (seller register and real sign-ins; the other
+ * tokens carry the claims Medusa mints).
  */
 
 medusaIntegrationTestRunner({
@@ -58,7 +67,7 @@ medusaIntegrationTestRunner({
     /** A login linked to a new member row of the store, as an accepted invite leaves one. */
     async function teamMember(store: { id: string }, prefix: string) {
       const email = `${prefix}-${uid()}@example.com`
-      const password = `Pw-${uid()}-Aa1!`
+      const password = newTestPassword("member")
       const auth = container().resolve(Modules.AUTH)
       await auth.register("emailpass", { body: { email, password } } as any)
       const [provider] = await auth.listProviderIdentities({ entity_id: email, provider: "emailpass" })
@@ -115,7 +124,7 @@ medusaIntegrationTestRunner({
     /** A login made through the auth module, so it spends none of the limiter. */
     async function plainLogin(prefix: string) {
       const email = `${prefix}-${uid()}@example.com`
-      const password = `Pw-${uid()}-Aa1!`
+      const password = newTestPassword("login")
       const auth = container().resolve(Modules.AUTH)
       await auth.register("emailpass", { body: { email, password } } as any)
       const [provider] = await auth.listProviderIdentities({ entity_id: email, provider: "emailpass" })
@@ -153,6 +162,24 @@ medusaIntegrationTestRunner({
       )
     }
     const backfill = async () => call(api.post("/admin/backfill-seller-auth", {}, bearer(await adminToken())))
+
+    /** The claims Medusa mints at sign-in: the login's link as the actor. Spends none of the limiter. */
+    const tokenFor = (who: { authIdentityId: string }, actorId: string) =>
+      jwt.sign(
+        { actor_id: actorId, actor_type: "seller", auth_identity_id: who.authIdentityId, auth_provider: "emailpass", app_metadata: { seller_id: actorId }, user_metadata: {} },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "1h" }
+      )
+    /** A login with no seller link yet, as POST /auth/seller/emailpass/register hands it back. */
+    const registrationTokenFor = (who: { authIdentityId: string }) =>
+      jwt.sign(
+        { actor_id: "", actor_type: "seller", auth_identity_id: who.authIdentityId, app_metadata: {}, user_metadata: {} },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "1h" }
+      )
+    /** What approval writes, and what the seller-auth backfill used to write for any member. */
+    const linkBySellerId = async (who: { authIdentityId: string }, sellerId: string) =>
+      container().resolve(Modules.AUTH).updateAuthIdentities([{ id: who.authIdentityId, app_metadata: { seller_id: sellerId } }])
 
     afterEach(() => {
       jest.restoreAllMocks()
@@ -222,7 +249,8 @@ medusaIntegrationTestRunner({
         await seedPlaybooks({ container: container(), args: [] } as any)
         const auth = container().resolve(Modules.AUTH)
         const ownerEmail = `closed-owner-${uid()}@example.com`
-        await auth.register("emailpass", { body: { email: ownerEmail, password: "Pw-closed-Aa1!" } } as any)
+        const ownerPassword = newTestPassword("closed")
+        await auth.register("emailpass", { body: { email: ownerEmail, password: ownerPassword } } as any)
         const [ownerProvider] = await auth.listProviderIdentities({ entity_id: ownerEmail, provider: "emailpass" })
         const { result: store } = await createSellerWorkflow.run({
           container: container(),
@@ -230,7 +258,7 @@ medusaIntegrationTestRunner({
         })
         // What a finished approval leaves: the login linked by seller id.
         await auth.updateAuthIdentities([{ id: ownerProvider.auth_identity_id, app_metadata: { seller_id: store.id } }])
-        const ownerToken = await signIn({ email: ownerEmail, password: "Pw-closed-Aa1!" })
+        const ownerToken = await signIn({ email: ownerEmail, password: ownerPassword })
         expect(jwt.decode(ownerToken)).toMatchObject({ actor_id: store.id })
         const member = await teamMember(store, "member")
         const memberToken = await signIn(member)
@@ -325,38 +353,211 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("a login linked by seller id", () => {
+      it("a removed member whose login holds the store's seller id is refused, before and after signing in again", async () => {
+        // The follow-up review's P1. The old backfill gave invited members
+        // the seller id, which acted as the store's first member, its owner,
+        // and kept doing so after deleteMemberWorkflow removed the member.
+        await seedPlaybooks({ container: container(), args: [] } as any)
+        const { store, order } = await storeWithData()
+        const member = await teamMember(store, "invited")
+        await linkBySellerId(member, store.id)
+        const before = await signIn(member)
+        expect(jwt.decode(before)).toMatchObject({ actor_id: store.id })
+        // While on the team, it acts as itself.
+        const asItself = await api.get("/vendor/me", bearer(before))
+        expect(asItself.data.member).toMatchObject({ id: member.memberId, role: "member" })
+
+        await deleteMemberWorkflow.run({ container: container(), input: member.memberId })
+        const after = await signIn(member)
+        expect(jwt.decode(after)).toMatchObject({ actor_id: store.id })
+
+        for (const [token, which] of [[before, "before removal"], [after, "fresh sign-in"]] as const) {
+          for (const path of readsOf(order.id)) {
+            const res = await call(api.get(path, bearer(token)))
+            expect({ which, path, status: res.status }).toEqual({ which, path, status: 401 })
+            const body = JSON.stringify(res.data ?? {})
+            expect({ which, path, leaks: body.includes(ADDRESS) || body.includes(store.id) }).toEqual({ which, path, leaks: false })
+          }
+          const assigned = await call(api.post("/vendor/playbook/assign", { recipe_id: "stall" }, bearer(token)))
+          expect({ which, status: assigned.status }).toEqual({ which, status: 401 })
+          const installed = await call(api.post("/v1/seller/plugins/sales-analytics/install", {}, bearer(token)))
+          expect({ which, status: installed.status }).toEqual({ which, status: 401 })
+        }
+        expect(await playbookOf(store.id)).toEqual([])
+      })
+
+      it("an owner whose own member row is gone acts as nobody, not as the store's next member", async () => {
+        // The review's P2: Mercur will not delete an owner, so the row is
+        // soft-deleted directly. The owner's seller id then acted as the
+        // second member, and /vendor/me returned that member's record.
+        const { owner, ownerMemberId, store } = await storeOf(`Gone Owner Farm ${uid()}`)
+        await linkBySellerId(owner, store.id)
+        const second = await teamMember(store, "second")
+        await container().resolve(SELLER_MODULE).softDeleteMembers([ownerMemberId])
+        const token = tokenFor(owner, store.id)
+
+        for (const path of ["/vendor/me", "/vendor/sellers/me", "/vendor/members", "/v1/seller/plugins/installed"]) {
+          const res = await call(api.get(path, bearer(token)))
+          expect({ path, status: res.status }).toEqual({ path, status: 401 })
+          expect({ path, leaks: JSON.stringify(res.data ?? {}).includes(second.email) }).toEqual({ path, leaks: false })
+        }
+      })
+
+      it("an owner linked by seller id, as approval links one, still acts as the owner", async () => {
+        const { owner, ownerMemberId, store } = await storeOf(`Approved Farm ${uid()}`)
+        await linkBySellerId(owner, store.id)
+        await teamMember(store, "colleague")
+        const token = tokenFor(owner, store.id)
+
+        const me = await api.get("/vendor/me", bearer(token))
+        expect(me.data.member).toMatchObject({ id: ownerMemberId, role: "owner", seller_id: store.id })
+        expect((await api.get("/vendor/sellers/me", bearer(token))).data.seller.id).toBe(store.id)
+        expect((await api.get("/vendor/members", bearer(token))).data.members).toHaveLength(2)
+        expect((await call(api.get("/v1/seller/plugins/installed", bearer(token)))).status).toBe(200)
+      })
+
+      it("an invited member linked by seller id acts as itself, not as the owner", async () => {
+        const { ownerMemberId, store } = await storeOf(`Invited Farm ${uid()}`)
+        const invited = await teamMember(store, "invited")
+        await linkBySellerId(invited, store.id)
+
+        const me = await api.get("/vendor/me", bearer(tokenFor(invited, store.id)))
+        expect(me.data.member).toMatchObject({ id: invited.memberId, role: "member", seller_id: store.id })
+        expect(me.data.member.id).not.toBe(ownerMemberId)
+      })
+
+      it("matches the login's address to a member's email ignoring case and surrounding spaces", async () => {
+        const { store } = await storeOf(`Case Farm ${uid()}`)
+        const login = await plainLogin("mixed")
+        const [member] = await container()
+          .resolve(SELLER_MODULE)
+          .createMembers([{ seller_id: store.id, name: "Mixed", email: `  ${login.email.toUpperCase()} `, role: "member" }])
+        await linkBySellerId(login, store.id)
+
+        const me = await api.get("/vendor/me", bearer(tokenFor(login, store.id)))
+        expect(me.data.member.id).toBe(member.id)
+      })
+
+      it("of two live members at the login's address, acts as the one made first", async () => {
+        const { store } = await storeOf(`Twice Farm ${uid()}`)
+        const login = await plainLogin("twice")
+        const sellers = container().resolve(SELLER_MODULE)
+        const [first] = await sellers.createMembers([{ seller_id: store.id, name: "First", email: login.email, role: "member" }])
+        const [later] = await sellers.createMembers([{ seller_id: store.id, name: "Later", email: login.email, role: "admin" }])
+        await linkBySellerId(login, store.id)
+
+        const me = await api.get("/vendor/me", bearer(tokenFor(login, store.id)))
+        expect(me.data.member.id).toBe(first.id)
+        expect(me.data.member.id).not.toBe(later.id)
+      })
+
+      it("registration-status relinks an approved login to its member, which then acts with its own role", async () => {
+        const { ownerMemberId, store } = await storeOf(`Relink Farm ${uid()}`)
+        const login = await plainLogin("approved")
+        const [member] = await container()
+          .resolve(SELLER_MODULE)
+          .createMembers([{ seller_id: store.id, name: "Approved", email: login.email, role: "member" }])
+        await container().resolve(REQUEST_MODULE).createRequests([
+          {
+            type: "seller",
+            status: "accepted",
+            submitter_id: login.authIdentityId,
+            data: { auth_identity_id: login.authIdentityId, member: { name: "Approved", email: login.email }, seller: { name: store.name } },
+          },
+        ])
+
+        const status = await api.get("/auth/seller/registration-status", bearer(registrationTokenFor(login)))
+        expect(status.data).toMatchObject({ status: "approved", seller_id: store.id })
+        expect(await linkOf(login.authIdentityId)).toBe(member.id)
+
+        const token = await signIn(login)
+        expect(jwt.decode(token)).toMatchObject({ actor_id: member.id })
+        const me = await api.get("/vendor/me", bearer(token))
+        expect(me.data.member).toMatchObject({ id: member.id, role: "member" })
+        expect(me.data.member.id).not.toBe(ownerMemberId)
+      })
+
+      it("the backfill's report, and the read-only query, name every seller-id link the gates refuse, and why", async () => {
+        const sellers = container().resolve(SELLER_MODULE)
+        const { owner, store } = await storeOf(`Audit Farm ${uid()}`)
+        await linkBySellerId(owner, store.id)
+        const invited = await teamMember(store, "invited")
+        await linkBySellerId(invited, store.id)
+        // P1's login.
+        const removed = await teamMember(store, "removed")
+        await linkBySellerId(removed, store.id)
+        await deleteMemberWorkflow.run({ container: container(), input: removed.memberId })
+        // An owner whose member email no longer matches its login's address: locked out.
+        const drifted = await storeOf(`Drifted Farm ${uid()}`)
+        await linkBySellerId(drifted.owner, drifted.store.id)
+        const changedEmail = `changed-${uid()}@example.com`
+        await sellers.updateMembers([{ id: drifted.ownerMemberId, email: changedEmail }])
+        // A closed store's seller-id link.
+        const shut = await storeOf(`Shut Audit Farm ${uid()}`)
+        await linkBySellerId(shut.owner, shut.store.id)
+        await sellers.softDeleteSellers([shut.store.id])
+
+        const res = await backfill()
+        expect(res.status).toBe(200)
+        expect(res.data.summary.refused).toBe(3)
+        const refusals = (res.data.details as string[]).filter((line) => line.startsWith("⛔"))
+        expect(refusals).toHaveLength(3)
+        expect(refusals).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining(`${removed.email} holds ${store.id}, which the gates refuse: removed_member`),
+            expect.stringContaining(`${drifted.owner.email} holds ${drifted.store.id}, which the gates refuse: no_member_at_login_address`),
+            expect.stringContaining(`${shut.owner.email} holds ${shut.store.id}, which the gates refuse: closed_store`),
+          ])
+        )
+        expect(refusals.find((line) => line.includes(drifted.owner.email))).toContain(`the store's first member is ${changedEmail}`)
+        const joined = refusals.join("\n")
+        expect(joined).not.toContain(owner.email)
+        expect(joined).not.toContain(invited.email)
+
+        // The same query, as the operator runs it before deploying.
+        const { rows } = await container().resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(REFUSED_SELLER_ID_LINKS_SQL)
+        expect(
+          rows.map((r: { auth_identity_id: string; reason: string }) => [r.auth_identity_id, r.reason]).sort()
+        ).toEqual(
+          [
+            [removed.authIdentityId, "removed_member"],
+            [drifted.owner.authIdentityId, "no_member_at_login_address"],
+            [shut.owner.authIdentityId, "closed_store"],
+          ].sort()
+        )
+      })
+    })
+
     describe("the rule both gates and the routes behind them read (shared/seller-actor.ts)", () => {
-      it("resolves a member or seller id to a store only while both are live", async () => {
-        const auth = container().resolve(Modules.AUTH)
-        const email = `rule-owner-${uid()}@example.com`
-        await auth.register("emailpass", { body: { email, password: "Pw-rule-Aa1!" } } as any)
-        const [provider] = await auth.listProviderIdentities({ entity_id: email, provider: "emailpass" })
-        const { result: store } = await createSellerWorkflow.run({
-          container: container(),
-          input: { auth_identity_id: provider.auth_identity_id, member: { name: "Owner", email }, seller: { name: `Rule Farm ${uid()}` } } as any,
-        })
-        const [ownerMember] = await container().resolve(SELLER_MODULE).listMembers({ seller_id: store.id })
+      it("a member id acts as itself while it and its store are live; a seller id only as the live member at the login's address", async () => {
+        const { owner, ownerMemberId, store } = await storeOf(`Rule Farm ${uid()}`)
         const active = await teamMember(store, "active")
         const removed = await teamMember(store, "removed")
         await deleteMemberWorkflow.run({ container: container(), input: removed.memberId })
+        const stranger = await plainLogin("stranger")
         const scope = container()
 
-        expect(await liveSellerIdForActor(scope, active.memberId)).toBe(store.id)
-        expect(await liveSellerIdForActor(scope, store.id)).toBe(store.id)
-        expect(await liveSellerIdForActor(scope, removed.memberId)).toBeNull()
-        expect(await liveSellerIdForActor(scope, "cus_not_a_seller")).toBeNull()
-        expect(await sellerIdForVendorActor(scope, active.memberId)).toBe(store.id)
-        expect(await sellerIdForVendorActor(scope, removed.memberId)).toBeUndefined()
-        expect(await firstLiveMemberIdOf(scope, store.id)).toBe(ownerMember.id)
-        // A seller id never acts as a member that is gone, even the first one.
-        // Mercur will not delete an owner, so the row is soft-deleted directly.
-        await container().resolve(SELLER_MODULE).softDeleteMembers([ownerMember.id])
-        expect(await firstLiveMemberIdOf(scope, store.id)).toBe(active.memberId)
+        expect(await resolveSellerActor(scope, active.memberId, active.authIdentityId)).toEqual({ sellerId: store.id, memberId: active.memberId })
+        expect(await resolveSellerActor(scope, removed.memberId, removed.authIdentityId)).toBeNull()
+        expect(await resolveSellerActor(scope, store.id, owner.authIdentityId)).toEqual({ sellerId: store.id, memberId: ownerMemberId })
+        expect(await resolveSellerActor(scope, store.id, active.authIdentityId)).toEqual({ sellerId: store.id, memberId: active.memberId })
+        expect(await resolveSellerActor(scope, store.id, removed.authIdentityId)).toBeNull()
+        expect(await resolveSellerActor(scope, store.id, stranger.authIdentityId)).toBeNull()
+        expect(await resolveSellerActor(scope, store.id, null)).toBeNull()
+        expect(await resolveSellerActor(scope, "cus_not_a_seller", owner.authIdentityId)).toBeNull()
+
+        // Behind the gate, the store it resolved for this request is taken as it is; otherwise the rule applies.
+        const routed = { scope, auth_context: { auth_identity_id: stranger.authIdentityId }, _seller_id: store.id, _sellerContextResolved: true }
+        expect(await sellerIdForVendorActor(routed, store.id)).toBe(store.id)
+        expect(await sellerIdForVendorActor({ ...routed, _sellerContextResolved: false }, store.id)).toBeUndefined()
+        expect(await sellerIdForVendorActor({ scope, auth_context: { auth_identity_id: owner.authIdentityId } }, store.id)).toBe(store.id)
+        expect(await sellerIdForVendorActor({ scope }, active.memberId)).toBe(store.id)
+        expect(await sellerIdForVendorActor({ scope }, removed.memberId)).toBeUndefined()
 
         await container().resolve(SELLER_MODULE).softDeleteSellers([store.id])
-        expect(await liveSellerIdForActor(scope, active.memberId)).toBeNull()
-        expect(await liveSellerIdForActor(scope, store.id)).toBeNull()
-        expect(await sellerIdForVendorActor(scope, active.memberId)).toBeUndefined()
+        expect(await liveSellerIdForActor(scope, active.memberId, active.authIdentityId)).toBeNull()
+        expect(await liveSellerIdForActor(scope, store.id, owner.authIdentityId)).toBeNull()
       })
     })
   },

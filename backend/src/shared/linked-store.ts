@@ -4,6 +4,7 @@ import { REQUEST_MODULE } from "../modules/request"
 import type RequestModuleService from "../modules/request/service"
 import { RequestStatus } from "../modules/request/models"
 import { isSellerRequestType } from "../modules/request/validators"
+import { liveMemberAtAddress, loginAddressOf } from "./seller-actor"
 
 type Seller = { id: string; name: string; handle: string }
 
@@ -14,20 +15,22 @@ type Seller = { id: string; name: string; handle: string }
  * what an accepted invite writes for the new member).
  *
  * - `none`: the login has no seller link.
- * - `live`: the store exists. `memberId` is the member the link names, or
- *   null for a seller-id link.
- * - `removed`: the link names a member removed from a store that is still
- *   open. Mercur's deleteMemberStep soft-deletes the member and leaves the
- *   login's link pointing at it. The link names no member of the store, so
- *   filing and approval treat the login as having no store; approval clears
- *   the link before creating one.
+ * - `live`: the store exists, and `memberId` is the member the link acts as:
+ *   the one a member id names, or for a seller id the live member of that
+ *   store at the login's own address, as the gates resolve it
+ *   (shared/seller-actor.ts).
+ * - `removed`: the link acts as no member of a store that is still open: a
+ *   member id naming a removed member (Mercur's deleteMemberStep soft-deletes
+ *   the member and leaves the login's link pointing at it), or a seller id
+ *   with no live member at the login's address. Filing and approval treat the
+ *   login as having no store; approval clears the link before creating one.
  * - `closed`: the link names a store that is gone (a removed member's
  *   included), a member that is gone without a trace, or an id of neither
  *   kind.
  */
 export type LinkedStore =
   | { kind: "none" }
-  | { kind: "live"; seller: Seller; memberId: string | null }
+  | { kind: "live"; seller: Seller; memberId: string }
   | { kind: "removed"; seller: Seller; actor: string }
   | { kind: "closed"; actor: string }
 
@@ -35,7 +38,8 @@ type Rows<T> = { rows?: T[] }
 
 export async function resolveLinkedStore(
   container: MedusaContainer,
-  appMetadata: Record<string, unknown> | null | undefined
+  appMetadata: Record<string, unknown> | null | undefined,
+  authIdentityId: string
 ): Promise<LinkedStore> {
   const actor = appMetadata?.seller_id
   if (typeof actor !== "string" || !actor) {
@@ -73,7 +77,12 @@ export async function resolveLinkedStore(
   if (memberRemoved) {
     return { kind: "removed", seller: found, actor }
   }
-  return { kind: "live", seller: found, memberId: actor.startsWith("mem_") ? actor : null }
+  if (actor.startsWith("sel_")) {
+    const address = await loginAddressOf(container, authIdentityId)
+    const memberId = address ? await liveMemberAtAddress(container, found.id, address) : null
+    return memberId ? { kind: "live", seller: found, memberId } : { kind: "removed", seller: found, actor }
+  }
+  return { kind: "live", seller: found, memberId: actor }
 }
 
 const sameAddress = (a: string, b: string): boolean =>
@@ -88,7 +97,7 @@ const sameAddress = (a: string, b: string): boolean =>
  * - Its first member, the owner createSellerWorkflow creates right after the
  *   store and before anyone can invite anyone into it, was made for this
  *   applicant: an owner with the applicant's address, not since deleted, and
- *   the member a member-id link names. Soft-deleted members count when
+ *   the member the link acts as. Soft-deleted members count when
  *   finding the first, so no later member can stand in for it. An invite
  *   needs a member of the store to send it, so whoever accepts one is never
  *   the first member, whatever role the invite gave them: Mercur's invite
@@ -123,7 +132,7 @@ export async function isUnfinishedApprovalOf(
     owner.role !== "owner" ||
     !owner.email ||
     !sameAddress(owner.email, application.applicantEmail) ||
-    (linked.memberId !== null && linked.memberId !== owner.id)
+    linked.memberId !== owner.id
   ) {
     return false
   }
