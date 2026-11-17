@@ -2,7 +2,9 @@
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
 import { setShippingMethod } from "@/lib/data/cart"
+import { checkDeliveryForPostalCode, type DeliveryEligibility } from "@/lib/data/delivery"
 import { calculatePriceForShippingOption } from "@/lib/data/fulfillment"
+import { isFailedDeliveryCheck } from "@/lib/helpers/delivery-eligibility"
 import { convertToLocale } from "@/lib/helpers/money"
 import { CheckCircleSolid, ChevronUpDown, Loader } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
@@ -54,15 +56,6 @@ export type StoreCardShippingMethod = HttpTypes.StoreCartShippingOption & {
       }
     }
   }
-}
-
-type DeliveryEligibilityResult = {
-  available: boolean
-  code?: string
-  reason?: string
-  suggestion?: string
-  message?: string
-  next_action?: string
 }
 
 type ShippingMethodRule = { attribute: string; value: string }
@@ -124,7 +117,7 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
     string[]
   >([])
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState<FulfillmentType | undefined>(undefined)
-  const [deliveryEligibility, setDeliveryEligibility] = useState<DeliveryEligibilityResult | null>(null)
+  const [deliveryEligibility, setDeliveryEligibility] = useState<DeliveryEligibility | null>(null)
   const [isCheckingEligibility, setIsCheckingEligibility] = useState(false)
 
   const searchParams = useSearchParams()
@@ -255,64 +248,38 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   }, [isOpen])
 
 
-  useEffect(() => {
-    const postalCode = cart.shipping_address?.postal_code
+  const postalCode = cart.shipping_address?.postal_code
 
-    if (!postalCode || !_deliveryMethods?.length) {
+  // FBM's delivery-zone check, from the server (lib/data/delivery.ts): the
+  // browser's own call carried no publishable key and was refused every
+  // time. Advisory only: its answer is shown beside the Delivery options and
+  // never moves the buyer off Delivery. A check that could not be made says
+  // so; it used to switch the buyer to Pickup or Shipping, and the notice
+  // that said why went with it.
+  useEffect(() => {
+    if (!postalCode || !hasDeliveryOptions) {
       setDeliveryEligibility(null)
       return
     }
 
-    const checkEligibility = async () => {
-      try {
-        setIsCheckingEligibility(true)
-        const geoRes = await fetch(`/api/geocode?zip=${postalCode}`)
-        if (!geoRes.ok) {
-          setDeliveryEligibility({
-            available: false,
-            code: "DELIVERY_COORDINATES_UNAVAILABLE",
-            reason: "We couldn't validate your delivery address yet.",
-            suggestion: "You can still choose pickup or continue after updating your postal code.",
-          })
-          return
-        }
-
-        const geo = await geoRes.json()
-        const checkRes = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/delivery-zones/check`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ latitude: geo.latitude, longitude: geo.longitude }),
-        })
-
-        if (!checkRes.ok) {
-          throw new Error("Delivery eligibility check failed")
-        }
-
-        setDeliveryEligibility(await checkRes.json())
-      } catch (_error) {
-        setDeliveryEligibility({
-          available: false,
-          code: "DELIVERY_CHECK_FAILED",
-          reason: "We couldn't verify delivery eligibility right now.",
-          suggestion: "Try again, or choose pickup if available.",
-        })
-      } finally {
-        setIsCheckingEligibility(false)
-      }
+    let current = true
+    setIsCheckingEligibility(true)
+    checkDeliveryForPostalCode(postalCode)
+      .then((answer) => {
+        if (current) setDeliveryEligibility(answer)
+      })
+      .catch(() => {
+        if (current) setDeliveryEligibility(null)
+      })
+      .finally(() => {
+        if (current) setIsCheckingEligibility(false)
+      })
+    return () => {
+      current = false
     }
+  }, [postalCode, hasDeliveryOptions])
 
-    checkEligibility()
-  }, [cart.shipping_address?.postal_code, _deliveryMethods?.length])
-
-  useEffect(() => {
-    if (selectedFulfillmentType === FULFILLMENT_TYPE.DELIVERY && deliveryEligibility && !deliveryEligibility.available) {
-      if (hasPickupOptions) {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.PICKUP)
-      } else if (hasShippingOptions) {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.SHIPPING)
-      }
-    }
-  }, [deliveryEligibility, selectedFulfillmentType, hasPickupOptions, hasShippingOptions])
+  const deliveryCheckFailed = isFailedDeliveryCheck(deliveryEligibility)
 
   // Get methods based on selected fulfillment type
   const getMethodsForType = (type: FulfillmentType | undefined) => {
@@ -414,16 +381,22 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
         <>
           <div className="grid">
 
-          {selectedFulfillmentType === FULFILLMENT_TYPE.DELIVERY && (
-            <div className={clsx("mb-4 rounded-md border p-3 text-sm",
-              isCheckingEligibility ? "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle" :
-              deliveryEligibility?.available ? "border-green-200 bg-green-50 text-green-800" : "border-orange-200 bg-orange-50 text-orange-800"
-            )}>
+          {selectedFulfillmentType === FULFILLMENT_TYPE.DELIVERY && (deliveryEligibility || isCheckingEligibility) && (
+            <div
+              className={clsx("mb-4 rounded-md border p-3 text-sm",
+                isCheckingEligibility ? "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle" :
+                deliveryEligibility?.available ? "border-green-200 bg-green-50 text-green-800" : "border-orange-200 bg-orange-50 text-orange-800"
+              )}
+              data-testid="delivery-eligibility"
+            >
               {isCheckingEligibility
-                ? "Checking delivery eligibility for your postal code..."
+                ? "Checking delivery to your postal code..."
                 : deliveryEligibility?.available
                   ? deliveryEligibility.message || "Delivery is available for your address."
-                  : deliveryEligibility?.reason || "Delivery may not be available for this address."}
+                  : deliveryEligibility?.reason ||
+                    (deliveryCheckFailed
+                      ? "We couldn't check delivery to your address just now."
+                      : "Delivery may not be available for this address.")}
               {!isCheckingEligibility && !deliveryEligibility?.available && deliveryEligibility?.suggestion ? (
                 <div className="mt-1">{deliveryEligibility.suggestion}</div>
               ) : null}
