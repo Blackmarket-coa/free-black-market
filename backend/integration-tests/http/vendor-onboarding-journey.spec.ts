@@ -476,6 +476,9 @@ medusaIntegrationTestRunner({
       expect(await sellersOfProduct(steeredProduct.id)).toEqual([sellerId])
       expect(steeredProduct.shipping_profile?.id).toBe(profileId)
       expect(steeredProduct.shipping_profile?.id).not.toBe(otherProfileId)
+      // A second product of the same type is linked too: the link was
+      // one-to-one, and refused every product after a type's first.
+      expect(steeredProduct.listing_type).toEqual(expect.objectContaining({ catalog_id: "physical_product" }))
 
       // The wizard's publish step: an id that names no product, and another store's, are refused.
       for (const listing_id of ["prod_does_not_exist", otherProduct.id]) {

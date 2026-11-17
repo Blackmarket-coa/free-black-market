@@ -9,8 +9,17 @@ import ListingTypeModule from "../modules/listing-type"
  *
  * Each Medusa Product is linked to one ListingType (physical_product,
  * event, digital, recurring, wholesale, consignment, unique_inventory,
- * bookable, or campaign). Workflow validation on `product.created`
- * asserts the listing-type is allowed for the seller's playbook.
+ * bookable, or campaign), and a listing type to many products. The vendor
+ * create routes check the type against the seller's playbook
+ * (`shared/listing-type-guard.ts`) and write the link
+ * (`shared/listing-type-link.ts`).
+ *
+ * `isList: true` on the product side is what makes it n:1. Both sides were
+ * `isList: false`, a one-to-one link, so Medusa's link service refused a
+ * second product of any type ("Cannot create multiple links between
+ * 'product' and 'listing_type'", measured on Postgres); nothing wrote the
+ * link before, so it never showed. Cardinality is checked by the link
+ * service only: the pivot table is the same either way.
  *
  * See `docs/LISTING_TYPES.md`.
  */
@@ -30,7 +39,7 @@ try {
   listingTypeProductLink = defineLink(
     {
       linkable: ProductModule.linkable.product,
-      isList: false,
+      isList: true,
     },
     {
       linkable: ListingTypeModule.linkable.listingType,
