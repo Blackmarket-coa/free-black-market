@@ -87,9 +87,13 @@ export const REKEY_TARGETS: readonly RekeyTarget[] = [
   },
   // POST /vendor/quotes (quote createDraft); unique per store on quote_number.
   { table: "quote", column: "seller_id", writtenBy: "quotes" },
-  // POST /vendor/farm/profile links the producer it creates to the actor
-  // (link producer_seller). Harvests, lots and windows hang off the producer.
-  { table: "seller_seller_producer_producer", column: "seller_id", writtenBy: "farm/profile" },
+  // No farm table: POST /vendor/farm/profile never wrote one. It created the
+  // producer without its required `seller_id` (refused by the database, so
+  // nothing was written) and then linked it with a shape Medusa's Link throws
+  // on (`{ producer_seller: ... }`), both measured on Postgres; nothing else
+  // writes the seller-producer link, and `producer.seller_id` is written only
+  // with a store id (the v1 launch flow, the growth-loop seed). Harvests, lots
+  // and windows hang off the producer, not the store.
   // POST /vendor/woocommerce/connection (connectWooCommerceWorkflow); one per store.
   { table: "woocommerce_connection", column: "seller_id", writtenBy: "woocommerce/connection" },
   // POST /vendor/odoo/connection (connectOdooWorkflow); one per store.
