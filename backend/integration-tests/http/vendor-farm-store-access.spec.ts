@@ -259,7 +259,8 @@ medusaIntegrationTestRunner({
         expect(await listedHandles()).not.toContain(handle)
         linkCreate.mockRestore()
 
-        // Only true or false: a string would have reached the column.
+        // Only true or false. Without the check a string skipped the link step
+        // and answered 500 from the update (measured by mutation).
         const stringly = await call(api.put("/vendor/farm/profile", { public_profile_enabled: "true" }, bearer(c.member)))
         expect({ status: stringly.status, body: stringly.data }).toEqual({
           status: 400,
