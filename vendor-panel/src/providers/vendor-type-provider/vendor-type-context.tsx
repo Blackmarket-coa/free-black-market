@@ -1,11 +1,7 @@
 import { createContext, useContext, ReactNode, useMemo } from "react"
 import { usePlaybookAssignment } from "../../hooks/api/playbook"
 import { useMe } from "../../hooks/api/users"
-import {
-  getFeaturesByPlaybook,
-  isAssignablePlaybook,
-  type Playbook,
-} from "../playbook-provider"
+import { getFeaturesByPlaybook, isAssignablePlaybook } from "../playbook-provider"
 
 /**
  * Vendor Types supported by the platform.
@@ -303,43 +299,40 @@ function buildFeaturesFromExtensions(enabledExtensions: string[]): VendorFeature
 }
 
 /**
- * The features a seller's playbook gives by default: the backend recipe's
- * `default_features` (mirrored in `playbook-provider`, and checked against
- * `backend/src/modules/playbook/recipes/*.ts` by this provider's spec).
+ * The features a seller gets before any selection of their own: everything
+ * their legacy vendor type gives, and everything their playbook's recipe
+ * gives. A seller with no playbook assignment (from before the picker) gets
+ * the vendor type's alone.
  *
- * One addition: the Products entry is kept for Service. Its recipe has no
- * Products module, but the backend's product-create routes take a Service
- * seller's listing (bookable by default, SD-151 (2)) and the dashboard's
- * setup needs a first listing, so hiding the entry would leave nothing to
- * finish setup with. Service sellers had it before too, through the legacy
- * vendor_type "maker".
- */
-export function getFeaturesForPlaybook(
-  playbook: Exclude<Playbook, "default">
-): VendorFeatures {
-  const features = getFeaturesByPlaybook(playbook)
-  return playbook === "service" ? { ...features, hasProducts: true } : features
-}
-
-/**
- * The features a seller gets before any selection of their own: their
- * playbook's when one is assigned, the legacy vendor type's otherwise (a
- * seller from before the playbook picker).
- *
- * Until SD-151 (4) the vendor type decided alone. `vendor_type` is a lossy
+ * The vendor type used to decide alone (SD-151 (4)). `vendor_type` is a lossy
  * cache of the playbook (hooks/api/auth.tsx maps Hub, Commons and Grove to
  * `mutual_aid`), and `mutual_aid` has no Products, so a single-role seller on
  * one of those playbooks had no Products entry in the sidebar or the setup
  * checklist while the dashboard waited for a first product. The backend's
  * recipes for all three have Products.
+ *
+ * It is a union, not the recipe alone, so that nothing a seller sees today
+ * goes away: the recipes leave out things the vendor types give (Hub and
+ * Kitchen have no Volunteers or Donations, Grove and Commons no Delivery
+ * Zones, Service no Products or Inventory). Whether the menus should later be
+ * trimmed to the recipe is an open product question; the recipe side is
+ * `getFeaturesByPlaybook`, the panel's mirror of
+ * `backend/src/modules/playbook/recipes/*.ts`, which this provider's spec
+ * checks against those files.
  */
 export function getDefaultFeatures(
   vendorType: VendorType,
   playbook: unknown
 ): VendorFeatures {
-  return isAssignablePlaybook(playbook)
-    ? getFeaturesForPlaybook(playbook)
-    : getFeaturesByType(vendorType)
+  const features = getFeaturesByType(vendorType)
+  if (!isAssignablePlaybook(playbook)) {
+    return features
+  }
+  const recipe = getFeaturesByPlaybook(playbook)
+  for (const key of ALL_FEATURE_KEYS) {
+    features[key] = features[key] || recipe[key]
+  }
+  return features
 }
 
 /**
@@ -419,8 +412,9 @@ export function VendorTypeProvider({ children }: { children: ReactNode }) {
     return null
   }, [seller?.enabled_extensions, seller?.metadata?.enabled_extensions])
 
-  // Default features (before custom overrides): the playbook's, or the
-  // vendor type's for a seller with no playbook.
+  // Default features (before custom overrides): the vendor type's and the
+  // playbook recipe's together, or the vendor type's alone for a seller with
+  // no playbook.
   const defaultFeatures = useMemo(
     () => getDefaultFeatures(vendorType, playbook),
     [vendorType, playbook]

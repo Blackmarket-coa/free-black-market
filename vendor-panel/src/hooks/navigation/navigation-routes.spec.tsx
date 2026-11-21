@@ -11,7 +11,7 @@ const browser = await vi.hoisted(async () =>
   (await import("../../__tests__/browser-storage")).installBrowserStorage()
 )
 
-import { getFeaturesForPlaybook } from "../../providers/vendor-type-provider"
+import { getDefaultFeatures } from "../../providers/vendor-type-provider"
 import { RouteMap } from "../../providers/router-provider/route-map"
 import { getVendorNavigationForTest } from "./use-vendor-navigation"
 
@@ -25,7 +25,7 @@ describe("every sidebar entry reaches a page", () => {
 
     const { coreRoutes, extensionRoutes } = getVendorNavigationForTest({
       vendorType: "maker",
-      features: getFeaturesForPlaybook("stall"),
+      features: getDefaultFeatures("maker", "stall"),
     })
     const targets = [...coreRoutes, ...extensionRoutes].flatMap((route) => [
       route.to,

@@ -66,7 +66,7 @@ vi.mock("../../providers/vendor-type-provider", async (importOriginal) => {
     useVendorType: () => ({
       vendorType: "maker",
       typeLabel: "Maker & Brand",
-      features: actual.getFeaturesForPlaybook("stall"),
+      features: actual.getDefaultFeatures("maker", "stall"),
     }),
   }
 })

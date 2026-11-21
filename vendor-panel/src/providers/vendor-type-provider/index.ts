@@ -15,7 +15,6 @@ export {
   useVendorType,
   useIsVendorType,
   getFeaturesByType,
-  getFeaturesForPlaybook,
   getDefaultFeatures,
   resolveVendorFeatures,
   ALL_EXTENSION_OPTIONS,

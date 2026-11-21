@@ -48,7 +48,7 @@ const normalizePassword = (password: unknown) => {
  * mapping is fine. Mirrors the reverse of `LEGACY_VENDOR_TYPE_MAP` in
  * `playbook-provider/playbook-context.tsx`.
  */
-const PLAYBOOK_TO_VENDOR_TYPE: Record<string, string> = {
+export const PLAYBOOK_TO_VENDOR_TYPE: Record<string, string> = {
   stall: "maker",
   atelier: "maker",
   workshop: "maker",
