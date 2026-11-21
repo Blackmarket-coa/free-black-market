@@ -18,6 +18,10 @@ import {
 } from "../../lib/client"
 import { queryClient } from "../../lib/query-client"
 import { queryKeysFactory } from "../../lib/query-key-factory"
+import {
+  TokenRefreshFailed,
+  upgradeApprovedSellerToken,
+} from "../../lib/seller-token"
 import { StoreVendor, TeamMemberProps } from "../../types/user"
 
 const USERS_QUERY_KEY = "users" as const
@@ -98,6 +102,29 @@ export const fetchSellerSession = async (
   return result as SellerSessionResponse
 }
 
+/** The backend says this login's store is approved and names it. */
+const isApprovedSeller = (status: RegistrationStatusResponse | undefined) =>
+  status?.status === "approved" && Boolean(status.seller_id)
+
+/**
+ * Called by every read that has just learnt the store is approved: a token
+ * stored at sign-up names no actor, so it is refreshed once before any
+ * `/vendor/*` call is made with it (lib/seller-token.ts). Rejects with
+ * `TokenRefreshFailed` when the refresh did not work, which the protected
+ * layout and the pending-approval page answer by signing the vendor out to
+ * the login page with its message.
+ */
+const upgradeTokenOnApproval = async (
+  status: RegistrationStatusResponse | undefined
+) => {
+  if (
+    isApprovedSeller(status) &&
+    (await upgradeApprovedSellerToken()) === "sign_in_again"
+  ) {
+    throw new TokenRefreshFailed()
+  }
+}
+
 export const hydrateSellerSessionCache = (
   queryClient: QueryClient,
   session: SellerSessionResponse
@@ -126,6 +153,8 @@ export const useRegistrationStatus = (
     "queryFn" | "queryKey"
   >
 ) => {
+  const queryClient = useQueryClient()
+
   const { data, ...rest } = useQuery({
     queryFn: async (): Promise<RegistrationStatusResponse> => {
       const token = getAuthToken()
@@ -136,7 +165,28 @@ export const useRegistrationStatus = (
         }
       }
 
-      return fetchRegistrationStatus(token)
+      const status = await fetchRegistrationStatus(token)
+      await upgradeTokenOnApproval(status)
+
+      // The protected layout reads the session, cached for ten minutes and
+      // not refetched on mount. One cached before this status changed (the
+      // pending applicant who presses "Check Status" after approval) would
+      // send the vendor back here while this page sends them to the
+      // dashboard, so it is dropped and the layout reads it afresh.
+      const cachedSession = queryClient.getQueryData<SellerSessionResponse>(
+        usersQueryKeys.session()
+      )
+      if (
+        cachedSession &&
+        cachedSession.registration_status?.status !== status.status
+      ) {
+        queryClient.removeQueries({
+          queryKey: usersQueryKeys.session(),
+          exact: true,
+        })
+      }
+
+      return status
     },
     queryKey: usersQueryKeys.registrationStatus(),
     // Don't refetch too often
@@ -174,6 +224,7 @@ export const useSellerSession = (
       }
 
       const session = await fetchSellerSession(token)
+      await upgradeTokenOnApproval(session.registration_status)
       hydrateSellerSessionCache(queryClient, session)
       return session
     },
@@ -213,6 +264,11 @@ export const useMe = (
       )
       const status = cachedStatus ?? (await fetchRegistrationStatus(token))
       if (status.status !== "approved" || !status.seller_id) {
+        return null
+      }
+      // This runs at the app's root, beside the protected layout's session
+      // read: never call /vendor with a token that names no actor.
+      if ((await upgradeApprovedSellerToken()) === "sign_in_again") {
         return null
       }
 
@@ -375,6 +431,9 @@ export const useOnboarding = () => {
       )
       const status = cachedStatus ?? (await fetchRegistrationStatus(token))
       if (status.status !== "approved" || !status.seller_id) {
+        return undefined
+      }
+      if ((await upgradeApprovedSellerToken()) === "sign_in_again") {
         return undefined
       }
 

@@ -5,6 +5,10 @@ import { useLogout } from "../../hooks/api/auth"
 import { useRegistrationStatus } from "../../hooks/api/users"
 import { Spinner } from "@medusajs/icons"
 import { clearAuthToken } from "../../lib/client"
+import {
+  isTokenRefreshFailure,
+  storedTokenWasRefused,
+} from "../../lib/seller-token"
 
 /**
  * Pending Approval Page
@@ -14,7 +18,8 @@ import { clearAuthToken } from "../../lib/client"
  * but no approved seller account linked to it.
  */
 export const PendingApproval = () => {
-  const { registrationStatus, isPending, refetch } = useRegistrationStatus()
+  const { registrationStatus, isPending, error, refetch } =
+    useRegistrationStatus()
   const { mutate: logout, isPending: isLoggingOut } = useLogout()
 
   const handleLogout = () => {
@@ -41,6 +46,20 @@ export const PendingApproval = () => {
       <div className="bg-ui-bg-subtle flex min-h-dvh w-dvw items-center justify-center">
         <Spinner className="text-ui-fg-interactive animate-spin" />
       </div>
+    )
+  }
+
+  // Approved, but the token stored at sign-up names no store and the one
+  // refresh did not replace it (lib/seller-token.ts): every /vendor call would
+  // answer 403, so the vendor signs in again, told why. Only for the token
+  // that failed: the error outlives it on the cached query.
+  if (isTokenRefreshFailure(error) && storedTokenWasRefused()) {
+    clearAuthToken()
+    return (
+      <Navigate
+        to={`/login?reason=${encodeURIComponent(error.message)}`}
+        replace
+      />
     )
   }
 
