@@ -191,6 +191,43 @@ describe("tryAddToCart (the product page's add to cart)", () => {
       tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
     ).resolves.toEqual({ ok: false, error: "Variants with IDs variant_1 do not have a price." })
   })
+
+  it("hands back a refusal of the cart's creation in the backend's words too (the SDK's own error)", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: null })
+    h.cartCreate.mockRejectedValue(Object.assign(new Error("Region reg_us is not available in this sales channel"), { status: 400 }))
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: "Region reg_us is not available in this sales channel" })
+  })
+
+  // Not the backend's words for a buyer: the request never got there, or the
+  // failure is the storefront's own, or the backend failed without saying.
+  const GENERIC = "This item could not be added to your cart. Please try again."
+
+  it("does not show a buyer \"fetch failed\" when the request never reached the backend", async () => {
+    h.cartCreateLineItem.mockRejectedValue(new TypeError("fetch failed"))
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: GENERIC })
+  })
+
+  it("does not show a buyer the storefront's own errors (a region it cannot resolve)", async () => {
+    h.getRegion.mockResolvedValue(null)
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "xx" })
+    ).resolves.toEqual({ ok: false, error: GENERIC })
+  })
+
+  it("does not show a buyer a server error's message", async () => {
+    h.cartCreateLineItem.mockRejectedValue({ status: 500, response: { data: { message: "An unknown error occurred." } } })
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: GENERIC })
+  })
 })
 
 describe("getOrSetCart", () => {

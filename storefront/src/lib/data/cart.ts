@@ -294,6 +294,12 @@ export type AddToCartResult = { ok: true } | { ok: false; error: string }
  * occurred in the Server Components render…", so a page that catches it can
  * only guess. `addToCart` itself still throws, for the server-side callers
  * that pass the failure on (the subscription and order-cycle flows).
+ *
+ * Only a refusal the backend made is handed on in its words: an HTTP 4xx,
+ * which the error carries as `status` (the SDK's, or `medusaError`'s). Any
+ * other failure is this side's ("fetch failed", "Region not found for country
+ * code: xx", a 500's "An unknown error occurred") and tells a buyer nothing
+ * they can act on, so it gets the plain sentence.
  */
 export async function tryAddToCart(
   input: Parameters<typeof addToCart>[0]
@@ -302,7 +308,9 @@ export async function tryAddToCart(
     await addToCart(input)
     return { ok: true }
   } catch (error) {
-    const message = error instanceof Error ? error.message.trim() : ""
+    const status = (error as { status?: unknown } | null)?.status
+    const refused = typeof status === "number" && status >= 400 && status < 500
+    const message = refused && error instanceof Error ? error.message.trim() : ""
     return {
       ok: false,
       error: message || "This item could not be added to your cart. Please try again.",
