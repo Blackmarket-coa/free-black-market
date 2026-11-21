@@ -79,7 +79,7 @@ This is a read-only plan; I edited nothing. It is based on HEAD b29db1db, the th
   - Add the key to `free`, `starter` and `pro`; scale, all_access and internal already carry every key.
   - Update the plan descriptions.
 - `backend/src/modules/vendor-plan/addons.ts`
-  - grower_pack becomes `["vendor.nursery"]`, with new copy and the same price.
+  - grower_pack becomes `["vendor.nursery"]`, with new copy. Its price and 30-day term are left as they are for the ownership migration to settle (see the owner's answers below); this phase confirms neither.
   - `addonUndercutsPlan` compares against plan keys minus the universal keys, so the embed_pack-vs-starter guard keeps working.
   - A new rule: no pack may grant a universal key.
 - `backend/src/api/middlewares.ts:1413-1428`
@@ -636,14 +636,21 @@ Rows:
   - The vendor-quest compliance tracker expects a permit from SC sellers (quests are off).
   - `admin/wholesale-application/[id]/approve` takes `reviewed_by` from the request body; that is the pattern not to copy.
 
-## Open questions for the owner (kept to the minimum)
+## Owner's answers
 
-1. **Who is the named reviewer besides you, and which admin login should be allowed to sign off?** This sets `JURISDICTION_RULE_REVIEWER_EMAILS`. The build does not wait for it; the sign-off does.
-2. **What about online orders and delivery within SC?** Neither PDF addresses online orders, shipping or delivery within SC, and FBM is an online marketplace. Do you want to launch showing "not addressed by our sources", or first add and review the SCDA Home-based Food Production Law Guidance (which the fact sheet itself cites for the full food list) and/or SC Code §44-1-143?
-3. **Defaults I'll assume unless you say otherwise:**
-   - Grower Tools becomes nursery-only at its current price.
-   - No outside price or demand data at launch: FBM's own listings and requests only, otherwise "insufficient data".
-   - Buyers see the source and review date, not the reviewer's name.
+Asked on 2026-11-17 (recorded in `docs/AUDIT_DEBT.md` SD-154):
+
+1. **Reviewer: the owner.** The owner reviews and signs off the 16 South Carolina rules. The operator adds the owner's admin login to `JURISDICTION_RULE_REVIEWER_EMAILS`; it is never set in code.
+2. **Online orders and delivery within SC: launch saying "not addressed by our sources".** The pilot does not wait for the SCDA Law Guidance or SC Code §44-1-143; `sales.online_delivery` stays a reviewed `not_stated` rule until a source is added.
+
+Not asked; the plan's defaults stand unless the owner objects:
+
+3. No outside price or demand data at launch: FBM's own listings and requests only, otherwise "insufficient data".
+4. Buyers see the source and review date, not the reviewer's name.
+
+**2026-11-21, against the new direction documents.**
+- **Sequencing.** `docs/FBM_DECEMBER_LAUNCH_READINESS.md` does not list Plates among the December P0s. `docs/FBM_MOBILE_APP_PLAN.md` keeps "Plates / production" as an optional tool whose "existing seller ID/token issues and sourced eligibility work must be resolved". So the seller-id and token fixes (SD-145, SD-146) go first with the December P0s, and the phases below follow them unless the owner moves Plates up.
+- **Phase 1 and the add-on.** `docs/FBM_MONETIZATION_PLAN.md` makes enhanced software a one-time purchase and calls the 30-day add-on packs legacy. Phase 1 still puts costing in every plan. It must not set or confirm a recurring price for what is left of the Grower Tools pack: leave that pack's price and term to the ownership migration the monetization plan requires, and say so in PL-1.
 
 ### Critical Files for Implementation
 - backend/src/modules/cottage-food/service.ts
