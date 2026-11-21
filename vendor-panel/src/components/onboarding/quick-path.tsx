@@ -43,6 +43,9 @@ const SELLING_TYPE_LABELS: Record<SellingType, string> = {
   reclaimed: "Repaired or salvaged goods",
 }
 
+/** Where the quick path goes once saved: the full wizard, at its saved step. */
+export const QUICK_PATH_NEXT = "/onboarding?mode=full"
+
 async function authedPost<T>(path: string, body: unknown): Promise<T> {
   const token = getAuthToken()
   const res = await fetch(`${backendUrl.replace(/\/$/, "")}${path}`, {
@@ -106,13 +109,15 @@ export function QuickPath() {
             : null,
       }
 
-      const { next_step_url } = await authedPost<{ next_step_url: string }>(
-        "/vendor/onboarding/quick-publish",
-        payload
-      )
+      await authedPost("/vendor/onboarding/quick-publish", payload)
 
       toast.success("Quick start saved — let's set up delivery")
-      window.location.assign(next_step_url || "/onboarding?step=step_3")
+      // The full wizard, which opens at the step the backend just recorded
+      // (delivery). This went to "/onboarding?step=step_3": the backend's
+      // answer has `next`, not the `next_step_url` read here, and without
+      // `mode=full` the onboarding route shows this quick path again, so
+      // "Continue to delivery" reloaded itself (SD-151 (5)).
+      window.location.assign(QUICK_PATH_NEXT)
     } catch (err) {
       toast.error("Could not save quick start", {
         description: (err as Error).message,
