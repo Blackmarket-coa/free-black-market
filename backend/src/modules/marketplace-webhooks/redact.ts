@@ -55,16 +55,23 @@ export function redactSecrets<T>(value: T): T {
   return value
 }
 
-/** Every non-empty string held under a key ending in "secret" in `value`. */
-function secretValues(value: unknown, found: string[] = []): string[] {
+/**
+ * Every non-empty string held under a key ending in "secret" in `value`.
+ * Cycle-safe: a payload that could not be serialized is walked as it is.
+ */
+function secretValues(value: unknown, found: string[] = [], seen = new Set<object>()): string[] {
+  if (value && typeof value === "object") {
+    if (seen.has(value)) return found
+    seen.add(value)
+  }
   if (Array.isArray(value)) {
-    for (const inner of value) secretValues(inner, found)
+    for (const inner of value) secretValues(inner, found, seen)
   } else if (isPlainObject(value)) {
     for (const [key, inner] of Object.entries(value)) {
       if (isSecretKey(key)) {
         if (typeof inner === "string" && inner && inner !== REDACTED) found.push(inner)
       } else {
-        secretValues(inner, found)
+        secretValues(inner, found, seen)
       }
     }
   }
@@ -80,8 +87,22 @@ function secretValues(value: unknown, found: string[] = []): string[] {
 export function scrubSecretsFrom(text: string | null, payload: unknown): string | null {
   if (!text) return text
   let out = text
-  for (const secret of secretValues(payload)) {
+  for (const secret of secretValues(asSent(payload))) {
     out = out.split(secret).join(REDACTED)
   }
   return out
+}
+
+/**
+ * `payload` as the JSON that was sent, so a json column handed back as
+ * something other than plain objects still has its secrets found. Never
+ * throws: whatever cannot be serialized is read as it is.
+ */
+function asSent(payload: unknown): unknown {
+  try {
+    const sent = JSON.stringify(payload)
+    return sent === undefined ? payload : JSON.parse(sent)
+  } catch {
+    return payload
+  }
 }

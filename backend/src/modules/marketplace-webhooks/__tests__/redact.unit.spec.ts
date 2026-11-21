@@ -76,6 +76,13 @@ describe("scrubSecretsFrom", () => {
     )
   })
 
+  it("never throws on a payload that cannot be serialized, and finds nothing in none", () => {
+    const circular: Record<string, unknown> = { secret: "s1" }
+    circular.self = circular
+    expect(scrubSecretsFrom("echo s1", circular)).toBe(`echo ${REDACTED}`)
+    expect(scrubSecretsFrom("echo s1", undefined)).toBe("echo s1")
+  })
+
   it("leaves any other response as it is", () => {
     expect(scrubSecretsFrom("boom", payload)).toBe("boom")
     expect(scrubSecretsFrom(null, payload)).toBeNull()

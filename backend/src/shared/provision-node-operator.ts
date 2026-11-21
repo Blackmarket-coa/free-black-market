@@ -150,7 +150,12 @@ export async function provisionNodeOperator(
   );
   if (!queued) {
     // The emit was configured a moment ago and is not now: nothing was
-    // queued, so the credential just issued has no one to go to.
+    // queued, so the credential just issued has no one to go to. Known gap,
+    // reachable only by changing the env vars inside a running process:
+    // `issueNodeOperatorCredential` revoked the seller's earlier credential
+    // before issuing this one, so a seller who had a working credential is
+    // left with none. Closing it means issuing without revoking until the
+    // event is queued, against the one-active-credential unique index.
     if (blackstar) {
       await blackstar.revokeNodeOperatorCredential(input.sellerId).catch(() => undefined);
     }

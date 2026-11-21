@@ -245,6 +245,29 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
       expect(JSON.stringify(await svc.listBlackstarDeliveries({}))).not.toContain(NODE_SECRET)
     })
 
+    it("leaves no part of the secret in a stored response cut where the echoed secret falls", async () => {
+      // The stored body is cut to 2,000 characters. Cut before scrubbing, a
+      // secret straddling the cut kept its first characters.
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      // About 1,990 characters of the far end's own text, sized so the echoed
+      // secret starts at character 1,990 and runs past the cut at 2,000.
+      let echoed = ""
+      jest.spyOn(global, "fetch" as any).mockImplementation(async (_url: any, init: any) => {
+        const body = String(init.body)
+        echoed = `${"x".repeat(1990 - body.indexOf(NODE_SECRET))}${body}`
+        return { ok: false, status: 422, text: async () => echoed } as any
+      })
+
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(false)
+      expect(echoed.indexOf(NODE_SECRET)).toBe(1990)
+      const stored = rows[0].response_body as string
+      expect(stored).toHaveLength(2000)
+      // Not even the secret's first characters, which are what a cut leaves.
+      expect(stored).not.toContain(NODE_SECRET.slice(0, 8))
+      expect(stored).toBe(echoed.replace(NODE_SECRET, "[redacted]").slice(0, 2000))
+    })
+
     it("leaves a delivery with no secret exactly as it was after it lands", async () => {
       const { svc, rows } = makeService()
       await svc.emitBlackstar("order.created", { source_order_ref: "ord_1" }, { eventId: "evt_order" })

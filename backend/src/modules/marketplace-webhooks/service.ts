@@ -745,14 +745,16 @@ class MarketplaceWebhooksService extends MedusaService({
         body: rawBody,
       })
       responseCode = res.status
-      responseBody = (await res.text()).slice(0, 2000)
+      responseBody = await res.text()
       succeeded = res.ok
     } catch (err) {
-      responseBody = err instanceof Error ? err.message.slice(0, 2000) : "fetch_error"
+      responseBody = err instanceof Error ? err.message : "fetch_error"
     }
     // What Blackstar answered is stored on the row and returned with it; an
     // answer that echoes the request must not carry the secret back in.
-    responseBody = scrubSecretsFrom(responseBody, JSON.parse(rawBody))
+    // Scrubbed whole, then cut: cut first, a secret straddling the cut would
+    // leave its prefix behind, which matching the whole secret cannot find.
+    responseBody = scrubSecretsFrom(responseBody, delivery.payload)?.slice(0, 2000) ?? null
 
     if (succeeded) {
       const cleared = redactedPayload(delivery.payload)
