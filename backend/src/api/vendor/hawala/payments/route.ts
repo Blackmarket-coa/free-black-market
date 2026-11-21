@@ -5,6 +5,10 @@ import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 import { createVendorPaymentSchema, validateInput } from "../../../hawala-validation"
 import { resolveVendorSellerId } from "../seller-context"
+import {
+  VENDOR_TO_VENDOR_PAYMENTS_DECIDED,
+  VENDOR_TO_VENDOR_PAYMENTS_REFUSAL,
+} from "../../../../shared/vendor-to-vendor-payments"
 
 /**
  * GET /vendor/hawala/payments
@@ -60,9 +64,18 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
 /**
  * POST /vendor/hawala/payments
- * Create a vendor-to-vendor payment
+ * Create a vendor-to-vendor payment from the caller's store earnings.
+ *
+ * Refused with 403 until an operator and counsel decide, like
+ * POST /vendor/pos/checkout; the switch and the facts they decide on are in
+ * shared/vendor-to-vendor-payments.ts. The code after the refusal is kept as
+ * it was. GET above is not affected.
  */
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
+  if (!VENDOR_TO_VENDOR_PAYMENTS_DECIDED) {
+    return res.status(403).json(VENDOR_TO_VENDOR_PAYMENTS_REFUSAL)
+  }
+
   try {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     

@@ -2,44 +2,20 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { VendorRequest } from "../../types"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
+import {
+  VENDOR_TO_VENDOR_PAYMENTS_DECIDED,
+  VENDOR_TO_VENDOR_PAYMENTS_REFUSAL,
+} from "../../../../shared/vendor-to-vendor-payments"
 
 /**
- * Whether a vendor may pay another vendor from its earnings here. Off, and
- * only a code change turns it back on: an operator and counsel decide first
- * (Posture A, docs/POSTURE_A_COMPLIANCE.md; SD-145 review).
- *
- * The facts they decide on, as measured:
- *
- *   - `payer_vendor_id` below is the actor, a member id behind the vendor
- *     gate, and createVendorToVendorPayment debits the SELLER_EARNINGS
- *     account owned by that id.
- *   - Member-owned SELLER_EARNINGS accounts exist. Before SD-145,
- *     GET /vendor/farm/grower-dashboard minted one for the calling member on
- *     its first read (getGrowerPayoutHistory, getOrCreateSellerEarnings with
- *     the actor's id); before resolveVendorSellerId, the hawala earnings route
- *     did the same.
- *   - They can hold money: processGroupPurchase (services/collective-hawala.ts)
- *     credits the SELLER_EARNINGS account of a pool's `selected_supplier_id`,
- *     which was a member id for proposals made before SD-145.
- *   - So with a balance there, this route would move USD from a member-owned
- *     account to any `payee_vendor_id` in the body, under reference type
- *     VENDOR_PAYMENT, which is not a purchase context. The Posture A guard
- *     inspects only CCR. Keyed by the store instead, it would move the store's
- *     earnings the same way.
- *
- * Until then every call is refused with 403; the code below is kept as it was.
- * `scripts/rekey-member-keyed-store-data.ts` lists member-owned
- * SELLER_EARNINGS accounts and their balances (MEMBER_OWNED_SELLER_EARNINGS_SQL).
+ * POST /vendor/pos/checkout: a vendor-to-vendor payment from the caller's
+ * earnings. Refused with 403 until an operator and counsel decide; the switch
+ * and the facts they decide on are in shared/vendor-to-vendor-payments.ts.
+ * The code after the refusal is kept as it was.
  */
-const VENDOR_TO_VENDOR_PAYMENTS_DECIDED = false as boolean
-
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   if (!VENDOR_TO_VENDOR_PAYMENTS_DECIDED) {
-    return res.status(403).json({
-      message:
-        "Vendor-to-vendor payments are not available. Record the payment outside FBM or invoice the other vendor instead.",
-      type: "not_allowed",
-    })
+    return res.status(403).json(VENDOR_TO_VENDOR_PAYMENTS_REFUSAL)
   }
 
   const sellerId = (req as VendorRequest).auth_context?.actor_id
