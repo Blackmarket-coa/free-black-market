@@ -127,10 +127,16 @@ async function call(handler: Handler, options: { seller?: string | null; params?
     throw new Error(`unexpected container key: ${key}`)
   })
   const seller = options.seller === undefined ? "sel_1" : options.seller
+  // A request as the vendor gate (`ensureSellerContext`) hands it on: the
+  // resolved store as `_seller_id`, marked resolved. `getSellerId` reads the
+  // store from there once SD-156's version of it is merged, and from the actor
+  // before; this double satisfies both.
   const req = {
     params: options.params ?? {},
     scope: { resolve },
-    auth_context: seller ? { actor_id: seller, actor_type: "seller" } : undefined,
+    ...(seller
+      ? { _seller_id: seller, _sellerContextResolved: true, auth_context: { actor_id: seller, actor_type: "seller" } }
+      : {}),
   }
   const res = createRes()
   await handler(req as never, res as never)
@@ -254,7 +260,13 @@ describe("/vendor/plates", () => {
       })
       const res = createRes()
       await (getJurisdiction as Handler)(
-        { params: { code: "NC" }, scope: { resolve }, auth_context: { actor_id: "sel_1", actor_type: "seller" } } as never,
+        {
+          params: { code: "NC" },
+          scope: { resolve },
+          _seller_id: "sel_1",
+          _sellerContextResolved: true,
+          auth_context: { actor_id: "sel_1", actor_type: "seller" },
+        } as never,
         res as never
       )
       expect(res.statusCode).toBe(200)
