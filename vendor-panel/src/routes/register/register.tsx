@@ -158,7 +158,7 @@ export const Register = () => {
               An organizer reviews every new store, so there is nothing more
               for you to do now. You do not need to open a link from an email.
               Once your store is approved, sign in here with the email and
-              password you just chose.
+              password you just entered.
             </Text>
             <Link to="/login">
               <Button className="mt-8">Back to login page</Button>
