@@ -42,6 +42,7 @@ import {
 import { setAuthToken } from "./client"
 import {
   fulfillmentSetName,
+  publishFirstListing,
   readSellingSetup,
   recordStock,
   SELLING_LOCATION_FIELDS,
@@ -216,6 +217,37 @@ describe("readSellingSetup", () => {
     })
     expect(after.ready).toBe(true)
     expect(store.buyerCanCheckOut()).toBe(true)
+  })
+
+  it("does not count stock held at a location the sales channel is not linked to", async () => {
+    const product = await createProduct()
+    await setUpDelivery({ ...both, shipping: null })
+    // A second location, never linked: Settings, Locations makes these.
+    const shed = (
+      await (
+        await fetch("http://panel.test/vendor/stock-locations", {
+          method: "POST",
+          body: JSON.stringify({ name: "Old Shed", address: { address_1: "2 Farm Rd", country_code: "us" } }),
+        })
+      ).json()
+    ).stock_location.id as string
+    await recordStock({
+      productId: product,
+      locationId: shed,
+      stock: [{ variant_rank: 0, quantity: 10 }],
+    })
+    // The stock exists, where no cart in the channel can reserve it.
+    expect(store.db.levels).toMatchObject([{ location: shed, stocked: 10 }])
+    expect(store.buyerCanCheckOut()).toMatch(/required inventory/)
+
+    const setup = await readSellingSetup()
+
+    expect(setup.delivery.ready).toBe(true)
+    expect(setup.listing).toMatchObject({
+      buyable: null,
+      needsStock: { id: product, title: "Wildflower Honey" },
+    })
+    expect(setup.ready).toBe(false)
   })
 
   it("counts a published product that is not stock-tracked, and no draft", async () => {
@@ -506,6 +538,40 @@ describe("recordStock", () => {
     })
   })
 
+  it("records each quantity against the variant of that rank, whatever order the backend answers the variants in", async () => {
+    // The product form's two variants, as the review measured (5 Small, 7 Large).
+    const product = await createProduct(
+      honey({
+        title: "Wreath",
+        options: [{ title: "Size", values: ["Small", "Large"] }],
+        variants: [
+          { title: "Small", manage_inventory: true, variant_rank: 0, prices: [{ currency_code: "usd", amount: 30 }] },
+          { title: "Large", manage_inventory: true, variant_rank: 1, prices: [{ currency_code: "usd", amount: 40 }] },
+        ],
+      })
+    )
+    await setUpDelivery({ ...both, shipping: null })
+    const location = store.db.locations[0].id
+    // The detail answer does not list them by rank.
+    const detail = await (await fetch(`http://panel.test/vendor/products/${product}`)).json()
+    expect(detail.product.variants.map((v: { variant_rank: number }) => v.variant_rank)).toEqual([1, 0])
+
+    await recordStock({
+      productId: product,
+      locationId: location,
+      stock: [
+        { variant_rank: 0, quantity: 5 },
+        { variant_rank: 1, quantity: 7 },
+      ],
+    })
+
+    const [small, large] = store.db.products[0].variants
+    const stocked = (item: string | null) =>
+      store.db.levels.find((level) => level.item === item)?.stocked
+    expect([small.title, stocked(small.item)]).toEqual(["Small", 5])
+    expect([large.title, stocked(large.item)]).toEqual(["Large", 7])
+  })
+
   it("updates a level that exists, so it can be run again", async () => {
     const product = await createProduct()
     await setUpDelivery({ ...both, shipping: null })
@@ -530,6 +596,41 @@ describe("recordStock", () => {
     })
     expect(store.db.levels).toHaveLength(1)
     expect(store.db.levels[0].stocked).toBe(4)
+  })
+})
+
+describe("publishFirstListing", () => {
+  it("publishes the product, then records it as the store's first listing", async () => {
+    const product = await createProduct(honey({ status: "draft" }))
+    backend.sent.length = 0
+
+    const result = await publishFirstListing(product)
+
+    expect(posts().map((s) => [s.path, s.body])).toEqual([
+      [`/vendor/products/${product}/status`, { status: "published" }],
+      ["/vendor/onboarding/publish", { listing_id: product }],
+    ])
+    expect(result.product).toMatchObject({ id: product, status: "published" })
+    expect(result.state).toMatchObject({ wizard_step: "published" })
+  })
+
+  it.each([
+    // FBM's status route answers `{ product: products?.[0] }`: `{}` when the
+    // product is not read back.
+    ["no product", () => json(200, {})],
+    ["the product still a draft", () => json(200, { product: { id: "x", status: "draft" } })],
+    ["the product proposed for review", () => json(200, { product: { id: "x", status: "proposed" } })],
+  ])("does not record a listing, or resolve, when the status answer shows %s", async (_, reply) => {
+    const product = await createProduct(honey({ status: "draft" }))
+    backend.sent.length = 0
+    backend.on("POST", /^\/vendor\/products\/[^/]+\/status$/, reply)
+
+    await expect(publishFirstListing(product)).rejects.toThrow(
+      "The backend did not confirm that the product is published."
+    )
+
+    expect(posts().map((s) => s.path)).toEqual([`/vendor/products/${product}/status`])
+    expect(store.db.onboarding.wizard_step).not.toBe("published")
   })
 })
 

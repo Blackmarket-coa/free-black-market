@@ -18,7 +18,21 @@ import { json, type createBackend } from "./backend"
  *     stores' names;
  *   - `GET /vendor/shipping-profiles` answers link rows holding the profile;
  *   - `GET /vendor/stock-locations` answers sales channels and service zones
- *     only when `fields` asks for them.
+ *     only when `fields` asks for them;
+ *   - a product's variants do not come back in `variant_rank` order (the
+ *     review measured the create answering rank 1 before rank 0), so they are
+ *     answered last rank first here, and only `variant_rank` says which is
+ *     which;
+ *   - another store's product or inventory item is refused with Mercur's
+ *     403, "You are not allowed to perform this action" (measured);
+ *   - `POST /vendor/onboarding/publish` records any `listing_id`, as the base
+ *     does (measured: another store's product id answered 200); refusing a
+ *     foreign id is the backend onboarding unit's change, not the base's;
+ *   - `POST /vendor/inventory-items/location-levels/batch` refuses another
+ *     store's item or location with 403. At the base it accepts them
+ *     (measured: one store wrote another's levels, the hole a backend fix is
+ *     closing); modelling the fixed route makes a spec fail if the panel
+ *     ever sends an id that is not the store's own.
  *
  * It is a model, not the backend: a spec that passes here says the panel
  * sends what was read and measured, not that Postgres agrees.
@@ -59,6 +73,9 @@ type Level = { id: string; item: string; location: string; stocked: number }
 
 const refuse = (message: string) =>
   json(400, { type: "invalid_data", message })
+/** Mercur's ownership check, word for word (measured). */
+const notYours = () =>
+  json(403, { message: "You are not allowed to perform this action" })
 
 /** As a zod `.strict()` object refuses a key it does not declare. */
 const unknownKey = (body: unknown, allowed: string[]) => {
@@ -151,13 +168,21 @@ export const createFakeStore = (
       ...(fields.includes("rules") && { rules }),
     }
   }
+  /** Not in rank order: last rank first. */
+  const answered = (variants: Variant[]) => [...variants].reverse()
   const productView = (product: Product) => ({
     ...product,
-    variants: product.variants.map(({ item, ...variant }) => ({
+    variants: answered(product.variants).map(({ item, ...variant }) => ({
       ...variant,
       inventory_items: item ? [{ inventory_item_id: item, required_quantity: 1 }] : [],
     })),
   })
+  const ownItems = () =>
+    new Set(
+      db.products.flatMap((p) =>
+        p.variants.map((v) => v.item).filter((item): item is string => Boolean(item))
+      )
+    )
   const findLocation = (path: string) =>
     db.locations.find((l) => l.id === path.split("/")[3])
 
@@ -345,7 +370,7 @@ export const createFakeStore = (
     return json(200, {
       product: {
         ...product,
-        variants: product.variants.map(({ item: _item, ...variant }) => variant),
+        variants: answered(product.variants).map(({ item: _item, ...variant }) => variant),
       },
     })
   })
@@ -357,25 +382,23 @@ export const createFakeStore = (
   )
   backend.on("GET", /^\/vendor\/products\/[^/]+$/, ({ path }) => {
     const product = db.products.find((p) => p.id === path.split("/")[3])
-    return product
-      ? json(200, { product: productView(product) })
-      : json(403, { message: "You do not have access to this product" })
+    return product ? json(200, { product: productView(product) }) : notYours()
   })
   backend.on("POST", /^\/vendor\/products\/[^/]+\/status$/, ({ path, body }) => {
     const product = db.products.find((p) => p.id === path.split("/")[3])
-    if (!product) {
-      return json(403, { message: "You do not have access to this product" })
-    }
+    if (!product) return notYours()
     product.status = (body as { status: string }).status
     return json(200, {
       product: { id: product.id, title: product.title, status: product.status },
     })
   })
 
-  backend.on("GET", /^\/vendor\/inventory-items\/[^/]+\/location-levels$/, ({ path }) =>
-    json(200, {
+  backend.on("GET", /^\/vendor\/inventory-items\/[^/]+\/location-levels$/, ({ path }) => {
+    const item = path.split("/")[3]
+    if (!ownItems().has(item)) return notYours()
+    return json(200, {
       location_levels: db.levels
-        .filter((level) => level.item === path.split("/")[3])
+        .filter((level) => level.item === item)
         .map((level) => ({
           id: level.id,
           inventory_item_id: level.item,
@@ -385,7 +408,7 @@ export const createFakeStore = (
           available_quantity: level.stocked,
         })),
     })
-  )
+  })
   backend.on("POST", "/vendor/inventory-items/location-levels/batch", ({ body }) => {
     const strict = unknownKey(body, ["create", "update", "delete", "force"])
     if (strict) return strict
@@ -397,8 +420,12 @@ export const createFakeStore = (
       if (!Number.isInteger(row.stocked_quantity) || row.stocked_quantity < 0) {
         return refuse("stocked_quantity must be a whole number, zero or more")
       }
-      if (!db.locations.some((l) => l.id === row.location_id)) {
-        return refuse(`Stock location ${row.location_id} not found`)
+      // The fixed route: only the store's own items and locations.
+      if (
+        !ownItems().has(row.inventory_item_id) ||
+        !db.locations.some((l) => l.id === row.location_id)
+      ) {
+        return notYours()
       }
     }
     const created: Level[] = []
@@ -455,10 +482,8 @@ export const createFakeStore = (
     return json(200, { state: { ...db.onboarding } })
   })
   backend.on("POST", "/vendor/onboarding/publish", ({ body }) => {
+    // Any id, the store's or not: the base checks nothing (measured).
     const listing = (body as { listing_id?: string }).listing_id
-    if (!db.products.some((p) => p.id === listing)) {
-      return refuse("listing_id must be the id of a product in your store.")
-    }
     db.onboarding.wizard_step = "published"
     db.onboarding.first_published_listing_id = listing ?? null
     return json(200, { state: { ...db.onboarding } })

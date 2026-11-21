@@ -542,8 +542,9 @@ describe("the publish step", () => {
     expect(writes()).toEqual(["POST /vendor/products/prod_does_not_exist/status"])
     expect(onPublished).not.toHaveBeenCalled()
     expect(ui.toast.success).not.toHaveBeenCalled()
+    // Mercur's ownership check, in its words (measured).
     expect(ui.toast.error).toHaveBeenCalledWith("The listing was not published", {
-      description: "You do not have access to this product",
+      description: "You are not allowed to perform this action",
     })
     expect(store.db.onboarding.wizard_step).not.toBe("published")
   })
