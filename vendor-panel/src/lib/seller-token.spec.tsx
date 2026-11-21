@@ -70,9 +70,12 @@ import {
 } from "../hooks/api/users"
 import { PendingApproval } from "../routes/pending-approval/pending-approval"
 import { fetchQuery, getAuthToken, setAuthToken } from "./client"
+import { classifySessionError } from "./session-error"
 import {
   APPROVED_SIGN_IN_AGAIN,
   TokenRefreshFailed,
+  TokenRefreshUnavailable,
+  storedTokenWasRefused,
   tokenActor,
   upgradeApprovedSellerToken,
 } from "./seller-token"
@@ -111,13 +114,22 @@ const newClient = () =>
       mutations: { retry: false },
     },
   })
-const render = (client: QueryClient, element: ReactElement) => {
+const render = (client: QueryClient, element: ReactElement) =>
+  show(client, element).navigations
+/** What a screen renders, and where it sends the vendor. */
+const show = (client: QueryClient, element: ReactElement) => {
   router.navigations.length = 0
-  renderToStaticMarkup(
+  const html = renderToStaticMarkup(
     <QueryClientProvider client={client}>{element}</QueryClientProvider>
   )
-  return [...router.navigations]
+  return { html, navigations: [...router.navigations] }
 }
+const limited = () =>
+  json(429, {
+    message: "Too many requests, please try again later",
+    type: "rate_limit_exceeded",
+    retry_after: 27,
+  })
 /** The query a screen registered when it rendered, run as the screen would run it. */
 const run = (client: QueryClient, queryKey: readonly unknown[]) => {
   const query = client.getQueryCache().find({ queryKey, exact: true })
@@ -200,9 +212,8 @@ describe("upgradeApprovedSellerToken", () => {
   })
 
   it.each([
+    // Measured: an expired sign-up token's refresh answers 401 "Unauthorized".
     ["a 401", () => json(401, { message: "Unauthorized" })],
-    ["a 500", () => json(500, { message: "boom" })],
-    ["a network error", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["an answer with no token", () => json(200, {})],
   ])("%s from the refresh means sign in again, after one request", async (_, reply) => {
     const stale = signUpToken()
@@ -215,6 +226,49 @@ describe("upgradeApprovedSellerToken", () => {
     expect(backend.calls()).toEqual(["POST /auth/token/refresh"])
     // The helper drops nothing: the page that signs the vendor out does.
     expect(getAuthToken()).toBe(stale)
+  })
+
+  it.each([
+    // Measured: the refresh shares the `POST /auth/*` limiter with sign-in,
+    // and both answered this together.
+    [
+      "a 429",
+      () =>
+        json(429, {
+          message: "Too many requests, please try again later",
+          type: "rate_limit_exceeded",
+          retry_after: 27,
+        }),
+      429,
+    ],
+    ["a 500", () => json(500, { message: "boom" }), 500],
+    ["a 503", () => json(503, { message: "Service Unavailable" }), 503],
+    ["a network error", () => Promise.reject(new TypeError("Failed to fetch")), undefined],
+  ])("%s from the refresh is not a refusal: it rejects with a non-401 error, keeps the token, and asks again next time", async (_, reply, status) => {
+    const stale = signUpToken()
+    const fresh = sellerToken()
+    setAuthToken(stale)
+    backend.on("POST", "/auth/token/refresh", reply)
+
+    const error = await upgradeApprovedSellerToken().catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(TokenRefreshUnavailable)
+    expect(error).not.toBeInstanceOf(TokenRefreshFailed)
+    expect((error as TokenRefreshUnavailable).status).toBe(status)
+    expect((error as TokenRefreshUnavailable).status).not.toBe(401)
+    // What the session screens read: anything but a 401 offers a retry.
+    expect(classifySessionError(error as Error)).toBe("unavailable")
+    expect(getAuthToken()).toBe(stale)
+    expect(storedTokenWasRefused()).toBe(false)
+
+    // The next read asks again, and a working answer is stored.
+    backend.on("POST", "/auth/token/refresh", () => json(200, { token: fresh }))
+    await expect(upgradeApprovedSellerToken()).resolves.toBe("refreshed")
+    expect(backend.calls()).toEqual([
+      "POST /auth/token/refresh",
+      "POST /auth/token/refresh",
+    ])
+    expect(getAuthToken()).toBe(fresh)
   })
 
   it("makes one request when several readers ask at once", async () => {
@@ -300,9 +354,11 @@ describe("the protected layout, for a sign-up token kept after approval", () => 
     ])
   })
 
-  it("signs out on a failed refresh even when an earlier read left a pending session cached", async () => {
+  it("signs out on a refused refresh even when an earlier read left a pending session cached", async () => {
     setAuthToken(signUpToken())
-    backend.on("POST", "/auth/token/refresh", () => json(500, { message: "boom" }))
+    backend.on("POST", "/auth/token/refresh", () =>
+      json(401, { message: "Unauthorized" })
+    )
     const client = newClient()
     client.setQueryData(usersQueryKeys.session(), {
       registration_status: { status: "pending", message: "Pending." },
@@ -318,7 +374,9 @@ describe("the protected layout, for a sign-up token kept after approval", () => 
 
   it("does not sign out a vendor who has signed in again because of the old token's error", async () => {
     setAuthToken(signUpToken())
-    backend.on("POST", "/auth/token/refresh", () => json(500, { message: "boom" }))
+    backend.on("POST", "/auth/token/refresh", () =>
+      json(401, { message: "Unauthorized" })
+    )
     const client = newClient()
     client.setQueryData(usersQueryKeys.session(), session)
     render(client, <ProtectedRoute />)
@@ -330,6 +388,40 @@ describe("the protected layout, for a sign-up token kept after approval", () => 
 
     expect(render(client, <ProtectedRoute />)).toEqual([])
     expect(getAuthToken()).toBe(signedIn)
+  })
+
+  it.each([
+    ["a 429 from the auth limiter", limited],
+    ["a 502", () => json(502, { message: "Bad Gateway" })],
+    ["a network error", () => Promise.reject(new TypeError("Failed to fetch"))],
+  ])("on %s from the refresh, shows the error screen with a retry and keeps the token, even over a cached session", async (_, reply) => {
+    const stale = signUpToken()
+    setAuthToken(stale)
+    backend.on("POST", "/auth/token/refresh", reply)
+    const client = newClient()
+    // A session an earlier read cached: the panel must not open on it.
+    client.setQueryData(usersQueryKeys.session(), session)
+
+    render(client, <ProtectedRoute />)
+    const error = await run(client, usersQueryKeys.session())
+    expect(error).toBeInstanceOf(TokenRefreshUnavailable)
+
+    const screen = show(client, <ProtectedRoute />)
+    expect(screen.navigations).toEqual([])
+    expect(screen.html).toContain("We hit a snag loading your account")
+    expect(screen.html).toContain("could not be updated just now")
+    expect(screen.html).toContain("Try again")
+    expect(getAuthToken()).toBe(stale)
+
+    // Try again: the refresh is asked once more, and the panel opens.
+    const fresh = sellerToken()
+    backend.on("POST", "/auth/token/refresh", () => json(200, { token: fresh }))
+    await run(client, usersQueryKeys.session())
+    expect(render(client, <ProtectedRoute />)).toEqual([])
+    expect(getAuthToken()).toBe(fresh)
+    expect(
+      backend.calls().filter((c) => c === "POST /auth/token/refresh")
+    ).toHaveLength(2)
   })
 
   it("leaves a token that already names the store alone", async () => {
@@ -412,6 +504,41 @@ describe("the pending-approval page, when the status turns approved", () => {
       "GET /auth/seller/registration-status",
       "POST /auth/token/refresh",
     ])
+  })
+  it("on a 429 from the refresh, keeps the vendor here with the reason and a retry, signed in", async () => {
+    const stale = signUpToken()
+    setAuthToken(stale)
+    backend.on("POST", "/auth/token/refresh", limited)
+    const client = newClient()
+
+    render(client, <PendingApproval />)
+    const error = await run(client, usersQueryKeys.registrationStatus())
+
+    expect(error).toBeInstanceOf(TokenRefreshUnavailable)
+    const page = show(client, <PendingApproval />)
+    expect(page.navigations).toEqual([])
+    expect(page.html).toContain("Your store is approved")
+    expect(page.html).toContain("Too many requests, please try again later")
+    expect(page.html).toContain("Try again")
+    expect(getAuthToken()).toBe(stale)
+  })
+
+  it("does not sign out a vendor who has signed in again because of the old token's error", async () => {
+    setAuthToken(signUpToken())
+    backend.on("POST", "/auth/token/refresh", () =>
+      json(401, { message: "Unauthorized" })
+    )
+    const client = newClient()
+    render(client, <PendingApproval />)
+    const error = await run(client, usersQueryKeys.registrationStatus())
+    expect(error).toBeInstanceOf(TokenRefreshFailed)
+
+    // A new sign-in replaces the token; the failed read's error is still cached.
+    const signedIn = sellerToken()
+    setAuthToken(signedIn)
+
+    expect(render(client, <PendingApproval />)).not.toContain(reason)
+    expect(getAuthToken()).toBe(signedIn)
   })
 })
 

@@ -110,9 +110,11 @@ const isApprovedSeller = (status: RegistrationStatusResponse | undefined) =>
  * Called by every read that has just learnt the store is approved: a token
  * stored at sign-up names no actor, so it is refreshed once before any
  * `/vendor/*` call is made with it (lib/seller-token.ts). Rejects with
- * `TokenRefreshFailed` when the refresh did not work, which the protected
- * layout and the pending-approval page answer by signing the vendor out to
- * the login page with its message.
+ * `TokenRefreshFailed` when the backend refused the refresh, which the
+ * protected layout and the pending-approval page answer by signing the vendor
+ * out to the login page with its message; and with `TokenRefreshUnavailable`
+ * when it got no usable answer (a 429, a 5xx, the network), which both show
+ * with a way to try again.
  */
 const upgradeTokenOnApproval = async (
   status: RegistrationStatusResponse | undefined

@@ -11,6 +11,8 @@ import {
 } from "../../../lib/session-error"
 import {
   isTokenRefreshFailure,
+  isTokenRefreshUnavailable,
+  storedTokenNeedsRefresh,
   storedTokenWasRefused,
 } from "../../../lib/seller-token"
 import { SessionErrorScreen } from "../session-error/session-error-screen"
@@ -53,13 +55,18 @@ export const ProtectedRoute = () => {
   const seller = session?.seller
 
   // A session that says approved while the stored token names no actor is
-  // refreshed once inside the session read (lib/seller-token.ts). When that
-  // did not work the vendor is signed out with its message, whatever an
+  // refreshed inside the session read (lib/seller-token.ts). When the backend
+  // refused the refresh the vendor is signed out with its message, whatever an
   // earlier read left cached: every /vendor call would answer 403 with this
   // token. Only for the token that failed: the error outlives it on the query.
   const refreshFailed = isTokenRefreshFailure(error) && storedTokenWasRefused()
+  // When the refresh got no usable answer (a 429 from the shared auth
+  // limiter, a 5xx, the network), the error screen offers a retry, also over
+  // a cached session: the panel must not open on a token that names no store.
+  const refreshUnavailable =
+    isTokenRefreshUnavailable(error) && storedTokenNeedsRefresh()
 
-  if (error && (!registrationStatus || refreshFailed)) {
+  if (error && (!registrationStatus || refreshFailed || refreshUnavailable)) {
     const sessionError = error as SessionFetchError
 
     if (classifySessionError(sessionError) === "reauthenticate") {

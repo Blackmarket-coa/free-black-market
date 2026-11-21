@@ -7,6 +7,7 @@ import { Spinner } from "@medusajs/icons"
 import { clearAuthToken } from "../../lib/client"
 import {
   isTokenRefreshFailure,
+  isTokenRefreshUnavailable,
   storedTokenWasRefused,
 } from "../../lib/seller-token"
 
@@ -18,7 +19,7 @@ import {
  * but no approved seller account linked to it.
  */
 export const PendingApproval = () => {
-  const { registrationStatus, isPending, error, refetch } =
+  const { registrationStatus, isPending, isFetching, error, refetch } =
     useRegistrationStatus()
   const { mutate: logout, isPending: isLoggingOut } = useLogout()
 
@@ -63,8 +64,18 @@ export const PendingApproval = () => {
     )
   }
 
+  // Approved, and the refresh got no usable answer (a 429 from the auth
+  // limiter it shares with sign-in, a 5xx, the network): signing in again
+  // would meet the same, so the vendor is told and can try again here.
+  const unavailable = isTokenRefreshUnavailable(error) ? error.message : null
+  const refreshUnavailable = unavailable !== null
+
   // If user is approved and linked to a seller, redirect to dashboard
-  if (registrationStatus?.status === "approved" && registrationStatus.seller_id) {
+  if (
+    !refreshUnavailable &&
+    registrationStatus?.status === "approved" &&
+    registrationStatus.seller_id
+  ) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -75,6 +86,20 @@ export const PendingApproval = () => {
 
   // Render appropriate content based on status
   const renderContent = () => {
+    if (refreshUnavailable) {
+      return (
+        <>
+          <Heading>Your store is approved</Heading>
+          <Text size="small" className="text-ui-fg-subtle text-center mt-2 max-w-[320px]">
+            {unavailable}
+          </Text>
+          <Button className="mt-4" onClick={handleRefresh} disabled={isFetching}>
+            Try again
+          </Button>
+        </>
+      )
+    }
+
     if (registrationStatus?.status === "approved" && !registrationStatus.seller_id) {
       return (
         <>
