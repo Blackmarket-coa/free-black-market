@@ -1,5 +1,7 @@
 # BMC ecosystem financial analysis and monetization forecast
 
+**Monthly targets extension:** [Revenue quantities, unit contribution and launch priorities](BMC_REVENUE_TARGETS_AND_LAUNCH_PLAN.md) separates revenue from operating surplus, measures direct game-pack fees and adds a steady monthly benchmark. Original annual scenarios remain unchanged.
+
 **As of:** November 21, 2026  
 **Period:** January–December 2027, USD  
 **Status:** Conditional planning scenarios, not booked revenue, an approved price list, a valuation, or verified launch readiness. No application billing, prices, commissions, entitlements or production flags are changed.

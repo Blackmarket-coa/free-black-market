@@ -69,6 +69,29 @@ export function project(caseIndex = 1, overrides = {}) {
   return {case:config.cases[caseIndex],assumptions:a,months:rows,annual:Object.fromEntries(Object.keys(rows[0]).filter(k=>!['month','active','netNew','cumulative','eligibleNew','budgetGap'].includes(k)).map(k=>[k,sum(k)])),averageActive:sum('active')/12,december:rows[11],peakFunding:Math.max(0,...rows.map(r=>-r.cumulative)),operatingBreakEven:rows.findIndex((r,i)=>r.surplus>=0&&rows.slice(i).every(x=>x.surplus>=0))+1};
 }
 
+export function unitEconomics(caseIndex = 1, overrides = {}) {
+  const assumptions = Object.assign(Object.fromEntries(config.drivers.map(d => [d.key, d.values[caseIndex]])), overrides);
+  const a = assumptions;
+  const rate = (1-a.nativeShare)*a.cardRate+a.nativeShare*a.nativeRate;
+  const fixed = (1-a.nativeShare)*a.cardFixed;
+  const offer = (name,price,cost=0) => ({name,price,revenue:price*(1-a.refund),contribution:price*(1-a.refund)-price*rate-fixed-cost});
+  const products = [offer('FBM enhancement',a.fbmPrice),offer('Blackout enhancement',a.blackoutPrice),offer('Blackmask enhancement',a.blackmaskPrice),offer('Blackmask storage',a.storagePrice,a.storageCost)];
+  const steadyOverrides = {...overrides,audience:1000,signup:1,activation:1,growth:0,physicalStart:1,digitalStart:1,gameStart:1,firstStart:1,storageStart:1,serviceJobs:0,sponsorCount:0};
+  const steady = project(caseIndex,steadyOverrides).december;
+  const physical = project(caseIndex,{...steadyOverrides,digitalStart:13,gameStart:13,firstStart:13,storageStart:13}).december;
+  const revenuePerActive = steady.revenue/1000;
+  const variablePerActive = (steady.expense-a.fixed)/1000;
+  const contributionPerActive = revenuePerActive-variablePerActive;
+  const physicalFeeRate = physical.gmv>0?physical.retainedFee/physical.gmv:null;
+  const physicalContributionRate = physical.gmv>0?(physical.surplus+a.fixed+1000*a.variable)/physical.gmv:null;
+  return {assumptions,products,revenuePerActive,variablePerActive,contributionPerActive,
+    breakEvenActive:contributionPerActive>0?Math.ceil(a.fixed/contributionPerActive):null,
+    physicalFeeRate,physicalContributionRate,physicalContributionPerActive:(physical.surplus+a.fixed)/1000,
+    revenueTargets:[250,1000,4000,10000].map(target=>({target,offers:products.map(p=>({name:p.name,units:Math.ceil(target/p.revenue)})),physicalGmv:physicalFeeRate>0?target/physicalFeeRate:null})),
+    contributionTargets:[250,1000,4000,10000].map(target=>({target,offers:products.map(p=>({name:p.name,units:p.contribution>0?Math.ceil(target/p.contribution):null})),physicalGmv:physicalContributionRate>0?target/physicalContributionRate:null})),
+    surplusTargets:[1000,4000,10000].map(target=>{const active=contributionPerActive>0?Math.ceil((target+a.fixed)/contributionPerActive):null;return {target,active,revenue:active===null?null:active*revenuePerActive,expense:active===null?null:a.fixed+active*variablePerActive,gmv:active===null?null:active*steady.gmv/1000};})};
+}
+
 export function verify() {
   const near=(x,y)=>assert(Math.abs(x-y)<1e-7,`${x} != ${y}`);
   for(let i=0;i<3;i++) for(const r of project(i).months) {
@@ -86,13 +109,21 @@ export function verify() {
   assert(project(1,{retained:.75}).annual.revenue<base.annual.revenue);
   assert(project(1,{gameStart:13}).annual.gameGmv===0);
   assert(project(1,{firstStart:13}).annual.firstRevenue===0);
-  return 'Verified: fee/refund/settlement reconciliation, first-party allocation, zero demand, unreleased streams, channel cost, and retained-fee sensitivity.';
+  const units=unitEconomics();
+  near(units.products[0].contribution,22.54375);
+  near(units.products[3].contribution,2.668);
+  for(const t of units.surplusTargets) {
+    assert(t.revenue-t.expense>=t.target);
+    assert((t.active-1)*units.contributionPerActive-base.assumptions.fixed<t.target);
+  }
+  assert.equal(unitEconomics(1,{variable:100}).breakEvenActive,null);
+  return 'Verified: fee/refund/settlement reconciliation, first-party allocation, zero demand, unreleased streams, channel cost, retained-fee sensitivity, unit contribution and minimum target volumes.';
 }
 
 if(process.argv[1]===fileURLToPath(import.meta.url)) {
   const results=config.cases.map((_,i)=>project(i));
   const verification = verify();
-  if(process.argv.includes('--json')) console.log(JSON.stringify({asOf:config.asOf,verification,results},null,2));
+  if(process.argv.includes('--json')) console.log(JSON.stringify({asOf:config.asOf,verification,results,unitEconomics:unitEconomics()},null,2));
   else {
     console.log(verification);
     console.log(JSON.stringify(results.map(p=>({case:p.case,annualRevenue:p.annual.revenue,annualSurplus:p.annual.surplus,annualGmv:p.annual.gmv,firstParty:p.annual.firstRevenue,commission:p.annual.retainedFee,storage:p.annual.storageRevenue,services:p.annual.serviceRevenue,sponsors:p.annual.sponsorRevenue,decActive:p.december.active,decRevenue:p.december.revenue,peakFunding:p.peakFunding,breakEvenMonth:p.operatingBreakEven})),null,2));

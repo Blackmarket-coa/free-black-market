@@ -35,6 +35,8 @@ The starting inputs are founder-reported 26,000 followers and $250/month total c
 
 ## Priorities and release evidence
 
+The [monthly revenue targets and launch priorities](BMC_REVENUE_TARGETS_AND_LAUNCH_PLAN.md) quantify sales volume, direct contribution and required active membership. In the base channel/refund scenario, 45 $25 first-party sales provide about $1,014 before common operating costs, founder compensation and tax. This is not a recurring charge on the same owned product.
+
 Start with working founder-owned products and ordinary local exchanges, then one complete creator download and supported game-pack journey. Close the shared metadata-only listing/payload, draft-resume, content-to-offer, signed delivery, authorization, refund and settlement gaps. Preserve existing purchase history and reconcile legacy recurring plans and expiring rights through a separately verified migration.
 
 Before native digital sales, verify the permitted billing route and actual channel charges. The model tests a 15% native fee and a 30% case; neither replaces store-specific terms. Verify actual Stripe/Connect configuration and who bears each charge. Keep the fixed commission intact rather than silently absorbing unpriced costs.
