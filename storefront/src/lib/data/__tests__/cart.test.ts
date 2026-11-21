@@ -453,6 +453,8 @@ describe("placeOrder on the main checkout's 409s", () => {
     "Your order could not be completed, and no payment was taken. If your card shows a pending authorization, it will be released. Please try again, or contact support if it happens again."
   const CHECK_FAILED_MESSAGE =
     "Your order was not placed, because we could not check your cart just now. Please try again in a moment."
+  const NOTHING_TO_PAY_MESSAGE =
+    "Your order was not placed: orders with nothing to pay can't be placed yet. You have not been charged."
 
   const refusal = (error: Record<string, unknown>) => ({
     ok: false,
@@ -511,9 +513,15 @@ describe("placeOrder on the main checkout's 409s", () => {
     expect(h.removeCartId).toHaveBeenCalledTimes(1)
   })
 
+  // `cart_nothing_to_pay`: the backend's answer to a $0 cart at the main
+  // checkout. The storefront says the same on the payment and review steps
+  // and offers no button for it (lib/helpers/nothing-to-pay.ts); a page
+  // rendered before the total dropped can still send it, and then this
+  // message is what the buyer reads.
   it.each([
     ["cart_completion_incomplete", INCOMPLETE_MESSAGE],
     ["cart_completion_check_failed", CHECK_FAILED_MESSAGE],
+    ["cart_nothing_to_pay", NOTHING_TO_PAY_MESSAGE],
   ])("on %s shows the message and keeps the cart, so the buyer can try again", async (code, message) => {
     const answer = refusal({ code, message })
     h.fetchQuery.mockResolvedValue(answer)

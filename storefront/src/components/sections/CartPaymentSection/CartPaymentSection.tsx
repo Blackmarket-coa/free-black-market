@@ -17,6 +17,12 @@ import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/atoms"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 import {
+  canPlaceWithoutPayment,
+  cartOwesNothing,
+  NOTHING_TO_PAY_NO_METHOD_NEEDED,
+  NOTHING_TO_PAY_NOT_PLACEABLE,
+} from "@/lib/helpers/nothing-to-pay"
+import {
   paymentSessionDataFor,
   paymentSessionInitArgs,
 } from "@/lib/subscriptions/auto-renew"
@@ -73,9 +79,17 @@ const CartPaymentSection = ({
   // exactly as before.
   const sessionData = paymentSessionDataFor(cart, phase1ModuleFlags.consumerSubscriptions)
 
+  // A cart that owes nothing takes no payment session: the provider would be
+  // asked for an intent of zero (lib/helpers/nothing-to-pay.ts). An all-ticket
+  // cart can still be placed; any other cannot, and the step says so.
+  const owesNothing = cartOwesNothing(cart)
+  const placeableWithoutPayment = canPlaceWithoutPayment(cart)
   const hasPaymentMethods = (availablePaymentMethods?.length ?? 0) > 0
 
   const setPaymentMethod = async (method: string) => {
+    if (owesNothing) {
+      return
+    }
     setError(null)
     setSelectedPaymentMethod(method)
     if (!isStripeFunc(method)) {
@@ -128,6 +142,15 @@ const CartPaymentSection = ({
   }
 
   const handleSubmit = async () => {
+    if (owesNothing) {
+      // No session to open. Only a cart that can be placed goes on.
+      if (placeableWithoutPayment) {
+        router.push(pathname + "?" + createQueryString("step", "review"), {
+          scroll: false,
+        })
+      }
+      return
+    }
     setIsLoading(true)
     try {
       const shouldInputCard =
@@ -187,8 +210,19 @@ const CartPaymentSection = ({
       </div>
       <div>
         <div className={isOpen ? "block" : "hidden"}>
+          {!paidByGiftcard && owesNothing && (
+            <Text
+              className="txt-medium text-ui-fg-subtle mb-4"
+              data-testid="payment-nothing-to-pay"
+            >
+              {placeableWithoutPayment
+                ? NOTHING_TO_PAY_NO_METHOD_NEEDED
+                : NOTHING_TO_PAY_NOT_PLACEABLE}
+            </Text>
+          )}
+
           {/* A count, never a bare length: `list?.length && (…)` draws "0". */}
-          {!paidByGiftcard && !hasPaymentMethods && (
+          {!paidByGiftcard && !owesNothing && !hasPaymentMethods && (
             <ErrorMessage
               error={
                 availablePaymentMethods
@@ -199,7 +233,7 @@ const CartPaymentSection = ({
             />
           )}
 
-          {!paidByGiftcard && hasPaymentMethods && (
+          {!paidByGiftcard && !owesNothing && hasPaymentMethods && (
             <>
               <RadioGroup
                 value={selectedPaymentMethod}
@@ -253,11 +287,13 @@ const CartPaymentSection = ({
             variant="tonal"
             loading={isLoading}
             disabled={
-              (isStripe && !cardComplete) ||
-              (!selectedPaymentMethod && !paidByGiftcard)
+              owesNothing
+                ? !placeableWithoutPayment
+                : (isStripe && !cardComplete) ||
+                  (!selectedPaymentMethod && !paidByGiftcard)
             }
           >
-            {!activeSession && isStripeFunc(selectedPaymentMethod)
+            {!owesNothing && !activeSession && isStripeFunc(selectedPaymentMethod)
               ? " Enter card details"
               : "Continue to review"}
           </Button>
@@ -311,6 +347,13 @@ const CartPaymentSection = ({
                 Gift card
               </Text>
             </div>
+          ) : owesNothing ? (
+            <Text
+              className="txt-medium text-ui-fg-subtle"
+              data-testid="payment-method-summary"
+            >
+              Nothing to pay
+            </Text>
           ) : null}
         </div>
       </div>

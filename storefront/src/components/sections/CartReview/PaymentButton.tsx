@@ -15,6 +15,13 @@ import { StripeContext } from "../../organisms/PaymentContainer/StripeWrapper"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
 import { cardChargeMatchesCartTotal } from "@/lib/helpers/card-charge"
 import {
+  canPlaceWithoutPayment,
+  cartOwesNothing,
+  cartTicketMode,
+  NOTHING_TO_PAY_NO_METHOD_NEEDED,
+  NOTHING_TO_PAY_NOT_PLACEABLE,
+} from "@/lib/helpers/nothing-to-pay"
+import {
   listNames,
   type OfferedOption,
   shippingCoverage,
@@ -39,19 +46,8 @@ type PaymentButtonProps = {
   shippingOptions?: ReadonlyArray<OfferedOption> | null
 }
 
-// Ticket line items carry seat metadata (stamped by the ticket purchase
-// panel). A cart completes via the ticket-aware endpoint ONLY when it is
-// entirely tickets — a mixed cart routed through /complete-tickets would send
-// the non-ticket (and other-seller) items through the stock completion flow,
-// bypassing the marketplace split. Mixed carts are blocked at checkout.
-const cartTicketMode = (
-  cart?: HttpTypes.StoreCart | null
-): "none" | "all-tickets" | "mixed" => {
-  const items = cart?.items ?? []
-  const ticketCount = items.filter((item) => !!item.metadata?.show_date).length
-  if (ticketCount === 0) return "none"
-  return ticketCount === items.length ? "all-tickets" : "mixed"
-}
+// Which carts complete through the ticket checkout: `cartTicketMode`,
+// lib/helpers/nothing-to-pay.ts (shared with the payment step).
 
 /**
  * A subscription cart (NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 only) completes
@@ -140,6 +136,26 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   // crashed page; choosing the method again on the payment step opens a new
   // session.
   const stripeReady = useContext(StripeContext)
+
+  // A cart that owes nothing takes no payment session, whatever session an
+  // earlier total left on it (lib/helpers/nothing-to-pay.ts): the ticket
+  // checkout places it with none; the main checkout refuses it (409
+  // `cart_nothing_to_pay`), so that is said here, not after a click.
+  if (cartOwesNothing(cart)) {
+    return canPlaceWithoutPayment(cart) ? (
+      <NothingToPayButton notReady={notReady} data-testid={dataTestId} />
+    ) : (
+      <>
+        <Button disabled className="w-full">
+          Place order
+        </Button>
+        <ErrorMessage
+          error={NOTHING_TO_PAY_NOT_PLACEABLE}
+          data-testid="nothing-to-pay-not-placeable"
+        />
+      </>
+    )
+  }
 
   switch (true) {
     case isStripe(paymentSession?.provider_id) && stripeReady:
@@ -390,6 +406,63 @@ const StripePaymentButton = ({
       <ErrorMessage
         error={errorMessage}
         data-testid="stripe-payment-error-message"
+      />
+    </>
+  )
+}
+
+/**
+ * Place order for an all-ticket cart that owes nothing: the ticket checkout,
+ * with no payment session and nothing asked of Stripe.
+ */
+const NothingToPayButton = ({
+  notReady,
+  "data-testid": dataTestId,
+}: {
+  notReady: boolean
+  "data-testid"?: string
+}) => {
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const handlePlaceOrder = async () => {
+    setSubmitting(true)
+    try {
+      const res = await placeTicketOrder()
+      if (!res.ok && res.error) {
+        setErrorMessage(orderErrorFormatter(res.error))
+      }
+    } catch (error: any) {
+      if (error?.message !== "NEXT_REDIRECT") {
+        setErrorMessage(
+          orderErrorFormatter({
+            ...error,
+            message: error?.message?.replace("Error setting up the request: ", ""),
+          })
+        )
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <p className="mb-2 text-sm text-secondary" data-testid="nothing-to-pay-note">
+        {NOTHING_TO_PAY_NO_METHOD_NEEDED}
+      </p>
+      <Button
+        disabled={notReady}
+        onClick={handlePlaceOrder}
+        loading={submitting}
+        className="w-full"
+        data-testid={dataTestId}
+      >
+        Place order
+      </Button>
+      <ErrorMessage
+        error={errorMessage}
+        data-testid="nothing-to-pay-error-message"
       />
     </>
   )
