@@ -10,6 +10,11 @@ import {
 } from "../../../../../../../modules/order-subcontract/models"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../../../modules/hawala-ledger/service"
+import {
+  isSubcontractEscrowLive,
+  SUBCONTRACT_ESCROW_FLAG,
+  SUBCONTRACT_ESCROW_OFF_MESSAGE,
+} from "../../../../../../../modules/hawala-ledger/vendor-transfer-switches"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
 import { emitBlackoutEvent } from "../../../../../../../lib/blackout-emit"
@@ -28,8 +33,17 @@ const Schema = z.object({
  *   - release: full escrow → service vendor (matches "accept-delivery" path)
  *   - refund: full escrow → buyer-vendor
  *   - split: partial release + partial refund
+ *
+ * 404 `feature_disabled` unless FBM_SUBCONTRACT_ESCROW_LIVE=1: every decision
+ * moves escrow, and the ledger refuses all three while the switch is off.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  if (!isSubcontractEscrowLive()) {
+    return res.status(404).json({
+      message: `${SUBCONTRACT_ESCROW_OFF_MESSAGE} (${SUBCONTRACT_ESCROW_FLAG} is not on)`,
+      type: "feature_disabled",
+    })
+  }
   const id = (req.params as { id?: string })?.id
   if (!id) {
     return res.status(400).json({ message: "Missing id", type: "invalid_request" })

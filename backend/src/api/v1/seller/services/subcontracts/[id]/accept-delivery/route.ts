@@ -9,6 +9,10 @@ import { SERVICE_PROGRAM_MODULE } from "../../../../../../../modules/service-pro
 import type ServiceProgramService from "../../../../../../../modules/service-program/service"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../../../modules/hawala-ledger/service"
+import {
+  isSubcontractEscrowLive,
+  SUBCONTRACT_ESCROW_OFF_MESSAGE,
+} from "../../../../../../../modules/hawala-ledger/vendor-transfer-switches"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
 
@@ -18,11 +22,15 @@ import type MarketplaceWebhooksService from "../../../../../../../modules/market
  * Buyer-vendor accepts the delivered work. Releases escrow to the
  * service vendor's seller-earnings account, advances the contract to
  * `accepted`, emits `subcontract.completed` webhook to both parties.
+ * 404 `feature_disabled` unless FBM_SUBCONTRACT_ESCROW_LIVE=1.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as SellerAuthRequest).seller_id
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized", type: "unauthorized" })
+  }
+  if (!isSubcontractEscrowLive()) {
+    return res.status(404).json({ message: SUBCONTRACT_ESCROW_OFF_MESSAGE, type: "feature_disabled" })
   }
   const id = (req.params as { id?: string })?.id
   if (!id) {

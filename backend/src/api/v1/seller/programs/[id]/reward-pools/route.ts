@@ -10,6 +10,10 @@ import type CreatorRewardsService from "../../../../../../modules/creator-reward
 import { RewardPoolKind } from "../../../../../../modules/creator-rewards/models"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
+import {
+  CREATOR_REWARD_POOLS_OFF_MESSAGE,
+  isCreatorRewardPoolsLive,
+} from "../../../../../../modules/hawala-ledger/vendor-transfer-switches"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../modules/marketplace-webhooks/service"
 
@@ -27,6 +31,9 @@ const CreateSchema = z.object({
  *
  * Vendor opens an engagement reward pool against one of their programs
  * and funds it from their seller-earnings account.
+ * 404 `feature_disabled` unless FBM_CREATOR_REWARD_POOLS_LIVE=1, before the
+ * pool row is written: the ledger refuses the funding while the switch is
+ * off, and a pool left unfunded is one the daily job would try to pay out.
  *
  * GET /v1/seller/programs/:id/reward-pools — list pools on this program.
  */
@@ -60,6 +67,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const programId = (req.params as { id?: string })?.id
   if (!programId) {
     return res.status(400).json({ message: "Missing program id", type: "invalid_request" })
+  }
+  if (!isCreatorRewardPoolsLive()) {
+    return res.status(404).json({ message: CREATOR_REWARD_POOLS_OFF_MESSAGE, type: "feature_disabled" })
   }
   const parsed = CreateSchema.safeParse(req.body ?? {})
   if (!parsed.success) {

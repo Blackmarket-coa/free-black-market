@@ -4,6 +4,7 @@ const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
+import { assertCreatorRewardPoolsLive, assertSubcontractEscrowLive } from "./vendor-transfer-switches"
 import {
   buildKarmaAttestation,
   isKarmaUniqueViolation,
@@ -840,6 +841,9 @@ class HawalaLedgerModuleService extends MedusaService({
    * explicitly authorized via `allowPlatformFunding === true`. Route
    * callers MUST gate that flag behind admin authentication — never pass
    * it from unauthenticated/seller-facing handlers.
+   *
+   * OFF unless FBM_CREATOR_REWARD_POOLS_LIVE=1 (vendor-transfer-switches.ts):
+   * refuses before any account is read or made.
    */
   async fundCreatorRewardPool(args: {
     poolId: string
@@ -849,6 +853,7 @@ class HawalaLedgerModuleService extends MedusaService({
     idempotencyKey?: string
     allowPlatformFunding?: boolean
   }) {
+    assertCreatorRewardPoolsLive()
     if (args.amountCents <= 0) {
       throw new Error("fundCreatorRewardPool amountCents must be > 0")
     }
@@ -883,6 +888,8 @@ class HawalaLedgerModuleService extends MedusaService({
   /**
    * Credit a creator's earnings from a funded reward pool. Reverses the
    * usual commission flow direction: pool -> creator earnings.
+   *
+   * OFF unless FBM_CREATOR_REWARD_POOLS_LIVE=1, like the funding.
    */
   async creditCreatorReward(args: {
     poolId: string
@@ -892,6 +899,7 @@ class HawalaLedgerModuleService extends MedusaService({
     currencyCode?: string
     description?: string
   }) {
+    assertCreatorRewardPoolsLive()
     if (args.amountCents <= 0) {
       throw new Error("creditCreatorReward amountCents must be > 0")
     }
@@ -924,6 +932,10 @@ class HawalaLedgerModuleService extends MedusaService({
    * Open escrow for a service subcontract or contract: move funds from
    * the buyer-vendor's seller-earnings into a per-subcontract ESCROW
    * account. The funds stay there until release or refund.
+   *
+   * OFF unless FBM_SUBCONTRACT_ESCROW_LIVE=1 (vendor-transfer-switches.ts):
+   * vendor-to-vendor money with no order behind it. Refuses before any
+   * account is read or made.
    */
   async openSubcontractEscrow(args: {
     subcontractId: string
@@ -931,6 +943,7 @@ class HawalaLedgerModuleService extends MedusaService({
     amountCents: number
     currencyCode?: string
   }) {
+    assertSubcontractEscrowLive()
     if (args.amountCents <= 0) {
       throw new Error("openSubcontractEscrow amountCents must be > 0")
     }
@@ -972,6 +985,8 @@ class HawalaLedgerModuleService extends MedusaService({
   /**
    * Release subcontract escrow to the service vendor's earnings on
    * verified delivery + acceptance.
+   *
+   * OFF unless FBM_SUBCONTRACT_ESCROW_LIVE=1, like the opening.
    */
   async releaseSubcontractEscrow(args: {
     subcontractId: string
@@ -979,6 +994,7 @@ class HawalaLedgerModuleService extends MedusaService({
     amountCents: number
     currencyCode?: string
   }) {
+    assertSubcontractEscrowLive()
     if (args.amountCents <= 0) {
       throw new Error("releaseSubcontractEscrow amountCents must be > 0")
     }
@@ -1014,6 +1030,9 @@ class HawalaLedgerModuleService extends MedusaService({
   /**
    * Refund subcontract escrow back to the buyer-vendor on dispute or
    * cancel.
+   *
+   * OFF unless FBM_SUBCONTRACT_ESCROW_LIVE=1, like the opening: an escrow
+   * opened while the switch was on is held until it is on again.
    */
   async refundSubcontractEscrow(args: {
     subcontractId: string
@@ -1022,6 +1041,7 @@ class HawalaLedgerModuleService extends MedusaService({
     reason: string
     currencyCode?: string
   }) {
+    assertSubcontractEscrowLive()
     if (args.amountCents <= 0) {
       throw new Error("refundSubcontractEscrow amountCents must be > 0")
     }

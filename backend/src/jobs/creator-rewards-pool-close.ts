@@ -7,14 +7,28 @@ import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../modules/marketplace-webhooks/service"
+import {
+  CREATOR_REWARD_POOLS_FLAG,
+  isCreatorRewardPoolsLive,
+} from "../modules/hawala-ledger/vendor-transfer-switches"
 
 /**
  * Daily scheduled job: find any reward pool whose `period_end` has passed
  * and that is still `accruing` or `scheduled`, calculate the per-creator
  * distribution from cumulative qualified-view counts, persist payouts, and
  * credit creator earnings via `hawala-ledger.creditCreatorReward`.
+ *
+ * Does nothing unless FBM_CREATOR_REWARD_POOLS_LIVE=1, and says so. The
+ * ledger refuses every credit while the switch is off, so running anyway
+ * would write payout rows nobody is paid and mark each due pool distributed.
  */
 export default async function creatorRewardsPoolCloseJob(container: MedusaContainer) {
+  if (!isCreatorRewardPoolsLive()) {
+    log.info(
+      `[creator-rewards-pool-close] skipped: creator reward pools are off (${CREATOR_REWARD_POOLS_FLAG} is not on); no pool was read or changed`
+    )
+    return
+  }
   const rewards = container.resolve<CreatorRewardsService>(CREATOR_REWARDS_MODULE)
   const hawala = container.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   let webhooks: MarketplaceWebhooksService | null = null

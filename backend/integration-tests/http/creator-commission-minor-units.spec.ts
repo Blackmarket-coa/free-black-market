@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../src/modules/creator-attribution"
 import { CommissionStatus } from "../../src/modules/creator-attribution/models/order-attribution"
 import { HAWALA_LEDGER_MODULE } from "../../src/modules/hawala-ledger"
+import { CREATOR_REWARD_POOLS_FLAG } from "../../src/modules/hawala-ledger/vendor-transfer-switches"
 import { PAYOUT_BREAKDOWN_MODULE } from "../../src/modules/payout-breakdown"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { AMOUNT_UNIT_METADATA_KEY, AMOUNT_UNIT_MINOR } from "../../src/shared/minor-units"
@@ -1532,13 +1533,22 @@ medusaIntegrationTestRunner({
           // The call, not the route: it was written when the route answered
           // 400 before reaching it on a migrated database, `reward_pool`
           // having no `raw_total_cents` column until SD-63's migrations.
+          // Reward pools are off unless their switch is on
+          // (hawala-ledger/vendor-transfer-switches.ts), so it is on for
+          // this one call: what is checked here is how such a debit is
+          // listed once one exists.
           const funded = await storefrontOrder()
-          await hawala().fundCreatorRewardPool({
-            poolId: `rpool_${uid()}`,
-            funderSellerId: funded.vendor.id,
-            amountCents: 2000,
-            currencyCode: "USD",
-          })
+          process.env[CREATOR_REWARD_POOLS_FLAG] = "1"
+          try {
+            await hawala().fundCreatorRewardPool({
+              poolId: `rpool_${uid()}`,
+              funderSellerId: funded.vendor.id,
+              amountCents: 2000,
+              currencyCode: "USD",
+            })
+          } finally {
+            delete process.env[CREATOR_REWARD_POOLS_FLAG]
+          }
           const fundedDebits = await debitsOf(funded.vendor.id)
           expect(fundedDebits).toHaveLength(1)
           expect(fundedDebits[0]).toMatchObject({ entry_type: "TRANSFER", status: "COMPLETED", reference_type: "CREATOR_REWARD_POOL", order_id: null })

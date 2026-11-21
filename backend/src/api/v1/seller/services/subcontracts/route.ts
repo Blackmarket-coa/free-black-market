@@ -9,6 +9,10 @@ import { SERVICE_PROGRAM_MODULE } from "../../../../../modules/service-program"
 import type ServiceProgramService from "../../../../../modules/service-program/service"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
+import {
+  isSubcontractEscrowLive,
+  SUBCONTRACT_ESCROW_OFF_MESSAGE,
+} from "../../../../../modules/hawala-ledger/vendor-transfer-switches"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../modules/marketplace-webhooks/service"
 
@@ -32,6 +36,9 @@ const ProposeSchema = z.object({
  *   Buyer-vendor proposes a subcontract against an active service contract.
  *   On creation, escrow funds are moved from the buyer's seller-earnings
  *   account into a per-subcontract ESCROW account.
+ *   404 `feature_disabled` unless FBM_SUBCONTRACT_ESCROW_LIVE=1, before
+ *   anything is written: a subcontract is nothing without its escrow, and the
+ *   ledger refuses the escrow while the switch is off.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as SellerAuthRequest).seller_id
@@ -50,6 +57,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as SellerAuthRequest).seller_id
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized", type: "unauthorized" })
+  }
+  if (!isSubcontractEscrowLive()) {
+    return res.status(404).json({ message: SUBCONTRACT_ESCROW_OFF_MESSAGE, type: "feature_disabled" })
   }
   const parsed = ProposeSchema.safeParse(req.body ?? {})
   if (!parsed.success) {

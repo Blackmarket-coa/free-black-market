@@ -5,6 +5,11 @@ import { CREATOR_REWARDS_MODULE } from "../../../../../../../modules/creator-rew
 import type CreatorRewardsService from "../../../../../../../modules/creator-rewards/service"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../../../modules/hawala-ledger/service"
+import {
+  CREATOR_REWARD_POOLS_FLAG,
+  CREATOR_REWARD_POOLS_OFF_MESSAGE,
+  isCreatorRewardPoolsLive,
+} from "../../../../../../../modules/hawala-ledger/vendor-transfer-switches"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
 import {
@@ -16,8 +21,18 @@ import {
  *
  * Manually trigger pool distribution. Same engine that runs in the
  * scheduled job — admin can preview (?dry_run=1) or commit.
+ *
+ * 404 `feature_disabled` unless FBM_CREATOR_REWARD_POOLS_LIVE=1, before any
+ * payout row is written: the ledger refuses every credit while the switch is
+ * off, and committing would mark the pool distributed with nothing paid.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  if (!isCreatorRewardPoolsLive()) {
+    return res.status(404).json({
+      message: `${CREATOR_REWARD_POOLS_OFF_MESSAGE} (${CREATOR_REWARD_POOLS_FLAG} is not on)`,
+      type: "feature_disabled",
+    })
+  }
   const id = (req.params as { id?: string })?.id
   if (!id) {
     return res.status(400).json({ message: "Missing id", type: "invalid_request" })
