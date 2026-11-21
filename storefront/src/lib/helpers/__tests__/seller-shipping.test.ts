@@ -101,6 +101,49 @@ describe("shippingCoverage", () => {
     expect(shippingCoverage(cart([null], []), []).complete).toBe(false)
     expect(shippingCoverage(cart([null], ["so_x"]), []).complete).toBe(true)
   })
+
+  // Mercur lists options only for sellers in the cart that have no method, so
+  // a list that is not empty is exact evidence that one still needs one,
+  // whatever the lines and the remembered picks say.
+  describe("a list that is not empty", () => {
+    it("is not complete though no line names a seller, and names the seller from its option (review probe P8)", () => {
+      const coverage = shippingCoverage(cart([null], ["so_x"]), [{ ...option("so_b", B), seller_name: "Grower B" }])
+
+      expect(coverage.complete).toBe(false)
+      expect(coverage.toChoose).toEqual([B])
+    })
+
+    it("is not complete though every method is counted for a seller", () => {
+      // Two sellers, two methods, and Mercur still lists Grower B.
+      const coverage = shippingCoverage(cart([A, B], ["so_x", "so_y"]), [option("so_b", B)])
+
+      expect(coverage.complete).toBe(false)
+      expect(coverage.toChoose).toEqual([B])
+    })
+
+    it("is not complete though a remembered pick says the listed seller has a method", () => {
+      const coverage = shippingCoverage(cart([A], ["so_a"]), [option("so_a2", A)], { so_a: A.id })
+
+      expect(coverage.complete).toBe(false)
+      expect(coverage.toChoose).toEqual([A])
+    })
+
+    it("is not complete for an option that names no seller", () => {
+      expect(shippingCoverage(cart([A], ["so_a"]), [{ id: "so_orphan" }]).complete).toBe(false)
+    })
+  })
+
+  it("does not take a return option for a way to receive the order", () => {
+    const returns = { ...option("so_b_return", B), rules: [{ attribute: "is_return", value: "true" }] }
+
+    // Grower B has a method: the return option listed alone changes nothing.
+    expect(shippingCoverage(cart([A, B], ["so_a", "so_b"]), [returns]).complete).toBe(true)
+    // Grower B has none, and only a return option: nothing to choose.
+    const coverage = shippingCoverage(cart([A, B], ["so_a"]), [returns], { so_a: A.id })
+    expect(coverage.complete).toBe(false)
+    expect(coverage.toChoose).toEqual([])
+    expect(coverage.noOptions).toEqual([B])
+  })
 })
 
 describe("shownFulfillmentType", () => {

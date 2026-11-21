@@ -13,6 +13,7 @@ import {
 import { convertToLocale } from "@/lib/helpers/money"
 import {
   type FulfillmentType,
+  isReturnOption,
   listNames,
   shippingCoverage,
   shownFulfillmentType,
@@ -25,6 +26,7 @@ import { Fragment, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/atoms"
 import { CartShippingMethodRow } from "./CartShippingMethodRow"
 import { DeliveryEligibilityNotice } from "./DeliveryEligibilityNotice"
+import { UnpricedOptionsNotice } from "./UnpricedOptionsNotice"
 import { Listbox, Transition, RadioGroup, Radio } from "@headlessui/react"
 import clsx from "clsx"
 
@@ -54,9 +56,6 @@ type CartItem = {
   product?: ExtendedStoreProduct
   // Include other cart item properties as needed
 }
-
-const isReturnMethod = (sm: AvailableShippingMethod) =>
-  sm.rules?.find((rule) => rule.attribute === "is_return")?.value === "true"
 
 const isDeliveryMethod = (sm: AvailableShippingMethod) =>
   sm.service_zone?.fulfillment_set?.type === "delivery" ||
@@ -146,6 +145,9 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   const [calculatedPricesMap, setCalculatedPricesMap] = useState<
     Record<string, number>
   >({})
+  // Whether the calculated options' price requests have all come back: until
+  // then a seller with only such options is loading, after it they failed.
+  const [calculatedPricesSettled, setCalculatedPricesSettled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // The type the buyer picked. What is shown is derived from it on every
   // render (`shownFulfillmentType`), never reset behind the buyer's back.
@@ -170,7 +172,7 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   // rebuilt on every render, and each effect that listed them as a
   // dependency ran on every render too.
   const _allMethods = useMemo(
-    () => (availableShippingMethods ?? []).filter((sm) => !isReturnMethod(sm)),
+    () => (availableShippingMethods ?? []).filter((sm) => !isReturnOption(sm)),
     [availableShippingMethods]
   )
   const _deliveryMethods = useMemo(() => _allMethods.filter(isDeliveryMethod), [_allMethods])
@@ -199,23 +201,26 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
     sellers.map((seller) => seller.name || "a seller in your cart")
 
   useEffect(() => {
-    if (_allMethods.length) {
-      const promises = _allMethods
-        .filter((sm) => sm.price_type === "calculated")
-        .map((sm) => calculatePriceForShippingOption(sm.id, cart.id))
+    const promises = _allMethods
+      .filter((sm) => sm.price_type === "calculated")
+      .map((sm) => calculatePriceForShippingOption(sm.id, cart.id))
 
-      if (promises.length) {
-        Promise.allSettled(promises).then((res) => {
-          const pricesMap: Record<string, number> = {}
-          res
-            .filter((r) => r.status === "fulfilled")
-            .forEach((p) => (pricesMap[p.value?.id || ""] = p.value?.amount!))
-
-          setCalculatedPricesMap(pricesMap)
-          setIsLoadingPrices(false)
-        })
-      }
+    if (!promises.length) {
+      setCalculatedPricesSettled(true)
+      return
     }
+
+    setCalculatedPricesSettled(false)
+    Promise.allSettled(promises).then((res) => {
+      const pricesMap: Record<string, number> = {}
+      res
+        .filter((r) => r.status === "fulfilled")
+        .forEach((p) => (pricesMap[p.value?.id || ""] = p.value?.amount!))
+
+      setCalculatedPricesMap(pricesMap)
+      setIsLoadingPrices(false)
+      setCalculatedPricesSettled(true)
+    })
   }, [_allMethods, cart.id])
 
   const handleSubmit = () => {
@@ -478,7 +483,20 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                 <div className="pb-8 md:pt-0 pt-2">
                   {Object.keys(groupedBySellerId).map((key) => {
                     const methods = groupedBySellerId[key]
-                    const sellerName = methods[0]?.seller_name
+                    // From every option of the seller: a seller whose
+                    // options have no price yet has none in `methods`.
+                    const sellerName = currentMethods.find((method) => method.seller_id === key)?.seller_name
+
+                    if (methods.length === 0) {
+                      return (
+                        <div key={key} className="mb-4">
+                          <Heading level="h3" className="mb-2">
+                            {sellerName}
+                          </Heading>
+                          <UnpricedOptionsNotice sellerName={sellerName} settled={calculatedPricesSettled} />
+                        </div>
+                      )
+                    }
 
                     return (
                       <div key={key} className="mb-4">

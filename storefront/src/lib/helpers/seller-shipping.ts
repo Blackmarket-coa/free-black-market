@@ -11,8 +11,11 @@
  * - The sellers in the cart: each line's `product.seller` (the cart query
  *   asks for its id and name).
  * - The options Mercur offers (`GET /store/shipping-options?cart_id=`), each
- *   with its `seller_id`. Mercur lists options only for sellers that have no
- *   method yet, so a listed seller is a seller still to choose for.
+ *   with its `seller_id`. Mercur lists options only for sellers in the cart
+ *   that have no method yet, so a listed seller is a seller still to choose
+ *   for, and a list that is not empty means the cart is not ready, whatever
+ *   else is known (return options aside: they are no way to receive an
+ *   order).
  * - The cart's shipping methods, but not their sellers. The cart read cannot
  *   carry them: asking `GET /store/carts/:id` for
  *   `shipping_methods.shipping_option.seller.id` answers 500 ("Cannot resolve
@@ -45,8 +48,23 @@ const sellerOfLine = (item: unknown): SellerLike | undefined => {
   return seller && typeof seller === "object" ? (seller as SellerLike) : undefined
 }
 
-/** An option as Mercur lists it for a cart: its id and the seller it belongs to. */
-export type OfferedOption = { id?: string | null; seller_id?: string | null } | null | undefined
+/**
+ * An option as Mercur lists it for a cart: its id, the seller it belongs to
+ * (and that seller's name), and its rules, which mark a return option.
+ */
+export type OfferedOption =
+  | {
+      id?: string | null
+      seller_id?: string | null
+      seller_name?: string | null
+      rules?: ReadonlyArray<{ attribute?: string | null; value?: string | null } | null> | null
+    }
+  | null
+  | undefined
+
+/** A return option (`is_return`): listed with the others, never a way to receive an order. */
+export const isReturnOption = (option: OfferedOption): boolean =>
+  option?.rules?.find((rule) => rule?.attribute === "is_return")?.value === "true"
 
 /** The sellers of a cart's lines, once each, in the order the lines show them. */
 export function sellersInCart(cart: CartForShipping | null | undefined): CartSeller[] {
@@ -95,9 +113,10 @@ export function shippingCoverage(
 ): ShippingCoverage {
   const sellers = sellersInCart(cart)
   const methods = (cart?.shipping_methods ?? []).filter(Boolean)
+  const options = offered ? offered.filter((option) => !!option && !isReturnOption(option)) : null
 
   const pairs: Record<string, string> = { ...knownPairs }
-  for (const option of offered ?? []) {
+  for (const option of options ?? []) {
     if (option?.id && option.seller_id) pairs[option.id] = option.seller_id
   }
 
@@ -109,20 +128,36 @@ export function shippingCoverage(
     else unpaired += 1
   }
 
-  const listed = new Set((offered ?? []).map((option) => option?.seller_id).filter(Boolean))
-  const uncovered = sellers.filter((seller) => !covered.has(seller.id))
-  const toChoose = offered ? uncovered.filter((seller) => listed.has(seller.id)) : []
+  // Every listed seller still needs a method, whatever the lines or the
+  // pairs above say: Mercur lists options only for sellers in the cart that
+  // have none. A seller the lines did not name is named by its option.
+  const onLines = new Set(sellers.map((seller) => seller.id))
+  const listed = new Map<string, CartSeller>()
+  for (const option of options ?? []) {
+    if (option?.seller_id && !listed.has(option.seller_id)) {
+      listed.set(option.seller_id, { id: option.seller_id, name: option.seller_name?.trim() || "" })
+    }
+  }
+  const toChoose = [
+    ...sellers.filter((seller) => listed.has(seller.id)),
+    ...[...listed.values()].filter((seller) => !onLines.has(seller.id)),
+  ]
   // Neither paired with a method nor listed: covered by one of the unpaired
   // methods, or with no option for this address.
-  const rest = offered ? uncovered.filter((seller) => !listed.has(seller.id)) : uncovered
+  const rest = sellers.filter((seller) => !covered.has(seller.id) && !listed.has(seller.id))
   const noOptionsCount = Math.max(0, rest.length - unpaired)
 
   return {
-    complete: methods.length > 0 && toChoose.length === 0 && noOptionsCount === 0,
+    complete:
+      methods.length > 0 &&
+      // Known and not empty: someone still needs a method, named above or not.
+      (options ? options.length === 0 : true) &&
+      toChoose.length === 0 &&
+      noOptionsCount === 0,
     toChoose,
-    noOptions: offered && noOptionsCount > 0 ? rest : [],
+    noOptions: options && noOptionsCount > 0 ? rest : [],
     noOptionsExact: unpaired === 0,
-    noOptionsCount: offered ? noOptionsCount : 0,
+    noOptionsCount: options ? noOptionsCount : 0,
   }
 }
 

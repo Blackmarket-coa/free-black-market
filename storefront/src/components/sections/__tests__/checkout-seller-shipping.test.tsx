@@ -70,12 +70,15 @@ vi.mock("@/components/atoms", async (importOriginal) => {
 
 type Section = typeof import("../CartShippingMethodsSection/CartShippingMethodsSection").default
 type PayButton = typeof import("../CartReview/PaymentButton").default
+type Unpriced = typeof import("../CartShippingMethodsSection/UnpricedOptionsNotice").UnpricedOptionsNotice
 let CartShippingMethodsSection: Section
 let PaymentButton: PayButton
+let UnpricedOptionsNotice: Unpriced
 
 beforeAll(async () => {
   CartShippingMethodsSection = (await import("../CartShippingMethodsSection/CartShippingMethodsSection")).default
   PaymentButton = (await import("../CartReview/PaymentButton")).default
+  UnpricedOptionsNotice = (await import("../CartShippingMethodsSection/UnpricedOptionsNotice")).UnpricedOptionsNotice
 })
 
 beforeEach(() => {
@@ -177,6 +180,31 @@ describe("the delivery step", () => {
     expect(html).toContain("To check out, remove that seller&#x27;s items from")
     expect(html).not.toMatch(/contact (him|them)/)
     expect(h.buttons[CONTINUE]?.disabled).toBe(true)
+  })
+
+  // Review probe P1: a seller whose options have no price to show (their
+  // calculated prices not loaded) got an empty dropdown under "Choose a
+  // delivery option for Grower B".
+  it("draws no empty dropdown for a seller whose prices are not loaded, and says they are loading", () => {
+    const unpriced = { ...option("so_b_calc", B, "shipping"), price_type: "calculated", amount: undefined }
+    const html = deliveryStep(cartWith([A, B], ["so_a"]), [unpriced as unknown as ReturnType<typeof option>])
+
+    // The seller is still named over the notice (not only in the line below
+    // the step): its name comes from its options, priced or not.
+    expect(html).toMatch(/<h3[^>]*>Grower B<\/h3>/)
+    expect(html).toContain('data-testid="delivery-prices-unavailable"')
+    expect(html).toContain("Loading delivery prices...")
+    expect(html).not.toContain("Choose shipping option")
+    expect(h.buttons[CONTINUE]?.disabled).toBe(true)
+  })
+
+  it("says the prices could not be loaded once the requests have come back with none", () => {
+    const html = renderToStaticMarkup(<UnpricedOptionsNotice sellerName="Grower B" settled />)
+
+    expect(html).toContain(
+      "We couldn&#x27;t load the delivery prices for Grower B, so there is nothing to choose yet. Refresh the page to try again."
+    )
+    expect(html).toContain('role="alert"')
   })
 
   it("names no seller as having no options when the options could not be fetched", () => {
