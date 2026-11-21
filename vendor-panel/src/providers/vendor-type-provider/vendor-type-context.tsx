@@ -317,7 +317,8 @@ function buildFeaturesFromExtensions(enabledExtensions: string[]): VendorFeature
 export function getFeaturesForPlaybook(
   playbook: Exclude<Playbook, "default">
 ): VendorFeatures {
-  return { ...getFeaturesByPlaybook(playbook), hasProducts: true }
+  const features = getFeaturesByPlaybook(playbook)
+  return playbook === "service" ? { ...features, hasProducts: true } : features
 }
 
 /**
