@@ -232,6 +232,19 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
       await expect(svc.replayBlackstarDelivery(rows[0].id)).rejects.toThrow(/already succeeded/)
     })
 
+    it("does not store the secret back from a response that echoes the request", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      jest.spyOn(global, "fetch" as any).mockImplementation(async (_url: any, init: any) => {
+        return { ok: false, status: 422, text: async () => `rejected: ${init.body}` } as any
+      })
+
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(false)
+      expect(rows[0].response_body).toContain("rejected:")
+      expect(rows[0].response_body).not.toContain(NODE_SECRET)
+      expect(JSON.stringify(await svc.listBlackstarDeliveries({}))).not.toContain(NODE_SECRET)
+    })
+
     it("leaves a delivery with no secret exactly as it was after it lands", async () => {
       const { svc, rows } = makeService()
       await svc.emitBlackstar("order.created", { source_order_ref: "ord_1" }, { eventId: "evt_order" })

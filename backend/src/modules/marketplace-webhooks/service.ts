@@ -9,7 +9,7 @@ import WebhookDelivery, {
   WebhookDeliveryStatus,
 } from "./models/webhook-delivery"
 import { isBlackoutEventType } from "./models/blackout-events"
-import { redactSecrets } from "./redact"
+import { redactSecrets, scrubSecretsFrom } from "./redact"
 import {
   BLACK_MASK_CLAIM_LEASE_MS,
   BLACK_MASK_FETCH_TIMEOUT_MS,
@@ -750,6 +750,9 @@ class MarketplaceWebhooksService extends MedusaService({
     } catch (err) {
       responseBody = err instanceof Error ? err.message.slice(0, 2000) : "fetch_error"
     }
+    // What Blackstar answered is stored on the row and returned with it; an
+    // answer that echoes the request must not carry the secret back in.
+    responseBody = scrubSecretsFrom(responseBody, JSON.parse(rawBody))
 
     if (succeeded) {
       const cleared = redactedPayload(delivery.payload)

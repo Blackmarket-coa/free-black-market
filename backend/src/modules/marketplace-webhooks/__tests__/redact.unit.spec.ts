@@ -1,4 +1,4 @@
-import { REDACTED, redactSecrets } from "../redact"
+import { REDACTED, redactSecrets, scrubSecretsFrom } from "../redact"
 
 /**
  * Secrets in a stored delivery's payload. The `node.operator.approved`
@@ -65,3 +65,21 @@ describe("redactSecrets", () => {
     expect(redactSecrets("secret")).toBe("secret")
   })
 })
+
+describe("scrubSecretsFrom", () => {
+  const payload = { payload: { credential: { key_id: "bsk_abc", secret: "a".repeat(64) } } }
+
+  it("takes the payload's secret out of a response that echoes it", () => {
+    const echoed = `422 {"received":{"credential":{"key_id":"bsk_abc","secret":"${"a".repeat(64)}"}}}`
+    expect(scrubSecretsFrom(echoed, payload)).toBe(
+      `422 {"received":{"credential":{"key_id":"bsk_abc","secret":"${REDACTED}"}}}`
+    )
+  })
+
+  it("leaves any other response as it is", () => {
+    expect(scrubSecretsFrom("boom", payload)).toBe("boom")
+    expect(scrubSecretsFrom(null, payload)).toBeNull()
+    expect(scrubSecretsFrom("the secret is safe", { payload: {} })).toBe("the secret is safe")
+  })
+})
+

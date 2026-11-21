@@ -54,3 +54,34 @@ export function redactSecrets<T>(value: T): T {
   }
   return value
 }
+
+/** Every non-empty string held under a key ending in "secret" in `value`. */
+function secretValues(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const inner of value) secretValues(inner, found)
+  } else if (isPlainObject(value)) {
+    for (const [key, inner] of Object.entries(value)) {
+      if (isSecretKey(key)) {
+        if (typeof inner === "string" && inner && inner !== REDACTED) found.push(inner)
+      } else {
+        secretValues(inner, found)
+      }
+    }
+  }
+  return found
+}
+
+/**
+ * `text` with every secret that `payload` carries replaced by
+ * {@link REDACTED}. For the far end's response body, which is stored on the
+ * delivery and returned with it: a response that echoes the request it
+ * refused would otherwise put the secret straight back.
+ */
+export function scrubSecretsFrom(text: string | null, payload: unknown): string | null {
+  if (!text) return text
+  let out = text
+  for (const secret of secretValues(payload)) {
+    out = out.split(secret).join(REDACTED)
+  }
+  return out
+}
