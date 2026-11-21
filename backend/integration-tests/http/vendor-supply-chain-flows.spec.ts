@@ -21,11 +21,12 @@ jest.setTimeout(180 * 1000)
  *
  * Three sellers on purpose. `paid` and `other` are both on `internal` (every
  * plan key): the difference between them is ownership, so `other` is the actor
- * for every isolation check. `free` holds no plan key: the difference between
- * it and `paid` is the `vendor.fund_accounting` paywall, so `free` is the actor
- * for every gate check — and only for those, because a plan-gated route 402s
- * before its ownership check can ever be reached. aid-network carries no plan
- * key and must answer the free seller too.
+ * for every isolation check. `free` holds only the keys every plan carries
+ * (the production ledger, PL-1) and nothing that is sold: the difference
+ * between it and `paid` is the `vendor.fund_accounting` paywall, so `free` is
+ * the actor for every gate check — and only for those, because a plan-gated
+ * route 402s before its ownership check can ever be reached. aid-network
+ * carries no plan key and must answer the free seller too.
  *
  * All requests run inside a SINGLE test per describe on purpose — the in-app
  * server closes idle keep-alive sockets between separate it() blocks.
