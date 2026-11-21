@@ -85,10 +85,12 @@ export const VENDOR_ADDON_CATALOG: VendorAddonDefinition[] = [
      *
      * The price and the 30-day term are the ones the pack had before that
      * change, left untouched by it and confirmed by nobody: PL-1 sets no
-     * recurring price. `docs/FBM_MONETIZATION_PLAN.md` makes enhanced
-     * software a one-time purchase and calls the 30-day packs legacy; what
-     * this pack costs and how long it lasts is for that ownership migration
-     * to decide.
+     * recurring price. `docs/FBM_MONETIZATION_PLAN.md` makes software
+     * enhancements one-time purchases and leaves "legacy recurring plans and
+     * expiring rights" to "a separately verified migration";
+     * `docs/FBM_MOBILE_APP_PLAN.md` names the 30-day add-on entitlements
+     * among what that migration reconciles. What this pack costs and how long
+     * it lasts is for that migration to decide.
      *
      * A seller who bought the pack before the change keeps both entitlement
      * rows to their expiry (`shared/vendor-addons.ts`: rows are written per
