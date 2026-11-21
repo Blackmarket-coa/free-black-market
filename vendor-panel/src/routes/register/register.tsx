@@ -15,9 +15,6 @@ import { isFetchError } from "../../lib/is-fetch-error"
 import { ExistingAccountError } from "../../lib/register-or-sign-in"
 import { useState } from "react"
 
-// URL validation helper
-const urlSchema = z.string().url().optional().or(z.literal(""))
-
 const RegisterSchema = z
   .object({
     name: z.string().min(2, { message: "Name should be a string" }),
@@ -31,9 +28,6 @@ const RegisterSchema = z
         message: "Password must contain at least one number or symbol",
       }),
     confirmPassword: z.string().min(1, { message: "Please confirm your password" }),
-    website_url: urlSchema,
-    instagram: urlSchema,
-    facebook: urlSchema,
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -57,23 +51,6 @@ function getNamePlaceholder(playbook: PlaybookId | null): string {
   return playbook ? placeholders[playbook] : "Business name"
 }
 
-function getOptionalFieldsHint(playbook: PlaybookId | null): string {
-  const hints: Record<PlaybookId, string> = {
-    stall: "Add your website & social media",
-    atelier: "Add your studio's website & social media",
-    grove: "Add your project's website & social media",
-    workshop: "Add your co-op's website & social media",
-    commons: "Add your co-op's website & social media",
-    cycle: "Add your farm website & social media",
-    kitchen: "Add your kitchen website & social media",
-    harvest: "Add your garden's website & social media",
-    hub: "Add your hub's website & social media",
-    service: "Add your website & social media",
-    creator: "Add your channels & social media",
-  }
-  return playbook ? hints[playbook] : "Add website & social links"
-}
-
 export const Register = () => {
   const [step, setStep] = useState<"quiz" | "details">("quiz")
   const [selectedPlaybook, setSelectedPlaybook] = useState<PlaybookId | null>(null)
@@ -82,7 +59,6 @@ export const Register = () => {
   const [resources, setResources] = useState<ResourceKey[]>([])
   const [nodeOperatorOptIn, setNodeOperatorOptIn] = useState(false)
   const [success, setSuccess] = useState(false)
-  const [showOptionalFields, setShowOptionalFields] = useState(false)
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const emailFromUrl = searchParams.get("email") || ""
@@ -94,9 +70,6 @@ export const Register = () => {
       email: emailFromUrl,
       password: "",
       confirmPassword: "",
-      website_url: "",
-      instagram: "",
-      facebook: "",
     },
   })
 
@@ -182,8 +155,10 @@ export const Register = () => {
                   You've registered with the <strong>{playbookLabel}</strong> playbook.{" "}
                 </>
               ) : null}
-              You may need to wait for admin authorization before logging in. A
-              confirmation email will be sent shortly.
+              An organizer reviews every new store, so there is nothing more
+              for you to do now. You do not need to open a link from an email.
+              Once your store is approved, sign in here with the email and
+              password you just chose.
             </Text>
             <Link to="/login">
               <Button className="mt-8">Back to login page</Button>
@@ -358,56 +333,13 @@ export const Register = () => {
                   </div>
                 </div>
 
-                <div className="border-ui-border-base mt-2 border-t pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowOptionalFields(!showOptionalFields)}
-                    className="text-ui-fg-interactive mx-auto flex items-center gap-1 text-sm font-medium hover:underline"
-                  >
-                    {showOptionalFields
-                      ? "Hide"
-                      : getOptionalFieldsHint(selectedPlaybook)}{" "}
-                    (optional)
-                    <svg
-                      className={`h-4 w-4 transition-transform ${showOptionalFields ? "rotate-180" : ""}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </button>
-                  {showOptionalFields &&
-                    ["website_url", "instagram", "facebook"].map((field) => (
-                      <Form.Field
-                        key={field}
-                        control={form.control}
-                        name={field as any}
-                        render={({ field: f }) => (
-                          <Form.Item>
-                            <Form.Label className="text-ui-fg-base text-sm font-medium">
-                              {field.replace("_", " ").toUpperCase()}
-                            </Form.Label>
-                            <Form.Control>
-                              <Input
-                                {...f}
-                                className="bg-ui-bg-field-component"
-                                placeholder={field.replace("_", " ").toUpperCase()}
-                              />
-                            </Form.Control>
-                          </Form.Item>
-                        )}
-                      />
-                    ))}
-                  <Text size="xsmall" className="text-ui-fg-muted text-center">
-                    You can add more links after registration
-                  </Text>
-                </div>
+                {/* Website and social links were asked for here and never
+                    sent: the application the backend accepts has no field for
+                    them (SD-151 (5)). They are edited on the store itself. */}
+                <Text size="xsmall" className="text-ui-fg-muted text-center">
+                  You can add your website and social links in Settings, Store
+                  once your store is approved.
+                </Text>
 
                 {validationError && (
                   <Hint className="inline-flex" variant="error">
