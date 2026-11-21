@@ -1,5 +1,7 @@
 # FBM iOS and Android app plan
 
+**Financial companion (November 21, 2026):** [FBM monetization](FBM_MONETIZATION_PLAN.md) and [BMC ecosystem financial analysis](BMC_ECOSYSTEM_FINANCIAL_ANALYSIS.md) distinguish first-party product proceeds, the single fixed 3% fee, creator earnings and conditional 2027 forecasts. No prices, billing or availability are changed.
+
 **Updated:** 2026-11-21
 
 **Status:** Product requirements and proposed delivery plan. The full unified portal and virtual marketplace are not implemented at the reviewed source revision. This document changes no application code, billing, permissions, flags or deployment.
@@ -164,3 +166,4 @@ Before release: verify signing/versioning, app links, push on real iOS/Android d
 ## Outstanding design choices
 
 Exact visual style/camera, avatar movement, five-destination navigation, pilot composition, haggle-panel layout and workshop layout remain open. Use the candidate structure above for design review. Start with working domain/capability contracts so changing the presentation does not create duplicate business systems.
+
