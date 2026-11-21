@@ -105,6 +105,12 @@ export const createFakeStore = (
       first_published_listing_id: null as string | null,
     },
     recalculations: 0,
+    uploads: 0,
+    /** `GET /vendor/playbook/assign`: a Stall seller unless a spec says otherwise. */
+    assignment: { recipe_id: "stall", metadata: { roles: ["stall"] } } as Record<
+      string,
+      unknown
+    > | null,
   }
 
   const zonesOf = (set: FulfillmentSet) =>
@@ -421,8 +427,26 @@ export const createFakeStore = (
     return json(200, { created, updated: b.update ?? [], deleted: [] })
   })
 
+  backend.on("GET", "/vendor/playbook/assign", () =>
+    json(200, { playbook_assignment: db.assignment })
+  )
+  backend.on("GET", "/vendor/cottage-food/onboarding", () =>
+    json(200, { needs_setup: true, profile: null, checklist: [] })
+  )
+  // The file module's answer: where each uploaded file can be fetched.
+  backend.on("POST", "/vendor/uploads", ({ body }) => {
+    const files = body instanceof FormData ? body.getAll("files") : []
+    db.uploads += files.length
+    return json(200, {
+      files: files.map((file, index) => ({
+        id: id("file"),
+        url: `https://files.fbm.test/${index}-${(file as File).name}`,
+      })),
+    })
+  })
+
   backend.on("GET", "/vendor/onboarding", () =>
-    json(200, { state: db.onboarding, archetype_code: null })
+    json(200, { state: { ...db.onboarding }, archetype_code: null })
   )
   backend.on("PATCH", "/vendor/onboarding", ({ body }) => {
     const b = body as { step?: string; selling_type?: string }

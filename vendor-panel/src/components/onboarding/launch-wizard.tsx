@@ -13,6 +13,7 @@ import {
   clx,
 } from "@medusajs/ui"
 import { ArrowLeft, ArrowRight, CheckCircleSolid } from "@medusajs/icons"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { backendUrl, getAuthToken } from "../../lib/client"
 import { PlaybookPicker } from "../playbook/playbook-picker"
 import { PLAYBOOK_DISPLAY_NAMES } from "../playbook/playbook-picker"
@@ -22,18 +23,31 @@ import {
   usePlaybookAssignment,
   useAssignPlaybook,
 } from "../../hooks/api/playbook"
+import { useIsBusy } from "../../hooks/api/selling-setup"
+import {
+  DeliveryStep,
+  ListingStep,
+  PublishedScreen,
+  PublishStep,
+  readWizardProduct,
+  writeWizardProduct,
+  type SellingType,
+  type WizardProduct,
+} from "./launch-wizard-steps"
 
 /**
  * Sprint A (FEATURE_BUILD_PLAN.md A1-A10) launch-first onboarding wizard.
  * Drives `tenancy.OnboardingState.wizard_step` through:
  *   step_1 (selling type) → step_2 (listing) → step_3 (delivery) → step_4 (publish)
  *
- * Each step autosaves to /vendor/onboarding (A9). The publish step posts
- * to /vendor/onboarding/publish, flipping `wizard_step` to `published`
- * and emitting `vendor.onboarding.first_listing_published`.
+ * Each step autosaves to /vendor/onboarding (A9), and each does what it
+ * says (SD-151 (4), launch-wizard-steps.tsx): the listing step creates a
+ * draft product, the delivery step sets up pickup or shipping, and the
+ * publish step publishes that product and posts it to
+ * /vendor/onboarding/publish, which flips `wizard_step` to `published` and
+ * emits `vendor.onboarding.first_listing_published`.
  */
 
-type SellingType = "physical" | "digital" | "service" | "event_class" | "reclaimed"
 type WizardStep =
   | "signup"
   | "step_1"
@@ -87,9 +101,29 @@ async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.text().catch(() => "")
-    throw new Error(`${res.status}: ${body || res.statusText}`)
+    let message = ""
+    try {
+      message = String(JSON.parse(body)?.message ?? "")
+    } catch {
+      // Not JSON: the text itself is all there is.
+    }
+    throw new Error(message || `${res.status}: ${body || res.statusText}`)
   }
   return (await res.json()) as T
+}
+
+const STATE_KEY = ["launch-wizard", "state"] as const
+const COTTAGE_KEY = ["launch-wizard", "cottage-food"] as const
+const ADVANCE_KEY = ["launch-wizard", "advance"] as const
+
+type CottageFoodOnboarding = {
+  needs_setup: boolean
+  profile: {
+    operation_type?: "SHELF_STABLE" | "HOME_KITCHEN" | "BOTH"
+    jurisdiction_label?: string | null
+    permit_number?: string | null
+    label_disclosure_text?: string | null
+  } | null
 }
 
 /**
@@ -102,6 +136,11 @@ async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
  * it to be total and a test can require its targets to be real, and the
  * onboarding GET response returns the resolved `archetype_code` alongside the
  * state. What is left here is copy. docs/TRANSMUTATION_STRATEGY.md §4.1.
+ *
+ * The copy says only what happens (SD-151 (4)). It used to promise a default
+ * shipping option, a download link sent on purchase, a contact link and a
+ * generated ticket; the wizard's listing is an ordinary product and none of
+ * those is made for it.
  */
 export const SELLING_TYPE_DEFAULTS: Record<
   SellingType,
@@ -114,42 +153,75 @@ export const SELLING_TYPE_DEFAULTS: Record<
 > = {
   physical: {
     label: "Physical goods",
-    delivery_label: "Manual shipping (you ship from your location)",
-    delivery_hint: "We'll set up a default manual shipping option. Add carrier integrations later.",
+    delivery_label: "Pickup, shipping, or both",
+    delivery_hint:
+      "You say where your goods are and how buyers get them, and hand over or ship each order yourself.",
     advanced_visible_default: false,
   },
   digital: {
     label: "Digital downloads",
-    delivery_label: "Instant delivery (no shipping)",
-    delivery_hint: "Customers receive a download link immediately after purchase.",
+    delivery_label: "Nothing is shipped",
+    delivery_hint:
+      "After an order you send the buyer their download yourself: this listing does not send files.",
     advanced_visible_default: false,
   },
   service: {
     label: "Service or coaching",
-    delivery_label: "Scheduled (you schedule with the customer)",
-    delivery_hint: "After purchase, customers receive a contact link to schedule. No shipping.",
+    delivery_label: "Arranged with the buyer",
+    delivery_hint:
+      "After an order you contact the buyer to schedule: this listing does not book a time.",
     advanced_visible_default: false,
   },
   event_class: {
     label: "Event or class",
-    delivery_label: "Ticket / access pass",
-    delivery_hint: "We'll generate a ticket or access pass per purchase. No shipping.",
+    delivery_label: "You send the details",
+    delivery_hint:
+      "After an order you send the buyer the place and time yourself: this listing does not issue a ticket.",
     advanced_visible_default: false,
   },
   reclaimed: {
     label: "Repaired or salvaged goods",
-    delivery_label: "Manual shipping (you ship from your location)",
+    delivery_label: "Pickup, shipping, or both",
     delivery_hint:
-      "Condition-graded listings. Each item records its grade — Like New, Good, Fair or Parts Only — plus repair history where you have it.",
+      "Condition-graded listings: state each item's grade (Like New, Good, Fair or Parts Only) and its repair history in the description.",
     advanced_visible_default: false,
   },
 }
 
 export function LaunchWizard() {
-  const [state, setState] = useState<OnboardingState | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [advanced, setAdvanced] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const client = useQueryClient()
+
+  // The seller's onboarding state. Read with the query client, so that each
+  // step's answer from the backend is what the next render shows.
+  const {
+    data: onboarding,
+    isPending: loading,
+    isError: loadFailed,
+    error: loadError,
+    refetch: reload,
+  } = useQuery({
+    queryKey: STATE_KEY,
+    queryFn: () =>
+      authedFetch<{ state: OnboardingState }>("/vendor/onboarding"),
+    enabled: Boolean(getAuthToken()),
+    retry: false,
+  })
+  const state = onboarding?.state ?? null
+  const setState = (next: OnboardingState) =>
+    client.setQueryData(STATE_KEY, { ...onboarding, state: next })
+
+  // A saved cottage-food profile *is* the home-kitchen flag — no extra
+  // column on onboarding state, and the wizard stays correct if the seller
+  // set it up from the dashboard instead of here. Cottage food is opt-in and
+  // entirely optional; a failure to read it must not stop someone from
+  // onboarding.
+  const { data: cottage } = useQuery({
+    queryKey: COTTAGE_KEY,
+    queryFn: () =>
+      authedFetch<CottageFoodOnboarding>("/vendor/cottage-food/onboarding"),
+    enabled: Boolean(getAuthToken()),
+    retry: false,
+  })
 
   // Playbook gate — picker shows first when seller has no assignment.
   const {
@@ -162,11 +234,16 @@ export function LaunchWizard() {
   const [editingPlaybook, setEditingPlaybook] = useState(false)
 
   // Step 1
-  const [sellingType, setSellingType] = useState<SellingType | "">("")
+  const [sellingTypeChoice, setSellingType] = useState<SellingType | "">("")
+  const sellingType: SellingType | "" =
+    sellingTypeChoice || state?.selling_type || ""
 
   // Step 1 — orthogonal to selling type: food is physical goods, but *where
   // it's made* is what changes the permits, labels, and limits that apply.
-  const [homeKitchen, setHomeKitchen] = useState(false)
+  const [homeKitchenChoice, setHomeKitchenChoice] = useState<boolean | null>(
+    null
+  )
+  const homeKitchen = homeKitchenChoice ?? cottage?.needs_setup === false
 
   // Cottage food step
   const [cottageOperation, setCottageOperation] =
@@ -174,63 +251,31 @@ export function LaunchWizard() {
   const [cottageJurisdiction, setCottageJurisdiction] = useState("")
   const [cottagePermit, setCottagePermit] = useState("")
   const [cottageDisclosure, setCottageDisclosure] = useState("")
-
-  // Step 2
-  const [title, setTitle] = useState("")
-  const [price, setPrice] = useState("")
-  const [description, setDescription] = useState("")
-  const [imageUrl, setImageUrl] = useState("")
-  const [sku, setSku] = useState("")
-
-  // Step 4
-  const [publishedListingId, setPublishedListingId] = useState<string | null>(null)
-
-  const loadState = async () => {
-    setLoading(true)
-    try {
-      const { state: s } = await authedFetch<{ state: OnboardingState }>(
-        "/vendor/onboarding"
-      )
-      setState(s)
-      if (s.selling_type) setSellingType(s.selling_type)
-      if (s.first_published_listing_id) setPublishedListingId(s.first_published_listing_id)
-
-      // A saved cottage-food profile *is* the home-kitchen flag — no extra
-      // column on onboarding state, and the wizard stays correct if the seller
-      // set it up from the dashboard instead of here.
-      try {
-        const cf = await authedFetch<{
-          needs_setup: boolean
-          profile: {
-            operation_type?: "SHELF_STABLE" | "HOME_KITCHEN" | "BOTH"
-            jurisdiction_label?: string | null
-            permit_number?: string | null
-            label_disclosure_text?: string | null
-          } | null
-        }>("/vendor/cottage-food/onboarding")
-        if (!cf.needs_setup) {
-          setHomeKitchen(true)
-          if (cf.profile?.operation_type) setCottageOperation(cf.profile.operation_type)
-          setCottageJurisdiction(cf.profile?.jurisdiction_label ?? "")
-          setCottagePermit(cf.profile?.permit_number ?? "")
-          setCottageDisclosure(cf.profile?.label_disclosure_text ?? "")
-        }
-      } catch {
-        // Cottage food is opt-in and entirely optional; a failure to read it
-        // must not stop someone from onboarding.
-      }
-    } catch (err) {
-      toast.error("Failed to load onboarding state", {
-        description: (err as Error).message,
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    void loadState()
-  }, [])
+    if (!cottage || cottage.needs_setup) return
+    if (cottage.profile?.operation_type) {
+      setCottageOperation(cottage.profile.operation_type)
+    }
+    setCottageJurisdiction(cottage.profile?.jurisdiction_label ?? "")
+    setCottagePermit(cottage.profile?.permit_number ?? "")
+    setCottageDisclosure(cottage.profile?.label_disclosure_text ?? "")
+  }, [cottage])
+
+  // The product the listing step created: remembered in this browser under
+  // the onboarding state, so a reload between steps keeps it.
+  const [productOverride, setProductOverride] = useState<
+    WizardProduct | null | undefined
+  >(undefined)
+  const wizardProduct =
+    productOverride !== undefined
+      ? productOverride
+      : state
+        ? readWizardProduct(state.id)
+        : null
+  const rememberProduct = (product: WizardProduct | null) => {
+    if (state) writeWizardProduct(state.id, product)
+    setProductOverride(product)
+  }
 
   const steps = useMemo(() => stepsFor(homeKitchen), [homeKitchen])
 
@@ -239,30 +284,35 @@ export function LaunchWizard() {
     return Math.max(0, steps.findIndex((s) => s.id === state.wizard_step))
   }, [state, steps])
 
+  const advanceStep = useMutation({
+    mutationKey: ADVANCE_KEY,
+    mutationFn: (body: Record<string, unknown>) =>
+      authedFetch<{ state: OnboardingState }>("/vendor/onboarding", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: ({ state: s }) => setState(s),
+  })
+  const { pending: submitting, isBusyNow } = useIsBusy(ADVANCE_KEY)
+
+  /** Record the step reached. Resolves false, with a toast, when it was not saved. */
   const advance = async (
     step: WizardStep,
     overrides: { selling_type?: SellingType } = {}
   ) => {
-    setSubmitting(true)
+    const body: Record<string, unknown> = { step }
+    if (overrides.selling_type !== undefined) body.selling_type = overrides.selling_type
     try {
-      const body: Record<string, unknown> = { step }
-      if (overrides.selling_type !== undefined) body.selling_type = overrides.selling_type
-      const { state: s } = await authedFetch<{ state: OnboardingState }>(
-        "/vendor/onboarding",
-        {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        }
-      )
-      setState(s)
+      await advanceStep.mutateAsync(body)
+      return true
     } catch (err) {
       toast.error("Could not save step", { description: (err as Error).message })
-    } finally {
-      setSubmitting(false)
+      return false
     }
   }
 
   const completeStep1 = async () => {
+    if (isBusyNow()) return
     if (!sellingType) {
       toast.error("Pick what you're selling")
       return
@@ -283,27 +333,13 @@ export function LaunchWizard() {
     await advance("step_2", { selling_type: sellingType as SellingType })
   }
 
-  const completeStep2 = async () => {
-    if (!title || !price) {
-      toast.error("Title and price are required")
-      return
-    }
-    // Note: actual product creation lives in existing product create flow.
-    // Here we just record progress; vendors finish the listing in the next route.
-    await advance("step_3")
-  }
-
-  const completeStep3 = async () => {
-    await advance(homeKitchen ? "cottage_food" : "step_4")
-  }
-
   /**
    * Save whatever the seller filled in and move on. Nothing is required — a
    * home cook who doesn't have their permit number to hand should be able to
    * finish onboarding and come back to it, so this always advances.
    */
   const completeCottageFood = async () => {
-    setSubmitting(true)
+    if (isBusyNow()) return
     try {
       await authedFetch("/vendor/cottage-food/onboarding", {
         method: "POST",
@@ -318,34 +354,12 @@ export function LaunchWizard() {
       toast.error("Couldn't save that — you can add it later from Cottage food", {
         description: (err as Error).message,
       })
-    } finally {
-      setSubmitting(false)
     }
     await advance("step_4")
   }
 
-  const completeStep4 = async (listingId: string) => {
-    setSubmitting(true)
-    try {
-      const { state: s } = await authedFetch<{ state: OnboardingState }>(
-        "/vendor/onboarding/publish",
-        {
-          method: "POST",
-          body: JSON.stringify({ listing_id: listingId }),
-        }
-      )
-      setState(s)
-      setPublishedListingId(listingId)
-      toast.success("Listing published!")
-    } catch (err) {
-      toast.error("Publish failed", { description: (err as Error).message })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const back = async () => {
-    if (!state) return
+    if (!state || isBusyNow()) return
     const idx = currentIndex
     if (idx <= 0) return
     await advance(steps[idx - 1].id)
@@ -362,6 +376,25 @@ export function LaunchWizard() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <Text>Loading…</Text>
       </div>
+    )
+  }
+
+  if (loadFailed || !state) {
+    return (
+      <Container className="py-8 max-w-2xl mx-auto">
+        <Heading level="h1">Your onboarding could not be loaded</Heading>
+        <Text className="text-ui-fg-subtle mt-2">
+          {(loadError as Error | null)?.message ?? "Please try again."}
+        </Text>
+        <div className="flex gap-2 mt-6">
+          <Button variant="secondary" onClick={() => reload()}>
+            Try again
+          </Button>
+          <Button onClick={() => (window.location.href = "/dashboard")}>
+            Go to dashboard
+          </Button>
+        </div>
+      </Container>
     )
   }
 
@@ -445,28 +478,13 @@ export function LaunchWizard() {
   if (state?.wizard_step === "published") {
     return (
       <Container className="py-8 max-w-2xl mx-auto">
-        <div className="text-center">
-          <CheckCircleSolid className="w-12 h-12 text-ui-tag-green-icon mx-auto mb-3" />
-          <Heading level="h1">You're live!</Heading>
-          <Text className="text-ui-fg-subtle mt-2">
-            Your first listing is published. Time to share it.
-          </Text>
-          {publishedListingId ? (
-            <Text className="font-mono text-xs mt-2">{publishedListingId}</Text>
-          ) : null}
-          <div className="flex gap-2 justify-center mt-6">
-            <Button variant="secondary" onClick={() => (window.location.href = "/dashboard")}>
-              Go to dashboard
-            </Button>
-            <Button onClick={() => (window.location.href = "/products")}>Manage products</Button>
-          </div>
-        </div>
+        <PublishedScreen />
       </Container>
     )
   }
 
   const stepId = state?.wizard_step ?? "step_1"
-  const sellingTypeMeta = sellingType ? SELLING_TYPE_DEFAULTS[sellingType as SellingType] : null
+  const chosenType = (sellingType || null) as SellingType | null
 
   return (
     <div className="min-h-screen bg-ui-bg-base">
@@ -550,7 +568,7 @@ export function LaunchWizard() {
                   type="checkbox"
                   className="mt-1"
                   checked={homeKitchen}
-                  onChange={(e) => setHomeKitchen(e.target.checked)}
+                  onChange={(e) => setHomeKitchenChoice(e.target.checked)}
                 />
                 <span>
                   <Text className="font-medium">I make it in my home kitchen</Text>
@@ -565,7 +583,11 @@ export function LaunchWizard() {
             ) : null}
             {reassurance}
             <div className="flex justify-end mt-6">
-              <Button onClick={completeStep1} disabled={!sellingType || submitting}>
+              <Button
+                onClick={completeStep1}
+                disabled={!sellingType || submitting}
+                isLoading={submitting}
+              >
                 Continue
                 <ArrowRight className="ml-2" />
               </Button>
@@ -574,94 +596,33 @@ export function LaunchWizard() {
         ) : null}
 
         {stepId === "step_2" ? (
-          <div>
-            <Heading level="h1">Your first listing</Heading>
-            <Text className="text-ui-fg-subtle mt-1">
-              Just the essentials — you can polish later.
-            </Text>
-            <div className="grid grid-cols-1 gap-3 mt-6">
-              <div>
-                <Label htmlFor="lw-title">Title</Label>
-                <Input id="lw-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="lw-price">Price (USD)</Label>
-                <Input
-                  id="lw-price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="lw-desc">Description</Label>
-                <Textarea
-                  id="lw-desc"
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="lw-img">Image URL</Label>
-                <Input id="lw-img" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="text-sm text-ui-fg-interactive mt-4"
-              onClick={() => setAdvanced((v) => !v)}
-            >
-              {advanced ? "Hide" : "Show"} advanced fields
-            </button>
-            {advanced ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                <div>
-                  <Label htmlFor="lw-sku">SKU</Label>
-                  <Input id="lw-sku" value={sku} onChange={(e) => setSku(e.target.value)} />
-                </div>
-              </div>
-            ) : null}
-
-            {reassurance}
-            <div className="flex justify-between mt-6">
-              <Button variant="secondary" onClick={back} disabled={submitting}>
-                <ArrowLeft className="mr-2" />
-                Back
-              </Button>
-              <Button onClick={completeStep2} disabled={submitting}>
-                Continue
-                <ArrowRight className="ml-2" />
-              </Button>
-            </div>
-          </div>
+          <ListingStep
+            sellingType={chosenType}
+            existing={wizardProduct}
+            onCreated={async (product) => {
+              // Remembered before the step is recorded: the product exists
+              // whether or not the next request answers.
+              rememberProduct(product)
+              await advance("step_3")
+            }}
+            onContinue={async () => {
+              await advance("step_3")
+            }}
+            onStartOver={() => rememberProduct(null)}
+            onBack={back}
+          />
         ) : null}
 
         {stepId === "step_3" ? (
-          <div>
-            <Heading level="h1">Delivery</Heading>
-            <Text className="text-ui-fg-subtle mt-1">
-              We picked sensible defaults for {sellingTypeMeta?.label.toLowerCase() ?? "your selling type"}.
-            </Text>
-            <div className="bg-ui-bg-subtle rounded-md p-4 mt-4">
-              <Text className="font-medium">{sellingTypeMeta?.delivery_label}</Text>
-              <Text className="text-ui-fg-subtle text-sm mt-1">{sellingTypeMeta?.delivery_hint}</Text>
-            </div>
-            {reassurance}
-            <div className="flex justify-between mt-6">
-              <Button variant="secondary" onClick={back} disabled={submitting}>
-                <ArrowLeft className="mr-2" />
-                Back
-              </Button>
-              <Button onClick={completeStep3} disabled={submitting}>
-                Continue
-                <ArrowRight className="ml-2" />
-              </Button>
-            </div>
-          </div>
+          <DeliveryStep
+            sellingType={chosenType}
+            product={wizardProduct}
+            onStockRecorded={rememberProduct}
+            onContinue={async () => {
+              await advance(homeKitchen ? "cottage_food" : "step_4")
+            }}
+            onBack={back}
+          />
         ) : null}
 
         {stepId === "cottage_food" ? (
@@ -750,37 +711,13 @@ export function LaunchWizard() {
         ) : null}
 
         {stepId === "step_4" ? (
-          <div>
-            <Heading level="h1">Publish</Heading>
-            <Text className="text-ui-fg-subtle mt-1">
-              Paste an existing draft listing's id to mark it as your first published listing,
-              or create one in the Products page and come back.
-            </Text>
-            <div className="grid grid-cols-1 gap-3 mt-6">
-              <div>
-                <Label htmlFor="lw-listing">Listing ID</Label>
-                <Input
-                  id="lw-listing"
-                  value={publishedListingId ?? ""}
-                  onChange={(e) => setPublishedListingId(e.target.value)}
-                  placeholder="prod_..."
-                />
-              </div>
-            </div>
-            {reassurance}
-            <div className="flex justify-between mt-6">
-              <Button variant="secondary" onClick={back} disabled={submitting}>
-                <ArrowLeft className="mr-2" />
-                Back
-              </Button>
-              <Button
-                onClick={() => publishedListingId && void completeStep4(publishedListingId)}
-                disabled={!publishedListingId || submitting}
-              >
-                Publish & celebrate
-              </Button>
-            </div>
-          </div>
+          <PublishStep
+            product={wizardProduct}
+            onPublished={(published) => setState(published as OnboardingState)}
+            onMakeListing={() => void advance("step_2")}
+            onForget={() => rememberProduct(null)}
+            onBack={back}
+          />
         ) : null}
       </Container>
     </div>
