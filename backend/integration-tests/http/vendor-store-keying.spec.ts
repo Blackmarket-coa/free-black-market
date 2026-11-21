@@ -53,7 +53,7 @@ jest.setTimeout(300 * 1000)
 
 medusaIntegrationTestRunner({
   inApp: true,
-  env: { FF_FUND_ACCOUNTING_V1: "true", FF_POS_V1: "true" },
+  env: { FF_FUND_ACCOUNTING_V1: "true", FF_POS_V1: "true", FF_INVOICING_V1: "true" },
   testSuite: ({ api, getContainer }) => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const container = () => getContainer() as any
@@ -417,8 +417,16 @@ medusaIntegrationTestRunner({
       })
     })
 
-    describe("pos/checkout (Posture A hold)", () => {
-      it("refuses every vendor-to-vendor payment, even from a member-owned earnings account with a balance, and moves nothing", async () => {
+    describe("vendor-to-vendor payments (Posture A hold)", () => {
+      const REFUSAL = {
+        message:
+          "Vendor-to-vendor payments are not available. Record the payment outside FBM or invoice the other vendor instead.",
+        type: "not_allowed",
+      }
+      const balanceOf = async (id: string) =>
+        Number((await pg().raw(`SELECT available_balance::text AS v FROM hawala_ledger_account WHERE id = ?`, [id])).rows[0].v)
+
+      it("pos/checkout refuses every one, even from a member-owned earnings account with a balance, and moves nothing", async () => {
         const a = await team(`Till Farm ${uid()}`)
         const b = await team(`Payee Farm ${uid()}`)
         const hawala = container().resolve(HAWALA_LEDGER_MODULE)
@@ -428,24 +436,47 @@ medusaIntegrationTestRunner({
         const memberAccount = await hawala.getOrCreateSellerEarnings(a.member.memberId, "USD")
         await pg().raw(`UPDATE hawala_ledger_account SET balance = 40, available_balance = 40 WHERE id = ?`, [memberAccount.id])
         const payeeAccount = await hawala.getOrCreateSellerEarnings(b.store.id, "USD")
-        const balanceOf = async (id: string) =>
-          (await pg().raw(`SELECT available_balance::text AS v FROM hawala_ledger_account WHERE id = ?`, [id])).rows[0].v
 
         for (const [who, token] of [["member", a.member.token], ["owner", a.owner.token]] as const) {
           const res = await call(api.post("/vendor/pos/checkout", { payee_vendor_id: b.store.id, amount: 25, payment_method: "cash" }, bearer(token)))
-          expect({ who, status: res.status, body: res.data }).toEqual({
-            who,
-            status: 403,
-            body: {
-              message:
-                "Vendor-to-vendor payments are not available. Record the payment outside FBM or invoice the other vendor instead.",
-              type: "not_allowed",
-            },
-          })
+          expect({ who, status: res.status, body: res.data }).toEqual({ who, status: 403, body: REFUSAL })
         }
-        expect(Number(await balanceOf(memberAccount.id))).toBe(40)
-        expect(Number(await balanceOf(payeeAccount.id))).toBe(0)
+        expect(await balanceOf(memberAccount.id)).toBe(40)
+        expect(await balanceOf(payeeAccount.id)).toBe(0)
         const { rows: payments } = await pg().raw(`SELECT id FROM hawala_vendor_payment WHERE payee_vendor_id = ?`, [b.store.id])
+        expect(payments).toEqual([])
+      })
+
+      it("hawala/payments refuses a store paying another store from its own earnings, as a LOAN or as GOODS, with its gates open, and moves nothing", async () => {
+        const a = await team(`Lender Farm ${uid()}`)
+        const b = await team(`Borrower Farm ${uid()}`)
+        // The route sits behind FF_INVOICING_V1 (env above) and the
+        // vendor.invoicing plan feature, which the internal plan team() puts
+        // every store on carries. Both are open, so a 403 can only be the
+        // handler's; the history GET behind the same gates answers 200.
+        const hawala = container().resolve(HAWALA_LEDGER_MODULE)
+        // This route pays from the store's own earnings (resolveVendorSellerId).
+        // The balance is a fixture, as an order's payment would leave it.
+        const payerAccount = await hawala.getOrCreateSellerEarnings(a.store.id, "USD")
+        await pg().raw(`UPDATE hawala_ledger_account SET balance = 40, available_balance = 40 WHERE id = ?`, [payerAccount.id])
+        const payeeAccount = await hawala.getOrCreateSellerEarnings(b.store.id, "USD")
+
+        const history = await call(api.get("/vendor/hawala/payments", bearer(a.member.token)))
+        expect({ status: history.status, body: history.data }).toEqual({ status: 200, body: { sent: [], received: [] } })
+
+        for (const [who, token, payment_type] of [
+          ["member", a.member.token, "LOAN"],
+          ["owner", a.owner.token, "GOODS"],
+        ] as const) {
+          const res = await call(api.post("/vendor/hawala/payments", { payee_vendor_id: b.store.id, amount: 5, payment_type }, bearer(token)))
+          expect({ who, status: res.status, body: res.data }).toEqual({ who, status: 403, body: REFUSAL })
+        }
+        expect(await balanceOf(payerAccount.id)).toBe(40)
+        expect(await balanceOf(payeeAccount.id)).toBe(0)
+        const { rows: payments } = await pg().raw(
+          `SELECT id FROM hawala_vendor_payment WHERE payer_vendor_id IN (?, ?) OR payee_vendor_id = ?`,
+          [a.store.id, a.member.memberId, b.store.id]
+        )
         expect(payments).toEqual([])
       })
     })
@@ -554,8 +585,9 @@ medusaIntegrationTestRunner({
           .createDemandPosts([{ creator_id: `cus_${uid()}`, title: "Bulk oats", description: "Oats", target_quantity: 100, min_quantity: 10, selected_supplier_id: active }])
 
         // Proposals to that pool: the one it selected (the active member's)
-        // stays with the pool's member id, so the pair stays consistent until
-        // the decision; the leaver's, which no pool selected, moves.
+        // keeps the pool's member id, so the two name the same supplier until
+        // the decision; the leaver's, which no pool selected, moves. What the
+        // hold leaves the store unable to do is pinned after apply.
         const proposals = container().resolve(DEMAND_POOL_MODULE)
         const [selectedProposal] = await proposals.createSupplierProposals([
           { demand_post_id: pool.id, supplier_id: active, unit_price: 3, min_quantity: 10, submitted_at: new Date() },
@@ -661,19 +693,48 @@ medusaIntegrationTestRunner({
         expect(lines.some((l) => l.startsWith("HELD member-owned SELLER_EARNINGS accounts:"))).toBe(true)
 
         // A writer holding a table: apply waits at most the lock timeout, rolls
-        // that table back, reports it, and goes on with the rest.
+        // that table back, reports it, and goes on with the rest. A table held
+        // outright (ACCESS EXCLUSIVE, as a migration holds one) cannot even be
+        // read again to report it: that re-read is bounded by the same
+        // timeouts instead of waiting for the holder, and the table's children
+        // keep every row that names a parent of it.
         const holder = await pg().transaction()
         await holder.raw(`LOCK TABLE "vendor_customer_tier" IN ROW EXCLUSIVE MODE`)
+        await holder.raw(`LOCK TABLE "cottage_food_profile" IN ACCESS EXCLUSIVE MODE`)
+        // Were that re-read unbounded, the run would wait on the holder for
+        // good and this test with it: the holder lets go after a minute, so
+        // the assertions below fail instead.
+        let held = true
+        const release = async () => {
+          if (held) {
+            held = false
+            await holder.rollback()
+          }
+        }
+        const letGo = setTimeout(release, 60_000)
         let blocked: RekeySummary
         try {
-          blocked = await rekeyMemberKeyedStoreData(container(), { apply: true, timeouts: { lockTimeoutMs: 300 } })
+          blocked = await rekeyMemberKeyedStoreData(container(), { apply: true, timeouts: { lockTimeoutMs: 300 }, log: (l) => lines.push(l) })
         } finally {
-          await holder.rollback()
+          clearTimeout(letGo)
+          await release()
         }
         const tierBlocked = reportOf(blocked, "vendor_customer_tier")
         expect({ status: tierBlocked.status, rekeyed: tierBlocked.rekey.length }).toEqual({ status: "failed", rekeyed: 0 })
         expect(tierBlocked.error).toMatch(/lock timeout/)
         expect((await tiers.listVendorCustomerTiers({ id: activeTier.id }))[0].seller_id).toBe(active)
+        const profilesBlocked = reportOf(blocked, "cottage_food_profile")
+        expect({ status: profilesBlocked.status, unread: profilesBlocked.unread, rekeyed: profilesBlocked.rekey.length }).toEqual({
+          status: "failed",
+          unread: true,
+          rekeyed: 0,
+        })
+        expect(profilesBlocked.error).toMatch(/lock timeout/)
+        expect(lines.some((l) => l.startsWith("cottage_food_profile.seller_id") && l.includes("could not be read again"))).toBe(true)
+        const salesBlocked = reportOf(blocked, "cottage_food_sales_entry")
+        expect(ids(salesBlocked.keptWithParent)).toContain(profiledSale.id)
+        expect(ids(salesBlocked.rekey)).not.toContain(profiledSale.id)
+        expect((await cottage.listCottageFoodSalesEntries({ id: profiledSale.id }))[0].seller_id).toBe(owner)
         expect(reportOf(blocked, "enterprise_fee").status).toBe("applied")
         expect((await cycles.retrieveEnterpriseFee(leaverFee.id)).seller_id).toBe(s.store.id)
 
@@ -715,6 +776,24 @@ medusaIntegrationTestRunner({
         expect(fundsSeen.data.funds.map((f: { id: string }) => f.id)).toContain(otherFund.id)
         const cyclesSeen = await api.get("/vendor/order-cycles", bearer(s.owner.token))
         expect(cyclesSeen.data.order_cycles.map((c: { id: string }) => c.id)).toContain(leaverCycle.id)
+
+        // What the hold on the pool leaves, as the review measured: the
+        // proposal it selected keeps the member id, so it is not among the
+        // store's proposals for the pool; and the pool still names the member,
+        // so the store is refused when it links the pool to an order cycle it
+        // coordinates (linkOrderCycle compares the store id with the pool's).
+        const poolProposals = await call(api.get(`/vendor/collective/demand-pools/${pool.id}/proposals`, bearer(s.member.token)))
+        expect({ status: poolProposals.status, ids: poolProposals.data?.proposals?.map((p: { id: string }) => p.id) }).toEqual({
+          status: 200,
+          ids: [openProposal.id],
+        })
+        const poolLinked = await call(
+          api.post(`/vendor/collective/demand-pools/${pool.id}/order-cycle`, { order_cycle_id: leaverCycle.id }, bearer(s.member.token))
+        )
+        expect({ status: poolLinked.status, error: poolLinked.data?.error }).toEqual({
+          status: 403,
+          error: "Only the selected supplier can link an order cycle",
+        })
 
         // A second run finds nothing left to rekey; what it leaves alone is still listed.
         const again = await rekeyMemberKeyedStoreData(container(), { apply: true })
