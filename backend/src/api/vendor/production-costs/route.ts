@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { PRODUCTION_COSTING_MODULE } from "../../../modules/production-costing"
 import type ProductionCostingModuleService from "../../../modules/production-costing/service"
+import { toCostEntryDTO } from "../../../modules/production-costing/service"
 import {
   CostCategory,
   CostSource,
@@ -24,10 +25,11 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   )
 
   const batchId = req.query.production_batch_id
-  const production_cost_entries =
+  const rows =
     typeof batchId === "string" && batchId
       ? await service.listForBatch(sellerId, batchId)
       : await service.listForSeller(sellerId)
+  const production_cost_entries = rows.map((row) => toCostEntryDTO(row))
 
   res.json({
     production_cost_entries,
@@ -100,7 +102,7 @@ export const POST = async (
   const service = req.scope.resolve<ProductionCostingModuleService>(
     PRODUCTION_COSTING_MODULE
   )
-  const production_cost_entry = await service.recordCost({
+  const created = await service.recordCost({
     seller_id: sellerId,
     production_batch_id: batch.id,
     category: b.category as CostCategory,
@@ -118,5 +120,5 @@ export const POST = async (
     metadata: b.metadata ?? null,
   })
 
-  res.status(201).json({ production_cost_entry })
+  res.status(201).json({ production_cost_entry: toCostEntryDTO(created) })
 }

@@ -1,4 +1,4 @@
-import ProductionCostingService from "../service"
+import ProductionCostingService, { toCostEntryDTO } from "../service"
 import { CostCategory, CostSource } from "../models/production-cost-entry"
 
 /**
@@ -210,5 +210,69 @@ describe("getMarginAtPrice", () => {
     await expect(
       service.getMarginAtPrice("sel_1", "pb_1", null, 800)
     ).resolves.toBeNull()
+  })
+})
+
+describe("toCostEntryDTO", () => {
+  // The row a read of a migrated database returns: `quantity` (NUMERIC behind
+  // `model.number()`) as a string, the two bigNumber amounts as numbers with
+  // their `raw_` companions. Measured on Postgres by
+  // integration-tests/http/production-costing-every-plan.spec.ts.
+  const stored = {
+    id: "pce_1",
+    seller_id: "sel_1",
+    production_batch_id: "pb_1",
+    category: CostCategory.MATERIAL,
+    source: CostSource.PURCHASED,
+    label: "Rye flour, 25kg sack",
+    quantity: "2.5" as unknown as number,
+    unit_amount_cents: 1250,
+    raw_unit_amount_cents: { value: "1250", precision: 20 },
+    amount_cents: 3125,
+    raw_amount_cents: { value: "3125", precision: 20 },
+    currency_code: "usd",
+    is_cash_outlay: true,
+    notes: null,
+    metadata: { supplier: "mill" },
+  }
+
+  it("answers quantity and both amounts as numbers", () => {
+    const dto = toCostEntryDTO(stored)
+
+    expect(dto.quantity).toBe(2.5)
+    expect(dto.unit_amount_cents).toBe(1250)
+    expect(dto.amount_cents).toBe(3125)
+    expect([typeof dto.quantity, typeof dto.unit_amount_cents, typeof dto.amount_cents]).toEqual([
+      "number",
+      "number",
+      "number",
+    ])
+  })
+
+  it("coerces an amount whichever way a read hydrated it", () => {
+    const dto = toCostEntryDTO({
+      ...stored,
+      quantity: "3",
+      unit_amount_cents: "1250",
+      amount_cents: { valueOf: () => 3750 },
+    })
+
+    expect(dto).toMatchObject({ quantity: 3, unit_amount_cents: 1250, amount_cents: 3750 })
+  })
+
+  it("keeps a fractional quantity fractional", () => {
+    expect(toCostEntryDTO({ ...stored, quantity: "0.125" }).quantity).toBe(0.125)
+  })
+
+  it("passes every other field through as stored, and does not change the row", () => {
+    const before = JSON.parse(JSON.stringify(stored))
+    const dto = toCostEntryDTO(stored)
+    const { quantity, unit_amount_cents, amount_cents, ...rest } = dto
+    const { quantity: q, unit_amount_cents: u, amount_cents: a, ...storedRest } = stored
+
+    expect(rest).toEqual(storedRest)
+    expect([quantity, unit_amount_cents, amount_cents]).toEqual([2.5, 1250, 3125])
+    expect([q, u, a]).toEqual(["2.5", 1250, 3125])
+    expect(JSON.parse(JSON.stringify(stored))).toEqual(before)
   })
 })

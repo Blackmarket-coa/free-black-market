@@ -33,6 +33,54 @@ export interface RecordCostInput {
   metadata?: Record<string, unknown> | null
 }
 
+/** The three numeric fields of a stored cost entry, as a read can return them. */
+type CostEntryNumerics = {
+  quantity: unknown
+  unit_amount_cents: unknown
+  amount_cents: unknown
+}
+
+/** A cost entry as the API answers it: its three numeric fields are numbers. */
+export type CostEntryDTO<T extends CostEntryNumerics> = Omit<
+  T,
+  keyof CostEntryNumerics
+> & {
+  quantity: number
+  unit_amount_cents: number
+  amount_cents: number
+}
+
+/**
+ * A stored cost entry as a route should answer it.
+ *
+ * `quantity` is `model.number()` over a NUMERIC column
+ * (`Migration20260903CreateProductionCosting`). On a database built from the
+ * migrations a read hands that column back as a string, and nothing between
+ * the read and the response converts a `model.number()` field. Measured on
+ * Postgres before this function existed (PL-1): `GET /vendor/production-costs`
+ * answered `"quantity": "2.5"`, while the `POST` that made the same entry had
+ * answered the number 2.5, because a create returns the values it was given.
+ * A database the module test runner builds from the model has an integer
+ * column there and never showed it.
+ *
+ * The column stays NUMERIC, because a quantity can be fractional (2.5 kg);
+ * the coercion happens here. The two amounts are `model.bigNumber()` and came
+ * back as numbers in the same measurement; they go through `Number()` too, so
+ * the answer's types do not depend on which read produced the row.
+ *
+ * Every other field is passed through as stored.
+ */
+export function toCostEntryDTO<T extends CostEntryNumerics>(
+  entry: T
+): CostEntryDTO<T> {
+  return {
+    ...entry,
+    quantity: Number(entry.quantity),
+    unit_amount_cents: Number(entry.unit_amount_cents),
+    amount_cents: Number(entry.amount_cents),
+  }
+}
+
 export interface BatchCosting extends CostRollup {
   production_batch_id: string
   currency_code: string
