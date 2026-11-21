@@ -1,0 +1,640 @@
+{
+  "asOf": "2026-11-21",
+  "period": "Jan–Dec 2027",
+  "cases": [
+    "Downside",
+    "Base",
+    "Upside"
+  ],
+  "drivers": [
+    {
+      "key": "audience",
+      "label": "Reported social followers",
+      "values": [
+        26000,
+        26000,
+        26000
+      ],
+      "format": "count",
+      "note": "Founder report; FBM December launch readiness, November 21."
+    },
+    {
+      "key": "signup",
+      "label": "Follower-to-registration conversion",
+      "values": [
+        0.02,
+        0.05,
+        0.1
+      ],
+      "format": "pct",
+      "note": "Analyst assumption; followers are not registered members."
+    },
+    {
+      "key": "activation",
+      "label": "Registered-to-active conversion",
+      "values": [
+        0.6,
+        0.65,
+        0.75
+      ],
+      "format": "pct",
+      "note": "Analyst assumption; one unique person across apps."
+    },
+    {
+      "key": "growth",
+      "label": "Monthly net active-member growth",
+      "values": [
+        0.02,
+        0.08,
+        0.15
+      ],
+      "format": "pct",
+      "note": "Analyst assumption after churn; upside requires external acquisition."
+    },
+    {
+      "key": "physicalStart",
+      "label": "Physical commerce launch month",
+      "values": [
+        3,
+        1,
+        1
+      ],
+      "format": "count",
+      "note": "1 = Jan 2027; assumed verified availability, not a release promise."
+    },
+    {
+      "key": "physicalBuyers",
+      "label": "Physical buyers / active members",
+      "values": [
+        0.1,
+        0.2,
+        0.3
+      ],
+      "format": "pct",
+      "note": "Analyst assumption; includes eligible goods/services, excludes digital categories."
+    },
+    {
+      "key": "physicalFrequency",
+      "label": "Monthly orders / physical buyer",
+      "values": [
+        1.2,
+        1.5,
+        2
+      ],
+      "format": "decimal",
+      "note": "Analyst assumption."
+    },
+    {
+      "key": "physicalAov",
+      "label": "Physical average order value",
+      "values": [
+        25,
+        35,
+        45
+      ],
+      "format": "money",
+      "note": "USD; excludes tax and shipping pass-through."
+    },
+    {
+      "key": "digitalStart",
+      "label": "Creator download launch month",
+      "values": [
+        6,
+        4,
+        3
+      ],
+      "format": "count",
+      "note": "Assumed closure of actual file-delivery and settlement gaps."
+    },
+    {
+      "key": "digitalBuyers",
+      "label": "Download buyers / active members",
+      "values": [
+        0.03,
+        0.06,
+        0.1
+      ],
+      "format": "pct",
+      "note": "Cash purchases only; excludes first-party products and game packs."
+    },
+    {
+      "key": "digitalFrequency",
+      "label": "Monthly download orders / buyer",
+      "values": [
+        1,
+        1.2,
+        1.5
+      ],
+      "format": "decimal",
+      "note": "Analyst assumption."
+    },
+    {
+      "key": "digitalAov",
+      "label": "Creator download average value",
+      "values": [
+        8,
+        12,
+        15
+      ],
+      "format": "money",
+      "note": "Candidate basket assumption, not approved prices."
+    },
+    {
+      "key": "gameStart",
+      "label": "Paid game-pack launch month",
+      "values": [
+        10,
+        7,
+        5
+      ],
+      "format": "count",
+      "note": "Assumed functioning authoring, install, delivery, refund and payout path."
+    },
+    {
+      "key": "gameBuyers",
+      "label": "Game-pack buyers / active members",
+      "values": [
+        0.02,
+        0.04,
+        0.08
+      ],
+      "format": "pct",
+      "note": "Third-party creator packs only, excludes earned/free rewards."
+    },
+    {
+      "key": "gameFrequency",
+      "label": "Monthly game-pack orders / buyer",
+      "values": [
+        1,
+        1.2,
+        1.5
+      ],
+      "format": "decimal",
+      "note": "Analyst assumption."
+    },
+    {
+      "key": "gameAov",
+      "label": "Creator game-pack average value",
+      "values": [
+        4,
+        6,
+        8
+      ],
+      "format": "money",
+      "note": "Candidate basket assumption."
+    },
+    {
+      "key": "firstStart",
+      "label": "First-party products launch month",
+      "values": [
+        4,
+        2,
+        1
+      ],
+      "format": "count",
+      "note": "Working original products, restore and payment route assumed."
+    },
+    {
+      "key": "firstNew",
+      "label": "New eligible members buying first-party",
+      "values": [
+        0.06,
+        0.12,
+        0.2
+      ],
+      "format": "pct",
+      "note": "First sale month includes accumulated active cohort; subsequent months net new actives."
+    },
+    {
+      "key": "firstRepeat",
+      "label": "Continuing members buying another product",
+      "values": [
+        0.003,
+        0.01,
+        0.02
+      ],
+      "format": "pct",
+      "note": "A distinct SKU, not recurring billing or repurchase of owned rights."
+    },
+    {
+      "key": "fbmMix",
+      "label": "FBM share of first-party units",
+      "values": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "format": "pct",
+      "note": "Planning allocation only; not three separate user funnels."
+    },
+    {
+      "key": "blackoutMix",
+      "label": "Blackout share of first-party units",
+      "values": [
+        0.35,
+        0.35,
+        0.35
+      ],
+      "format": "pct",
+      "note": "Remaining 25% Blackmask; actual product attribution must replace allocation."
+    },
+    {
+      "key": "fbmPrice",
+      "label": "FBM first-party average price",
+      "values": [
+        25,
+        25,
+        25
+      ],
+      "format": "money",
+      "note": "Proposed experiment; no published price change."
+    },
+    {
+      "key": "blackoutPrice",
+      "label": "Blackout first-party average price",
+      "values": [
+        15,
+        15,
+        15
+      ],
+      "format": "money",
+      "note": "Proposed experiment."
+    },
+    {
+      "key": "blackmaskPrice",
+      "label": "Blackmask first-party average price",
+      "values": [
+        12,
+        12,
+        12
+      ],
+      "format": "money",
+      "note": "Proposed experiment."
+    },
+    {
+      "key": "storageStart",
+      "label": "Blackmask storage launch month",
+      "values": [
+        8,
+        4,
+        3
+      ],
+      "format": "count",
+      "note": "Quota, billing, restore, cancellation and export assumed verified."
+    },
+    {
+      "key": "storageTake",
+      "label": "Paid Blackmask storage / ecosystem actives",
+      "values": [
+        0.01,
+        0.03,
+        0.05
+      ],
+      "format": "pct",
+      "note": "Analyst assumption, not whole-ecosystem software subscription."
+    },
+    {
+      "key": "storagePrice",
+      "label": "Blackmask storage monthly price",
+      "values": [
+        4,
+        4,
+        4
+      ],
+      "format": "money",
+      "note": "Candidate price; capacity and actual costs must be established."
+    },
+    {
+      "key": "storageCost",
+      "label": "Monthly incremental cost / storage payer",
+      "values": [
+        0.5,
+        0.75,
+        1
+      ],
+      "format": "money",
+      "note": "Provision for retention, replication and transfer; free current storage is not unlimited."
+    },
+    {
+      "key": "serviceStart",
+      "label": "BMC finite services launch month",
+      "values": [
+        6,
+        3,
+        2
+      ],
+      "format": "count",
+      "note": "BMC-contracted, delivered work only; third-party roles remain seller receipts."
+    },
+    {
+      "key": "serviceJobs",
+      "label": "BMC service jobs / month",
+      "values": [
+        0.25,
+        0.75,
+        2
+      ],
+      "format": "decimal",
+      "note": "Expected monthly demand; at most two jobs/month."
+    },
+    {
+      "key": "servicePrice",
+      "label": "BMC finite-service average price",
+      "values": [
+        300,
+        500,
+        750
+      ],
+      "format": "money",
+      "note": "Proposed finite setup/training project."
+    },
+    {
+      "key": "serviceCost",
+      "label": "Direct fulfillment / service receipts",
+      "values": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "format": "pct",
+      "note": "Paid fulfillment allowance, excludes unpaid founder time."
+    },
+    {
+      "key": "sponsorStart",
+      "label": "Finite campaign launch month",
+      "values": [
+        8,
+        6,
+        4
+      ],
+      "format": "count",
+      "note": "Requires actual signed sponsor and completed agreed delivery."
+    },
+    {
+      "key": "sponsorCount",
+      "label": "BMC campaigns / month",
+      "values": [
+        0,
+        0.5,
+        2
+      ],
+      "format": "decimal",
+      "note": "Expected demand, no contracts established."
+    },
+    {
+      "key": "sponsorFee",
+      "label": "BMC fee / delivered campaign",
+      "values": [
+        100,
+        150,
+        200
+      ],
+      "format": "money",
+      "note": "Proposed fixed delivery fee; no extra marketplace percentage."
+    },
+    {
+      "key": "sponsorBudget",
+      "label": "Restricted creator/reward budget / campaign",
+      "values": [
+        200,
+        300,
+        500
+      ],
+      "format": "money",
+      "note": "Excluded from BMC revenue, expenses and available funding."
+    },
+    {
+      "key": "commission",
+      "label": "Coalition commission",
+      "values": [
+        0.03,
+        0.03,
+        0.03
+      ],
+      "format": "pct",
+      "note": "Approved: flat 3% after processing; one ecosystem cut."
+    },
+    {
+      "key": "retained",
+      "label": "Share of commission retained by BMC",
+      "values": [
+        1,
+        1,
+        1
+      ],
+      "format": "pct",
+      "note": "Planning assumption; any community allocation reduces this."
+    },
+    {
+      "key": "cardRate",
+      "label": "Web domestic-card processing rate",
+      "values": [
+        0.029,
+        0.029,
+        0.029
+      ],
+      "format": "pct",
+      "note": "Stripe public US standard pricing, checked November 21, 2026."
+    },
+    {
+      "key": "cardFixed",
+      "label": "Web card cost / successful charge",
+      "values": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "format": "money",
+      "note": "Stripe public US standard pricing; actual contract may differ."
+    },
+    {
+      "key": "nativeShare",
+      "label": "Native-billed share of digital purchases",
+      "values": [
+        0.25,
+        0.25,
+        0.25
+      ],
+      "format": "pct",
+      "note": "Analyst channel mix; not permission for an external checkout route."
+    },
+    {
+      "key": "nativeRate",
+      "label": "Native digital distribution fee scenario",
+      "values": [
+        0.15,
+        0.15,
+        0.15
+      ],
+      "format": "pct",
+      "note": "Illustrative 15% scenario; test 30%; eligibility, region and program vary."
+    },
+    {
+      "key": "refund",
+      "label": "Refund share of receipts",
+      "values": [
+        0.03,
+        0.03,
+        0.03
+      ],
+      "format": "pct",
+      "note": "Analyst reserve; proportional marketplace commission reversal."
+    },
+    {
+      "key": "payoutShare",
+      "label": "Active payout sellers / ecosystem actives",
+      "values": [
+        0.02,
+        0.02,
+        0.02
+      ],
+      "format": "pct",
+      "note": "Expected accounts with one monthly payout; capped by third-party orders."
+    },
+    {
+      "key": "connectAccount",
+      "label": "Connect cost / active payout account",
+      "values": [
+        2,
+        2,
+        2
+      ],
+      "format": "money",
+      "note": "Conditional You-handle-pricing tariff; actual account configuration unverified."
+    },
+    {
+      "key": "connectPayout",
+      "label": "Connect fixed cost / payout",
+      "values": [
+        0.25,
+        0.25,
+        0.25
+      ],
+      "format": "money",
+      "note": "One monthly payout/account assumption; included conservatively as BMC expense."
+    },
+    {
+      "key": "connectRate",
+      "label": "Connect payout-volume rate",
+      "values": [
+        0.0025,
+        0.0025,
+        0.0025
+      ],
+      "format": "pct",
+      "note": "Conditional You-handle-pricing tariff; avoid double counting actual pass-through."
+    },
+    {
+      "key": "lossRate",
+      "label": "BMC marketplace loss reserve / GMV",
+      "values": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "format": "pct",
+      "note": "Analyst allowance; not observed chargeback rate."
+    },
+    {
+      "key": "fixed",
+      "label": "Current monthly fixed expense",
+      "values": [
+        250,
+        250,
+        250
+      ],
+      "format": "money",
+      "note": "Founder reports all current costs included; do not add Claude/tooling again."
+    },
+    {
+      "key": "variable",
+      "label": "Incremental operations / active member",
+      "values": [
+        0.1,
+        0.15,
+        0.25
+      ],
+      "format": "money",
+      "note": "Unquoted planning allowance for infrastructure, moderation, support and transfer."
+    },
+    {
+      "key": "budget",
+      "label": "Founder monthly spending ceiling",
+      "values": [
+        1000,
+        1000,
+        1000
+      ],
+      "format": "money",
+      "note": "Assumed total including existing $250; not a spending instruction."
+    },
+    {
+      "key": "founderHours",
+      "label": "Unpaid founder hours / month",
+      "values": [
+        40,
+        40,
+        40
+      ],
+      "format": "decimal",
+      "note": "Illustrative economic-cost sensitivity; actual time unknown."
+    },
+    {
+      "key": "founderRate",
+      "label": "Value / unpaid founder hour",
+      "values": [
+        25,
+        25,
+        25
+      ],
+      "format": "money",
+      "note": "Illustrative opportunity cost, not cash salary or tax estimate."
+    }
+  ],
+  "sources": [
+    {
+      "title": "FBM December launch readiness",
+      "url": "https://github.com/Blackmarket-coa/free-black-market/blob/e45451430e07c2deebd57c014ad81a80fbb63485/docs/FBM_DECEMBER_LAUNCH_READINESS.md"
+    },
+    {
+      "title": "FBM shared game/creator plan",
+      "url": "https://github.com/Blackmarket-coa/free-black-market/blob/e45451430e07c2deebd57c014ad81a80fbb63485/docs/FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md"
+    },
+    {
+      "title": "FBM resource exchange charter",
+      "url": "https://github.com/Blackmarket-coa/free-black-market/blob/e45451430e07c2deebd57c014ad81a80fbb63485/docs/FBM_RESOURCE_EXCHANGE_CHARTER.md"
+    },
+    {
+      "title": "Blackout creator economy",
+      "url": "https://github.com/Blackmarket-coa/blackout/blob/3ab955958506125690c02b7c999b45bb60b3b8a1/docs/product/BLACKOUT_CREATOR_ECONOMY.md"
+    },
+    {
+      "title": "Blackout Coalition game",
+      "url": "https://github.com/Blackmarket-coa/blackout/blob/3ab955958506125690c02b7c999b45bb60b3b8a1/docs/product/BLACKOUT_COALITION_GAME_PLAN.md"
+    },
+    {
+      "title": "Blackmask monetization",
+      "url": "https://github.com/Blackmarket-coa/blackmask/blob/f7e6a3531c8dea15b519a7723245565ea94970f5/docs/black-mask/monetization-plan.md"
+    },
+    {
+      "title": "Blackmask app plan",
+      "url": "https://github.com/Blackmarket-coa/blackmask/blob/f7e6a3531c8dea15b519a7723245565ea94970f5/docs/black-mask/app-plan.md"
+    },
+    {
+      "title": "Stripe US pricing",
+      "url": "https://stripe.com/pricing"
+    },
+    {
+      "title": "Stripe Connect pricing",
+      "url": "https://stripe.com/connect/pricing"
+    },
+    {
+      "title": "Apple Small Business Program",
+      "url": "https://developer.apple.com/app-store/small-business-program/"
+    },
+    {
+      "title": "Google Play service fees",
+      "url": "https://support.google.com/googleplay/android-developer/answer/112622?hl=en"
+    }
+  ]
+}
