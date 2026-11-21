@@ -1,5 +1,11 @@
 import { createContext, useContext, ReactNode, useMemo } from "react"
+import { usePlaybookAssignment } from "../../hooks/api/playbook"
 import { useMe } from "../../hooks/api/users"
+import {
+  getFeaturesByPlaybook,
+  isAssignablePlaybook,
+  type Playbook,
+} from "../playbook-provider"
 
 /**
  * Vendor Types supported by the platform.
@@ -297,6 +303,64 @@ function buildFeaturesFromExtensions(enabledExtensions: string[]): VendorFeature
 }
 
 /**
+ * The features a seller's playbook gives by default: the backend recipe's
+ * `default_features` (mirrored in `playbook-provider`, and checked against
+ * `backend/src/modules/playbook/recipes/*.ts` by this provider's spec).
+ *
+ * One addition: the Products entry is kept for Service. Its recipe has no
+ * Products module, but the backend's product-create routes take a Service
+ * seller's listing (bookable by default, SD-151 (2)) and the dashboard's
+ * setup needs a first listing, so hiding the entry would leave nothing to
+ * finish setup with. Service sellers had it before too, through the legacy
+ * vendor_type "maker".
+ */
+export function getFeaturesForPlaybook(
+  playbook: Exclude<Playbook, "default">
+): VendorFeatures {
+  return { ...getFeaturesByPlaybook(playbook), hasProducts: true }
+}
+
+/**
+ * The features a seller gets before any selection of their own: their
+ * playbook's when one is assigned, the legacy vendor type's otherwise (a
+ * seller from before the playbook picker).
+ *
+ * Until SD-151 (4) the vendor type decided alone. `vendor_type` is a lossy
+ * cache of the playbook (hooks/api/auth.tsx maps Hub, Commons and Grove to
+ * `mutual_aid`), and `mutual_aid` has no Products, so a single-role seller on
+ * one of those playbooks had no Products entry in the sidebar or the setup
+ * checklist while the dashboard waited for a first product. The backend's
+ * recipes for all three have Products.
+ */
+export function getDefaultFeatures(
+  vendorType: VendorType,
+  playbook: unknown
+): VendorFeatures {
+  return isAssignablePlaybook(playbook)
+    ? getFeaturesForPlaybook(playbook)
+    : getFeaturesByType(vendorType)
+}
+
+/**
+ * The features a seller's panel shows: their own selection when they have
+ * saved one (`enabled_extensions`, which the backend also writes as the union
+ * of a multi-role seller's recipes), their defaults otherwise.
+ */
+export function resolveVendorFeatures({
+  vendorType,
+  playbook,
+  enabledExtensions,
+}: {
+  vendorType: VendorType
+  playbook: unknown
+  enabledExtensions: string[] | null
+}): VendorFeatures {
+  return enabledExtensions
+    ? buildFeaturesFromExtensions(enabledExtensions)
+    : getDefaultFeatures(vendorType, playbook)
+}
+
+/**
  * Get human-readable labels for vendor types
  */
 function getTypeLabels(type: VendorType): { label: string; plural: string } {
@@ -322,6 +386,11 @@ function getTypeLabels(type: VendorType): { label: string; plural: string } {
  */
 export function VendorTypeProvider({ children }: { children: ReactNode }) {
   const { seller, isPending } = useMe()
+  // Asked for only once the seller is known: this provider wraps the sign-in
+  // pages too.
+  const { data: assignment, isPending: isAssignmentPending } =
+    usePlaybookAssignment({ enabled: Boolean(seller) })
+  const playbook = assignment?.playbook_assignment?.recipe_id ?? null
 
   // Get vendor type from seller or default
   const vendorType: VendorType = useMemo(() => {
@@ -349,16 +418,18 @@ export function VendorTypeProvider({ children }: { children: ReactNode }) {
     return null
   }, [seller?.enabled_extensions, seller?.metadata?.enabled_extensions])
 
-  // Default features for this vendor type (before custom overrides)
-  const defaultFeatures = useMemo(() => getFeaturesByType(vendorType), [vendorType])
+  // Default features (before custom overrides): the playbook's, or the
+  // vendor type's for a seller with no playbook.
+  const defaultFeatures = useMemo(
+    () => getDefaultFeatures(vendorType, playbook),
+    [vendorType, playbook]
+  )
 
-  // Resolved features: use custom selections if set, otherwise type defaults
-  const features = useMemo(() => {
-    if (enabledExtensions) {
-      return buildFeaturesFromExtensions(enabledExtensions)
-    }
-    return defaultFeatures
-  }, [enabledExtensions, defaultFeatures])
+  // Resolved features: use custom selections if set, otherwise the defaults
+  const features = useMemo(
+    () => resolveVendorFeatures({ vendorType, playbook, enabledExtensions }),
+    [vendorType, playbook, enabledExtensions]
+  )
 
   const { label: typeLabel, plural: typeLabelPlural } = useMemo(
     () => getTypeLabels(vendorType),
@@ -367,7 +438,7 @@ export function VendorTypeProvider({ children }: { children: ReactNode }) {
 
   const value: VendorTypeContextValue = {
     vendorType,
-    isLoading: isPending,
+    isLoading: isPending || (Boolean(seller) && isAssignmentPending),
     features,
     typeLabel,
     typeLabelPlural,

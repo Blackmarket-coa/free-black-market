@@ -1,4 +1,5 @@
 import { createContext, useContext, ReactNode, useMemo } from "react"
+import { usePlaybookAssignment } from "../../hooks/api/playbook"
 import { useMe } from "../../hooks/api/users"
 
 /**
@@ -130,6 +131,14 @@ const VALID_PLAYBOOKS: Playbook[] = [
   "service",
   "creator",
 ]
+
+/** One of the eleven playbooks a seller can be assigned (not the sentinel). */
+export const isAssignablePlaybook = (
+  value: unknown
+): value is Exclude<Playbook, "default"> =>
+  typeof value === "string" &&
+  value !== "default" &&
+  (VALID_PLAYBOOKS as string[]).includes(value)
 
 /**
  * Default feature flags for each playbook.
@@ -263,9 +272,14 @@ function getTypeLabels(playbook: Playbook): { label: string; plural: string } {
   return labels[playbook]
 }
 
-function resolvePlaybookFromSeller(seller: any): Playbook {
-  // Prefer the new explicit playbook field (will be set once
-  // playbook-assignment is written via the picker).
+function resolvePlaybookFromSeller(seller: any, assigned?: unknown): Playbook {
+  // The assignment is the source of truth. `GET /vendor/sellers/me` returns
+  // no `playbook` field, so before this read the assignment every seller
+  // resolved through the legacy vendor_type map below, and a Hub or Commons
+  // seller (vendor_type mutual_aid) came out as Grove.
+  if (isAssignablePlaybook(assigned)) {
+    return assigned
+  }
   const direct = seller?.playbook
   if (typeof direct === "string" && (VALID_PLAYBOOKS as string[]).includes(direct)) {
     return direct as Playbook
@@ -285,10 +299,14 @@ function resolvePlaybookFromSeller(seller: any): Playbook {
  */
 export function PlaybookProvider({ children }: { children: ReactNode }) {
   const { seller, isPending } = useMe()
+  const { data: assignment } = usePlaybookAssignment({
+    enabled: Boolean(seller),
+  })
+  const assigned = assignment?.playbook_assignment?.recipe_id
 
   const playbook: Playbook = useMemo(
-    () => resolvePlaybookFromSeller(seller),
-    [seller]
+    () => resolvePlaybookFromSeller(seller, assigned),
+    [seller, assigned]
   )
 
   const enabledExtensions = useMemo(() => {

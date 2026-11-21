@@ -118,11 +118,19 @@ export const playbookQueryKeys = {
   progressions: ["playbook", "progressions", "me"] as const,
 }
 
-export const usePlaybookAssignment = () => {
+/**
+ * The seller's playbook assignment (`GET /vendor/playbook/assign`), or null
+ * for a seller who has none.
+ *
+ * `enabled: false` holds the request back: the providers at the app's root
+ * pass it until the seller is known, so that a signed-out visitor or a pending
+ * applicant, whose token Mercur's vendor gate refuses, is not asked for.
+ */
+export const usePlaybookAssignment = (options?: { enabled?: boolean }) => {
   return useQuery<{ playbook_assignment: PlaybookAssignment | null }>({
     queryKey: playbookQueryKeys.assignment,
     queryFn: () => fetchQuery("/vendor/playbook/assign", { method: "GET" }),
-    enabled: Boolean(getAuthToken()),
+    enabled: Boolean(getAuthToken()) && (options?.enabled ?? true),
     retry: false,
   })
 }

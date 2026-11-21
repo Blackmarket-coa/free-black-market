@@ -3,6 +3,7 @@ export {
   usePlaybook,
   useIsPlaybook,
   getFeaturesByPlaybook,
+  isAssignablePlaybook,
   ALL_EXTENSION_OPTIONS,
   ALL_FEATURE_KEYS,
   type Playbook,
