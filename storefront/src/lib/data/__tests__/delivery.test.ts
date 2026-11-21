@@ -71,7 +71,9 @@ describe("checkDeliveryForPostalCode", () => {
       "POST /store/delivery-zones/check": () => json(200, AVAILABLE),
     })
 
-    await expect(checkDeliveryForPostalCode("30301")).resolves.toEqual(AVAILABLE)
+    // The backend placed the postal code at its ZIP3 centroid: the answer
+    // says so, for the step to say the check is approximate.
+    await expect(checkDeliveryForPostalCode("30301")).resolves.toEqual({ ...AVAILABLE, approximate: true })
 
     expect(sent.map((s) => `${s.method} ${s.url.pathname}`)).toEqual([
       "GET /store/geocode",
@@ -95,7 +97,8 @@ describe("checkDeliveryForPostalCode", () => {
       "POST /store/delivery-zones/check": () => json(200, AVAILABLE),
     })
 
-    await checkDeliveryForPostalCode("30301")
+    // A point the backend placed exactly carries no "approximate".
+    await expect(checkDeliveryForPostalCode("30301")).resolves.toEqual(AVAILABLE)
 
     expect(sent[1].headers.get("authorization")).toBe("Bearer buyer_jwt")
   })

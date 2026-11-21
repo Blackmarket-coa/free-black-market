@@ -41,6 +41,12 @@ export type DeliveryEligibility = {
     minimum_order_formatted: string | null
   }
   service_hours?: Record<string, { open: string; close: string }>
+  /**
+   * Set by `checkDeliveryForPostalCode` when the backend placed the postal
+   * code only approximately (its ZIP3 centroid, not the address): the answer
+   * is then about a point that may be miles from the buyer.
+   */
+  approximate?: boolean
 }
 
 const checkFailed = (): DeliveryEligibility => ({
@@ -92,9 +98,9 @@ export async function checkDeliveryForPostalCode(postalCode: string): Promise<De
     }
   }
 
-  let point: { latitude?: unknown; longitude?: unknown }
+  let point: { latitude?: unknown; longitude?: unknown; approximate?: unknown }
   try {
-    point = await medusaFetch<{ latitude?: unknown; longitude?: unknown }>("/store/geocode", {
+    point = await medusaFetch<typeof point>("/store/geocode", {
       method: "GET",
       query: { postal_code: code },
       next: { revalidate: 3600 },
@@ -110,5 +116,6 @@ export async function checkDeliveryForPostalCode(postalCode: string): Promise<De
 
   const latitude = Number(point?.latitude)
   const longitude = Number(point?.longitude)
-  return checkDeliveryAt({ latitude, longitude })
+  const answer = await checkDeliveryAt({ latitude, longitude })
+  return point?.approximate === true ? { ...answer, approximate: true } : answer
 }

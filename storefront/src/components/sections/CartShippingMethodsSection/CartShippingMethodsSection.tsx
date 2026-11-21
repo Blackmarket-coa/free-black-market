@@ -5,7 +5,11 @@ import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedL
 import { setShippingMethod } from "@/lib/data/cart"
 import { checkDeliveryForPostalCode, type DeliveryEligibility } from "@/lib/data/delivery"
 import { calculatePriceForShippingOption } from "@/lib/data/fulfillment"
-import { isFailedDeliveryCheck } from "@/lib/helpers/delivery-eligibility"
+import {
+  type DeliveryNudge,
+  deliveryNudgeFor,
+  NO_DELIVERY_NUDGE,
+} from "@/lib/helpers/delivery-eligibility"
 import { convertToLocale } from "@/lib/helpers/money"
 import {
   type FulfillmentType,
@@ -20,6 +24,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/atoms"
 import { CartShippingMethodRow } from "./CartShippingMethodRow"
+import { DeliveryEligibilityNotice } from "./DeliveryEligibilityNotice"
 import { Listbox, Transition, RadioGroup, Radio } from "@headlessui/react"
 import clsx from "clsx"
 
@@ -152,6 +157,8 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   const [chosenOptionSellers, setChosenOptionSellers] = useState<Record<string, string>>({})
   const [deliveryEligibility, setDeliveryEligibility] = useState<DeliveryEligibility | null>(null)
   const [isCheckingEligibility, setIsCheckingEligibility] = useState(false)
+  // The answer the step last acted on, and where it moved the selection.
+  const [deliveryNudge, setDeliveryNudge] = useState<DeliveryNudge>(NO_DELIVERY_NUDGE)
 
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -253,10 +260,10 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
 
   // FBM's delivery-zone check, from the server (lib/data/delivery.ts): the
   // browser's own call carried no publishable key and was refused every
-  // time. Advisory only: its answer is shown beside the Delivery options and
-  // never moves the buyer off Delivery. A check that could not be made says
-  // so; it used to switch the buyer to Pickup or Shipping, and the notice
-  // that said why went with it.
+  // time. What each answer does is lib/helpers/delivery-eligibility.ts: a
+  // check that could not be made is reported and moves nothing (it used to
+  // switch the buyer to Pickup or Shipping, and the notice that said why
+  // went with it); "outside every delivery zone" is a nudge, below.
   useEffect(() => {
     if (!postalCode || !hasDeliveryOptions) {
       setDeliveryEligibility(null)
@@ -280,7 +287,22 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
     }
   }, [postalCode, hasDeliveryOptions])
 
-  const deliveryCheckFailed = isFailedDeliveryCheck(deliveryEligibility)
+  // The nudge: an address outside every delivery zone pre-selects Pickup,
+  // else Shipping, once per answer, when the cart's sellers offer either.
+  // Nothing enforces the zones after this step, and the check is approximate
+  // (a postal code's centroid), so the buyer can switch back to Delivery and
+  // is not moved again.
+  useEffect(() => {
+    const next = deliveryNudgeFor(
+      deliveryNudge,
+      deliveryEligibility,
+      { pickup: hasPickupOptions, shipping: hasShippingOptions },
+      pickedFulfillmentType
+    )
+    if (next === deliveryNudge) return
+    setDeliveryNudge(next)
+    if (next.to) setPickedFulfillmentType(next.to)
+  }, [deliveryNudge, deliveryEligibility, hasPickupOptions, hasShippingOptions, pickedFulfillmentType])
 
   // Get methods based on selected fulfillment type
   const getMethodsForType = (type: FulfillmentType | undefined) => {
@@ -381,27 +403,12 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
             </div>
           )}
 
-          {selectedFulfillmentType === FULFILLMENT_TYPE.DELIVERY && (deliveryEligibility || isCheckingEligibility) && (
-            <div
-              className={clsx("mb-4 rounded-md border p-3 text-sm",
-                isCheckingEligibility ? "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle" :
-                deliveryEligibility?.available ? "border-green-200 bg-green-50 text-green-800" : "border-orange-200 bg-orange-50 text-orange-800"
-              )}
-              data-testid="delivery-eligibility"
-            >
-              {isCheckingEligibility
-                ? "Checking delivery to your postal code..."
-                : deliveryEligibility?.available
-                  ? deliveryEligibility.message || "Delivery is available for your address."
-                  : deliveryEligibility?.reason ||
-                    (deliveryCheckFailed
-                      ? "We couldn't check delivery to your address just now."
-                      : "Delivery may not be available for this address.")}
-              {!isCheckingEligibility && !deliveryEligibility?.available && deliveryEligibility?.suggestion ? (
-                <div className="mt-1">{deliveryEligibility.suggestion}</div>
-              ) : null}
-            </div>
-          )}
+          <DeliveryEligibilityNotice
+            answer={deliveryEligibility}
+            checking={isCheckingEligibility}
+            selected={selectedFulfillmentType}
+            nudgedTo={deliveryNudge.answer === deliveryEligibility ? deliveryNudge.to : undefined}
+          />
             {/* Fulfillment Type Selector */}
             {(hasDeliveryOptions || hasPickupOptions || hasShippingOptions) && (
               <div className="mb-6">
