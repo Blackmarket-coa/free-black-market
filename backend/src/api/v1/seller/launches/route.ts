@@ -8,6 +8,7 @@ import launchSponsorshipWorkflow from "../../../../workflows/launch-sponsorship"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import type DemandPoolModuleService from "../../../../modules/demand-pool/service"
 import { BountyObjective } from "../../../../modules/demand-pool/models/demand-bounty"
+import { DemandPostStatus } from "../../../../modules/demand-pool/models/demand-post"
 import { CreatorProgramType } from "../../../../modules/creator-program/models/creator-program"
 import { PRODUCER_MODULE } from "../../../../modules/producer"
 import type ProducerService from "../../../../modules/producer/service"
@@ -141,6 +142,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
+  // A funded bounty is refused, before anything is written. Its escrow debits
+  // the seller's USER_WALLET, which nothing creates for a seller, so the
+  // workflow failed for every store ("Contributor wallet not found"); and an
+  // escrowed bounty has no way out: its payout route wants a customer equal
+  // to the post's creator (a seller here), a panel launch has no milestones,
+  // and no cancel path refunds it. Until a wallet, a payout and a refund
+  // exist, a launch carries an unfunded bounty or none.
+  if ((data.bounty_amount ?? 0) > 0) {
+    return res.status(400).json({
+      message: "A funded bounty is not available yet. Leave the bounty amount empty to launch.",
+      type: "invalid_request",
+    })
+  }
+
   // ── Launch Business ───────────────────────────────────────────────────────
   // Guided onboarding: make sure a producer profile exists (idempotent), then
   // fall through to the standard product-launch flow for the first listing.
@@ -160,12 +175,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const demand = req.scope.resolve<DemandPoolModuleService>(DEMAND_POOL_MODULE)
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
 
   // Idempotency: a re-POST with the same (seller, slug) returns the existing
-  // launch instead of creating a second product/bounty.
+  // launch instead of creating a second product/bounty. Only a launch that is
+  // still there counts: a post a failed run cancelled, or one whose product
+  // is gone, used to answer `idempotent: true` on every retry, so a launch
+  // that had failed once could never be made.
   const existing = await demand.listDemandPosts({ launch_id: launchId })
-  if (existing.length > 0) {
-    const post = existing[0]
+  for (const post of existing) {
+    if (post.status === DemandPostStatus.CANCELLED || !post.product_id) continue
+    const { data: products } = await query.graph({
+      entity: "product",
+      fields: ["id"],
+      filters: { id: post.product_id },
+    })
+    if (products.length === 0) continue
     const bounties = await demand.listDemandBounties({ demand_post_id: post.id })
     return res.status(200).json({
       launch: {
@@ -213,14 +238,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
   }
 
-  // Resolve a default sales channel so the product is purchasable.
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const { data: channels } = await query.graph({
-    entity: "sales_channel",
-    fields: ["id"],
+  // The store's default sales channel, the one a storefront's publishable
+  // key is scoped to (as create-ticket-product and blackout-listing-product
+  // take it). `subscribers/product-created-sales-channel` links every new
+  // product to it a moment after creation; naming it here puts the launch in
+  // its channel from the start, and in that channel only.
+  const { data: stores } = await query.graph({
+    entity: "store",
+    fields: ["id", "default_sales_channel_id"],
     pagination: { take: 1 },
   })
-  const salesChannelId = channels?.[0]?.id
+  const salesChannelId = stores?.[0]?.default_sales_channel_id
 
   // `price` is minor units (the panel sends 1200 for $12.00); Medusa stores
   // major units, so 1200 handed over as-is published a $1,200.00 product.
@@ -237,9 +265,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         options: { "Default option": "Default" },
       },
     ],
-    // createProductsWorkflow reads `sales_channels: [{ id }]`; the
-    // `sales_channel_ids` this passed was dropped without an error, leaving
-    // every launched product in no channel, so no storefront could list it.
+    // createProductsWorkflow reads `sales_channels: [{ id }]`. The
+    // `sales_channel_ids` this used to pass was dropped without an error, so
+    // the product reached a channel only through the subscriber, and reached
+    // none on a store with no default channel.
     ...(salesChannelId ? { sales_channels: [{ id: salesChannelId }] } : {}),
     metadata: { launch_id: launchId },
   }
