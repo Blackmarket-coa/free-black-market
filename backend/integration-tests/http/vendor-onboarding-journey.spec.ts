@@ -9,13 +9,14 @@ import sellerShippingProfileLink from "@mercurjs/b2c-core/links/seller-shipping-
 import { REQUEST_MODULE } from "../../src/modules/request"
 import { SELLER_EXTENSION_MODULE } from "../../src/modules/seller-extension"
 import { listSellerMetadataRecords } from "../../src/modules/seller-extension/metadata-service"
-import { PLAYBOOK_IDS, PLAYBOOK_MODULE } from "../../src/modules/playbook"
+import { PLAYBOOK_IDS, PLAYBOOK_MODULE, RESOURCE_KEYS, unionFeatureKeys } from "../../src/modules/playbook"
 import seedPlaybookRegistry from "../../src/modules/playbook/loaders/seed-registry"
 import { LISTING_TYPE_IDS, LISTING_TYPE_MODULE } from "../../src/modules/listing-type"
 import { BLACKSTAR_FULFILLMENT_MODULE } from "../../src/modules/blackstar-fulfillment"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../src/modules/marketplace-webhooks"
 import { assignPlaybookWorkflow } from "../../src/workflows/assign-playbook"
 import { backfillApprovedSellerPlaybooks } from "../../src/shared/approved-playbook-backfill"
+import { pluginSlugsFrom } from "../../src/shared/extension-keys"
 import runBackfillScript from "../../src/scripts/backfill-approved-seller-playbooks"
 import { newTestPassword } from "./helpers/test-password"
 
@@ -41,12 +42,15 @@ jest.setTimeout(600 * 1000)
  *   /vendor/products, made the product in that store.
  * - The admin panel's Accept (POST /admin/requests/:id) answered approval
  *   refusals 500.
- * - The assign route refused resource keys registration accepts.
+ * - The assign route refused three of the thirteen resource keys the quiz
+ *   offers and registration accepts (goods, creativity, capital). Both read
+ *   one list now: registration and a re-run save every answer and read it
+ *   back, and saving them installs no tool and enrolls no one in deliveries.
  * - The wizard's publish step recorded any id as the first published listing.
  *
  * The first case runs on the database as the app booted it; the runner
  * truncates every table between cases and runs the module loaders again,
- * as a restart would. Spends 7 of the auth limiter's 20 a minute (filings
+ * as a restart would. Spends 11 of the auth limiter's 20 a minute (filings
  * and sign-ins; logins are registered through the auth module).
  */
 
@@ -285,6 +289,82 @@ medusaIntegrationTestRunner({
       expect((await assignmentOf(sellerId)).metadata).toEqual({
         roles: ["stall", "kitchen"],
         resources: ["transportation", "goods", "creativity", "capital"],
+      })
+    })
+
+    it("registration and a quiz re-run save all thirteen resource answers and read them back; saving them installs no tool and enrolls no one in deliveries", async () => {
+      stubMail()
+      const everyResource = [...RESOURCE_KEYS]
+      expect(everyResource).toHaveLength(13)
+      expect(everyResource).toEqual(expect.arrayContaining(["goods", "creativity", "capital"]))
+
+      // As delivery-flavoured as an application gets with the deliveries
+      // question answered no: hub and kitchen (both carry delivery zones),
+      // transportation among the resources.
+      const applicant = await login("india")
+      const requestId = await file(applicant, `India Hub ${uid()}`, {
+        playbook: "hub",
+        recommended: "hub",
+        roles: ["hub", "kitchen"],
+        resources: everyResource,
+        node: false,
+        vendor_type: "mutual_aid",
+      })
+      const [stored] = await container().resolve(REQUEST_MODULE).listRequests({ id: requestId })
+      expect(stored.data).toMatchObject({ resources: everyResource, roles: ["hub", "kitchen"], node_operator_opt_in: false })
+
+      const approved = await accept(requestId)
+      expect(approved.status).toBe(200)
+      const sellerId = approved.data.seller.id as string
+      const token = await signIn(applicant)
+
+      // Reload: what registration saved reads back.
+      const saved = await call(api.get("/vendor/playbook/assign", bearer(token)))
+      expect(saved.status).toBe(200)
+      expect(saved.data.playbook_assignment).toMatchObject({
+        recipe_id: "hub",
+        recommended_recipe_id: "hub",
+        metadata: { roles: ["hub", "kitchen"], resources: everyResource },
+      })
+      const planBefore = await call(api.get("/vendor/plan/me", bearer(token)))
+      expect(planBefore.status).toBe(200)
+
+      // The wizard's "Change": the quiz re-run with every answer, in another
+      // order, and another primary role.
+      const reordered = [...everyResource].reverse()
+      const rerun = await call(
+        api.post(
+          "/vendor/playbook/assign",
+          { recipe_id: "kitchen", recommended_recipe_id: "hub", overridden: true, roles: ["kitchen", "hub"], resources: reordered },
+          bearer(token)
+        )
+      )
+      expect(rerun.status).toBe(200)
+      const reloaded = await call(api.get("/vendor/playbook/assign", bearer(token)))
+      expect(reloaded.data.playbook_assignment).toMatchObject({
+        recipe_id: "kitchen",
+        recommended_recipe_id: "hub",
+        overridden: true,
+        metadata: { roles: ["kitchen", "hub"], resources: reordered },
+      })
+
+      // Nothing was inferred from the roles, the resources or the vendor type:
+      // the store's features are the roles' own, no plugin was installed, the
+      // plan is the one it had, and it is not enrolled in deliveries.
+      const metadata = await metadataOf(sellerId)
+      expect(metadata.enabled_extensions).toEqual(unionFeatureKeys(["kitchen", "hub"]))
+      expect(pluginSlugsFrom(metadata.enabled_extensions)).toEqual([])
+      const planAfter = await call(api.get("/vendor/plan/me", bearer(token)))
+      expect(planAfter.data.plan.code).toBe("free")
+      expect(planAfter.data.plan).toEqual(planBefore.data.plan)
+      expect(planAfter.data.feature_keys).toEqual([])
+      expect(metadata.node_operator_opt_in).toBe(false)
+      expect(
+        await container().resolve(BLACKSTAR_FULFILLMENT_MODULE).listBlackstarNodeOperatorCredentials({ seller_id: sellerId })
+      ).toEqual([])
+      expect((await call(api.get("/vendor/node-operator", bearer(token)))).data.node_operator).toEqual({
+        opted_in: false,
+        credential: null,
       })
     })
 
