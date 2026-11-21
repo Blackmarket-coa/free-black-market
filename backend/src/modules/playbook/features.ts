@@ -33,7 +33,8 @@ export const LEGACY_VENDOR_TYPE_TO_PLAYBOOK: Record<string, PlaybookId> = {
   // (products + inventory + support) for the same reason `general` does:
   // reusing an existing recipe rather than growing the playbook set, which is
   // asserted verbatim by storefront tests and seeded into the `playbook` table.
-  // A carrier's real surface is the Blackstar node it is provisioned, not a
+  // A carrier's real surface is the Blackstar node it opts in to run
+  // (`node_operator_opt_in`; the vendor type itself enrolls no one), not a
   // storefront recipe.
   logistics: "stall",
   // The archetype-neutral vendor maps to `stall` — the solo-seller recipe

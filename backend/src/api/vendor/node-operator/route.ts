@@ -9,13 +9,40 @@ import {
 import { BLACKSTAR_FULFILLMENT_MODULE } from "../../../modules/blackstar-fulfillment"
 import type BlackstarFulfillmentService from "../../../modules/blackstar-fulfillment/service"
 import { provisionNodeOperator } from "../../../shared/provision-node-operator"
+import type { NodeOperatorCredentialView } from "../../../modules/blackstar-fulfillment/service"
+import { isBlackstarEmitConfigured } from "../../../modules/marketplace-webhooks/service"
 
 const log = createLogger("api/vendor/node-operator")
 
 type MetaRow = {
   id: string
-  vendor_type: string | null
   node_operator_opt_in: boolean | null
+}
+
+/**
+ * Where a seller stands, said plainly, so no client has to work it out from
+ * `opted_in` and `credential`:
+ *
+ * - `off`: not opted in.
+ * - `active`: opted in, and holds a credential.
+ * - `opted_in_no_credential`: opted in, with no credential. Approval leaves a
+ *   seller here when it could not tell Blackstar (it issues nothing then), and
+ *   so does turning this on while the bridge is not connected.
+ */
+type NodeOperatorStatus = "off" | "active" | "opted_in_no_credential"
+
+function describeNodeOperator(
+  optedIn: boolean,
+  credential: NodeOperatorCredentialView | null
+): { status: NodeOperatorStatus; message: string | null } {
+  if (!optedIn) return { status: "off", message: null }
+  if (credential) return { status: "active", message: null }
+  return {
+    status: "opted_in_no_credential",
+    message: isBlackstarEmitConfigured()
+      ? "You are opted in to carry deliveries, but have no credential yet. Turn this on again to issue it; its secret is shown once."
+      : "You are opted in to carry deliveries, but have no credential yet: deliveries are not connected on this marketplace, so none can be issued. Turn this on again once they are.",
+  }
 }
 
 type SellerRow = { id: string; name: string | null }
@@ -31,7 +58,7 @@ async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
 
   const { data: metaRows } = await query.graph({
     entity: "seller_metadata",
-    fields: ["id", "vendor_type", "node_operator_opt_in"],
+    fields: ["id", "node_operator_opt_in"],
     filters: { seller_id: sellerId },
   })
 
@@ -73,6 +100,9 @@ async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
  * credential it signs with. Never the secret: that is shown once at issue and
  * stored encrypted with no read-back path, so an operator who loses it rotates
  * rather than recovers.
+ *
+ * `status` and `message` say where the seller stands; an opted-in seller with
+ * no credential (see `NodeOperatorStatus`) is told so, and what to do.
  */
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const sellerId = await requireSellerId(req, res)
@@ -83,11 +113,13 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     BLACKSTAR_FULFILLMENT_MODULE
   )
   const credential = await blackstar.getNodeOperatorCredential(sellerId)
+  const optedIn = meta?.node_operator_opt_in === true
 
   return res.json({
     node_operator: {
-      opted_in: meta?.node_operator_opt_in === true,
+      opted_in: optedIn,
       credential,
+      ...describeNodeOperator(optedIn, credential),
     },
   })
 }
@@ -102,6 +134,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
  * node, returning the secret exactly once. Re-issuing on a seller who is
  * already on revokes the previous credential first, so the answer to "I lost my
  * secret" is this button rather than a support ticket.
+ *
+ * While the Blackstar emit is not configured there is no one to tell, so the
+ * opt-in is saved and nothing is issued: a secret shown here would sign for a
+ * node Blackstar never heard of. The answer says so (`provisioned: false`,
+ * `reason`, `status: "opted_in_no_credential"`, `message`); it used to hand
+ * back a secret and `provisioned: true` with nothing sent.
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const sellerId = await requireSellerId(req, res)
@@ -142,7 +180,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     // for it any more.
     await blackstar.revokeNodeOperatorCredential(sellerId)
     log.info(`[node-operator] ${sellerId} opted out`)
-    return res.json({ node_operator: { opted_in: false, credential: null } })
+    return res.json({
+      node_operator: {
+        opted_in: false,
+        credential: null,
+        ...describeNodeOperator(false, null),
+      },
+    })
   }
 
   const result = await provisionNodeOperator(req.scope, {
@@ -150,12 +194,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     sellerName: seller.name ?? sellerId,
     memberEmail: member?.email ?? "",
     memberName: member?.name ?? seller.name ?? sellerId,
-    vendorType: meta?.vendor_type ?? "general",
     optedIn: true,
   })
 
   const credential = await blackstar.getNodeOperatorCredential(sellerId)
-  log.info(`[node-operator] ${sellerId} opted in (emitted=${result.emitted})`)
+  log.info(
+    `[node-operator] ${sellerId} opted in (emitted=${result.emitted}${
+      result.emitted ? "" : `, ${result.reason}`
+    })`
+  )
 
   return res.json({
     node_operator: {
@@ -164,6 +211,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       // Shown once, here and nowhere else.
       secret: result.secret ?? null,
       provisioned: result.emitted,
+      // Why nothing was issued, when nothing was.
+      reason: result.emitted ? null : result.reason,
+      ...describeNodeOperator(true, credential),
     },
   })
 }

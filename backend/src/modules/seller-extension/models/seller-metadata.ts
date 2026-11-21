@@ -37,9 +37,11 @@ export enum VendorType {
   MUTUAL_AID = "mutual_aid",
   CREATOR = "creator",
   /**
-   * A carrier / delivery node. Approving a logistics seller provisions a
-   * Blackstar node operator over the bridge, so this type is the gate on who
-   * ends up holding logistics credentials — not every approved seller.
+   * A carrier / delivery node. An archetype only: it enrolls no one in
+   * deliveries. Who becomes a Blackstar node operator is decided by the
+   * seller's own `node_operator_opt_in` and nothing else
+   * (`shared/provision-node-operator.ts`); approving a logistics seller used
+   * to provision one whatever they had answered.
    */
   LOGISTICS = "logistics",
   GENERAL = "general",

@@ -3,6 +3,8 @@ import {
   provisionNodeOperator,
   shouldProvisionNodeOperator,
 } from "../provision-node-operator"
+import { BLACKSTAR_FULFILLMENT_MODULE } from "../../modules/blackstar-fulfillment"
+import { MARKETPLACE_WEBHOOKS_MODULE } from "../../modules/marketplace-webhooks"
 
 /**
  * Who gets handed credentials to the logistics network.
@@ -12,28 +14,20 @@ import {
  */
 describe("shouldProvisionNodeOperator", () => {
   it("is off unless asked for", () => {
-    expect(shouldProvisionNodeOperator("general")).toBe(false)
-    expect(shouldProvisionNodeOperator("kitchen", false)).toBe(false)
-    expect(shouldProvisionNodeOperator("general", undefined)).toBe(false)
+    expect(shouldProvisionNodeOperator()).toBe(false)
+    expect(shouldProvisionNodeOperator(false)).toBe(false)
+    expect(shouldProvisionNodeOperator(undefined)).toBe(false)
   })
 
-  it("follows the opt-in regardless of what the seller sells", () => {
-    // The point of moving off vendor_type: a kitchen that also drives could not
-    // express that, because vendor_type is one archetype chosen once.
-    expect(shouldProvisionNodeOperator("kitchen", true)).toBe(true)
-    expect(shouldProvisionNodeOperator("garden", true)).toBe(true)
-  })
-
-  it("still honours the old logistics archetype", () => {
-    // Sellers registered under the previous rule must not silently lose access.
-    expect(shouldProvisionNodeOperator("logistics")).toBe(true)
+  it("follows the seller's own answer", () => {
+    expect(shouldProvisionNodeOperator(true)).toBe(true)
   })
 
   it("does not treat a truthy non-boolean as consent", () => {
     // The flag rides in from a JSON body; "false", 0 and "" must not decide
     // this, and neither should a stray string.
     for (const value of ["true", 1, "yes", {}] as unknown[]) {
-      expect(shouldProvisionNodeOperator("general", value as boolean)).toBe(false)
+      expect(shouldProvisionNodeOperator(value as boolean)).toBe(false)
     }
   })
 })
@@ -55,14 +49,20 @@ describe("mintNodeCredential", () => {
 })
 
 describe("provisionNodeOperator", () => {
-  function containerWith(emit: jest.Mock, issue?: jest.Mock) {
+  const queued = { id: "whd_1", subscription_id: "blackstar-global" }
+
+  function containerWith(emit: jest.Mock, blackstar?: { issue?: jest.Mock; revoke?: jest.Mock }) {
     return {
       resolve: (token: string) => {
-        if (token === "blackstar_fulfillment" || token === "blackstarFulfillment") {
-          if (!issue) throw new Error("no blackstar module")
-          return { issueNodeOperatorCredential: issue }
+        if (token === BLACKSTAR_FULFILLMENT_MODULE) {
+          if (!blackstar?.issue) throw new Error("no blackstar module")
+          return {
+            issueNodeOperatorCredential: blackstar.issue,
+            revokeNodeOperatorCredential: blackstar.revoke ?? jest.fn(async () => undefined),
+          }
         }
-        return { emitBlackstar: emit }
+        if (token === MARKETPLACE_WEBHOOKS_MODULE) return { emitBlackstar: emit }
+        throw new Error(`unexpected resolve(${token})`)
       },
     } as never
   }
@@ -72,37 +72,66 @@ describe("provisionNodeOperator", () => {
     sellerName: "Cross Town",
     memberEmail: "ops@crosstown.test",
     memberName: "Sam",
-    vendorType: "general",
   }
 
-  it("emits nothing when the seller did not opt in", async () => {
+  const origEnv = { ...process.env }
+  beforeEach(() => {
+    // The emit as a deployment connected to Blackstar has it.
+    process.env.BLACKSTAR_WEBHOOK_SECRET = "blackstar_bridge_test_secret_0123"
+    process.env.BLACKSTAR_API_BASE = "https://blackstar.example"
+  })
+  afterEach(() => {
+    process.env = { ...origEnv }
+  })
+
+  it("issues and emits nothing when the seller did not opt in", async () => {
     const emit = jest.fn()
-    const result = await provisionNodeOperator(containerWith(emit), input)
-    expect(result.emitted).toBe(false)
+    const issue = jest.fn()
+    const result = await provisionNodeOperator(containerWith(emit, { issue }), input)
+    expect(result).toEqual({ emitted: false, reason: "not_opted_in" })
+    expect(issue).not.toHaveBeenCalled()
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it("enrolls no one for being a logistics vendor: only the answer counts", async () => {
+    // `vendor_type === "logistics"` used to provision with the question
+    // answered no. The input has no vendor type any more; one passed anyway
+    // changes nothing.
+    const emit = jest.fn()
+    const issue = jest.fn()
+    for (const optedIn of [false, undefined]) {
+      const result = await provisionNodeOperator(containerWith(emit, { issue }), {
+        ...input,
+        optedIn,
+        vendorType: "logistics",
+      } as never)
+      expect(result).toEqual({ emitted: false, reason: "not_opted_in" })
+    }
+    expect(issue).not.toHaveBeenCalled()
     expect(emit).not.toHaveBeenCalled()
   })
 
   it("emits exactly one event keyed on the seller id", async () => {
-    const emit = jest.fn()
+    const emit = jest.fn(async () => queued)
     const issue = jest.fn(async () => ({ key_id: "bsk_abc", secret: "s".repeat(64) }))
-    const result = await provisionNodeOperator(containerWith(emit, issue), {
+    const result = await provisionNodeOperator(containerWith(emit, { issue }), {
       ...input,
       optedIn: true,
     })
 
     expect(result.emitted).toBe(true)
     expect(emit).toHaveBeenCalledTimes(1)
-    const [type, payload] = emit.mock.calls[0]
+    const [type, payload] = emit.mock.calls[0] as unknown as [string, Record<string, unknown>]
     expect(type).toBe("node.operator.approved")
     // The idempotency key on Blackstar's side: a redelivery must not mint a
     // second operator for the same seller.
-    expect((payload as Record<string, unknown>).external_ref).toBe("sel_1")
+    expect(payload.external_ref).toBe("sel_1")
   })
 
   it("sends the credential it persisted, not a throwaway", async () => {
-    const emit = jest.fn()
+    const emit = jest.fn(async () => queued)
     const issue = jest.fn(async () => ({ key_id: "bsk_stored", secret: "a".repeat(64) }))
-    const result = await provisionNodeOperator(containerWith(emit, issue), {
+    const result = await provisionNodeOperator(containerWith(emit, { issue }), {
       ...input,
       optedIn: true,
     })
@@ -110,19 +139,55 @@ describe("provisionNodeOperator", () => {
     // Minting inline put the secret on the wire and forgot it, so no operator
     // could ever be told what their own credential was.
     expect(issue).toHaveBeenCalledWith({ seller_id: "sel_1" })
-    expect(result.keyId).toBe("bsk_stored")
-    const payload = emit.mock.calls[0][1] as { credential: { key_id: string } }
+    expect(result).toEqual({ emitted: true, keyId: "bsk_stored", secret: "a".repeat(64) })
+    const [, payload] = emit.mock.calls[0] as unknown as [string, { credential: { key_id: string } }]
     expect(payload.credential.key_id).toBe("bsk_stored")
   })
 
   it("still provisions when the credential cannot be persisted", async () => {
     // A storage failure must not leave a seller who opted in with no node.
-    const emit = jest.fn()
+    const emit = jest.fn(async () => queued)
     const result = await provisionNodeOperator(containerWith(emit), {
       ...input,
       optedIn: true,
     })
     expect(result.emitted).toBe(true)
     expect(result.keyId).toMatch(/^bsk_/)
+  })
+
+  it.each([["BLACKSTAR_WEBHOOK_SECRET"], ["BLACKSTAR_API_BASE"]])(
+    "issues no credential and says it emitted nothing when %s is unset",
+    async (missing) => {
+      // It used to issue a credential, queue nothing, and report
+      // `emitted: true`: a secret nobody held, behind a log line saying sent.
+      delete process.env[missing]
+      const emit = jest.fn(async () => null)
+      const issue = jest.fn(async () => ({ key_id: "bsk_abc", secret: "s".repeat(64) }))
+
+      const result = await provisionNodeOperator(containerWith(emit, { issue }), {
+        ...input,
+        optedIn: true,
+      })
+
+      expect(result).toEqual({ emitted: false, reason: "blackstar_not_configured" })
+      expect(issue).not.toHaveBeenCalled()
+      expect(emit).not.toHaveBeenCalled()
+    }
+  )
+
+  it("takes back the credential if the event was not queued after all", async () => {
+    // The emit answers null when it finds itself unconfigured: `emitted`
+    // follows what was queued, not what was attempted.
+    const emit = jest.fn(async () => null)
+    const issue = jest.fn(async () => ({ key_id: "bsk_abc", secret: "s".repeat(64) }))
+    const revoke = jest.fn(async () => undefined)
+
+    const result = await provisionNodeOperator(containerWith(emit, { issue, revoke }), {
+      ...input,
+      optedIn: true,
+    })
+
+    expect(result).toEqual({ emitted: false, reason: "blackstar_not_configured" })
+    expect(revoke).toHaveBeenCalledWith("sel_1")
   })
 })

@@ -675,45 +675,51 @@ export class SellerApprovalService {
       }
 
       try {
-        // A logistics seller also becomes a Blackstar node operator. Best
-        // effort: the bridge retries on its own, and an outage over there must
-        // never fail or roll back an approval over here.
+        // An applicant who answered yes to carrying deliveries becomes a
+        // Blackstar node operator. Only that answer decides it: not the
+        // playbook, the resources or the vendor type (`vendor_type ===
+        // "logistics"` used to, with the question answered no). Best effort:
+        // the bridge retries on its own, and an outage over there must never
+        // fail or roll back an approval over here.
         //
-        // The secret this returns is dropped: approval has no one to show it
-        // to (no response field, no mail). Issuing revokes any earlier
-        // credential and stores this one encrypted, readable by no route. The
-        // plaintext leaves only inside the `node.operator.approved` delivery,
-        // whose envelope `emitBlackstar` stores as is in
-        // marketplace_webhook_delivery.payload (listed by
-        // GET /admin/blackstar/deliveries), and only when BLACKSTAR_WEBHOOK_SECRET
-        // and BLACKSTAR_API_BASE are set. Without them nothing is queued, the
-        // result still says `emitted`, and no one holds the secret. The vendor
-        // gets one to keep from Settings, where POST /vendor/node-operator
-        // re-issues and shows it once.
+        // What happens to the credential's secret, which approval has no one
+        // to show to (no response field, no mail):
+        // - Blackstar's emit not configured: nothing is issued and nothing is
+        //   queued. The opt-in is recorded below, and the vendor issues the
+        //   credential from Settings (POST /vendor/node-operator), which
+        //   shows it once.
+        // - configured: a credential is issued (stored encrypted, readable by
+        //   no route) and its plaintext leaves in the `node.operator.approved`
+        //   delivery; the delivery row holds it until Blackstar accepts it,
+        //   then clears it, and the admin deliveries routes redact it. The
+        //   vendor still gets a secret of their own only from Settings, which
+        //   re-issues.
+        const optedIn = data.node_operator_opt_in === true
         const provisioned = await provisionNodeOperator(this.container, {
           sellerId: seller.id,
           sellerName: seller.name,
           memberEmail: data.member.email,
           memberName: data.member.name,
-          vendorType,
-          // Captured by the onboarding survey at registration. The flag is the
-          // real gate now; vendor_type only still counts for sellers who
-          // registered under the old logistics-archetype rule.
-          optedIn: data.node_operator_opt_in === true,
+          // Captured by the onboarding survey at registration.
+          optedIn,
         })
+        if (optedIn && !provisioned.emitted) {
+          log.info(
+            `[SellerApproval] ${seller.id} opted in to carry deliveries; no credential was issued (${provisioned.reason}). The opt-in is recorded and the vendor issues the credential from Settings.`
+          )
+        }
 
-        // Reconcile the metadata flag with what actually happened. Step 5 sets
-        // it when it creates the row, but step 5 can fail, or find a row
-        // already there (seller_id is unique: an approval resumed onto its
-        // store, or a route that wrote one first, keeps its defaults), and
-        // vendor_type === logistics provisions without the survey flag at all.
+        // Record the answer on the metadata row whatever provisioning did.
+        // Step 5 sets it when it creates the row, but step 5 can fail, or find
+        // a row already there (seller_id is unique: an approval resumed onto
+        // its store, or a route that wrote one first, keeps its defaults).
         // Either way the settings page would read back "off" for a seller who
-        // holds a credential, and the next toggle would try to issue a second
-        // one. Not the sellerCreated subscriber, which this used to blame: it
-        // listens for an event named "sellerCreated" that nothing emits
-        // (Mercur's createSellerWorkflow declares a workflow hook of that name,
-        // not an event), so it never runs.
-        if (provisioned.emitted) {
+        // said yes, and may hold a credential. Not the sellerCreated
+        // subscriber, which this used to blame: it listens for an event named
+        // "sellerCreated" that nothing emits (Mercur's createSellerWorkflow
+        // declares a workflow hook of that name, not an event), so it never
+        // runs.
+        if (optedIn) {
           try {
             const sellerExtension = this.container.resolve<SellerExtensionService>(
               SELLER_EXTENSION_MODULE
