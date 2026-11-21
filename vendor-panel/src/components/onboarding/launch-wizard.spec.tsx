@@ -347,6 +347,8 @@ describe("the delivery step", () => {
     expect(html).toContain("Save pickup or shipping above to continue.")
     expect(ui.button("Continue")).toMatchObject({ disabled: true })
     ui.press(ui.button("Continue"))
+    // And a click that reaches the handler all the same goes nowhere.
+    await ui.button("Continue").onClick?.()
     await settled()
     expect(onContinue).not.toHaveBeenCalled()
   })
@@ -532,6 +534,25 @@ describe("the publish step", () => {
     })
   })
 
+  it("does not say published when the backend answers without a published state", async () => {
+    const product = await ready()
+    backend.on("POST", "/vendor/onboarding/publish", () =>
+      json(200, { state: { ...store.db.onboarding, wizard_step: "step_4" } })
+    )
+    const onPublished = vi.fn()
+    await show(step({ product, onPublished }))
+
+    ui.press(ui.button("Publish Wildflower Honey"))
+    await settled()
+
+    expect(onPublished).not.toHaveBeenCalled()
+    expect(ui.toast.success).not.toHaveBeenCalled()
+    expect(ui.toast.error).toHaveBeenCalledWith("The listing was not published", {
+      description:
+        "The product is published, but the backend did not record it as your first listing.",
+    })
+  })
+
   it("offers the store's own products when this browser does not remember the wizard's", async () => {
     const product = await ready()
     const onPublished = vi.fn()
@@ -566,8 +587,11 @@ describe("the publish step", () => {
     expect(html).toContain("Buyers could not check out yet")
     expect(ui.button("Publish Wildflower Honey")).toMatchObject({ disabled: true })
     ui.press(ui.button("Publish Wildflower Honey"))
+    // And a click that reaches the handler all the same publishes nothing.
+    await ui.button("Publish Wildflower Honey").onClick?.()
     await settled()
     expect(writes()).toEqual([])
+    expect(store.db.products[0].status).toBe("draft")
   })
 
   it("publishes once for a double click", async () => {
