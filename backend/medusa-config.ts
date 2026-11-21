@@ -259,6 +259,9 @@ const communityModules = [
   { resolve: './src/modules/volunteer' },
   { resolve: './src/modules/food-distribution' },
   { resolve: './src/modules/cottage-food' },
+  // Plates pilot: sourced, reviewed rule text per state (South Carolina
+  // first). Information only; see the module's index.ts.
+  { resolve: './src/modules/jurisdiction-rules' },
 ]
 
 // Collective purchasing & bargaining modules
