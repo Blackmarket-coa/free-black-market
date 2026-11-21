@@ -1,5 +1,7 @@
 # Implementation status and cost-reduction inventory
 
+> **Mobile source update (2026-11-20):** [App implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) is the newer evidence for specifically rechecked paths and static registries. It records all 99 local module/provider directories, three configured Mercur plugins, six plugin seeds, six legacy add-on packs, substantive resource/commerce/aid/fulfillment code and exact scaffolds. The older tables below retain their original scope/date; source enumeration is not full functional validation. See the [app plan](FBM_MOBILE_APP_PLAN.md) for mobile delivery requirements.
+
 **Updated:** 2026-11-12  
 **Scope:** Source inspection and recorded CI evidence; deployment revision, live flags, partner commitments and operational capacity remain unverified. This is not a completed full-platform runtime or security audit.
 

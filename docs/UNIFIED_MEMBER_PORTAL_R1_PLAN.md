@@ -1,5 +1,7 @@
 # Plan: the unified member portal in `/user` (packages 0, 0a and 1, plus the first slice of 2 and 3)
 
+> **2026-11-20 context:** R1 remains the first limited slice of the [standalone iOS/Android app plan](FBM_MOBILE_APP_PLAN.md), not the entire target app. The [source inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) lists reusable domain engines, all local modules/providers and remaining gaps. Shipping compact R1 first does not change standard game view in the product contract or permanently exclude business operations from mobile. Nothing in this addendum marks R1 built or changes its actor/session safeguards.
+
 > **Status:** draft implementation plan, 2026-11-17. Written from the code at `b29db1db` by a read-only planning pass, after the owner's decision of the same day (start the unified member portal in the storefront's `/user`; the vertical portals stay as they are; see `docs/AUDIT_DEBT.md` SD-153). Nothing in it is built yet; each phase lands as its own reviewed unit with a ledger row.
 
 I read everything at commit `b29db1db`. I ran no tests, no build and no database. Wherever I say "by reading", I read the code but didn't run it.
