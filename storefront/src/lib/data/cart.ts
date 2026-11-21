@@ -488,6 +488,66 @@ export async function applyPromotions(codes: string[]) {
     .catch(medusaError)
 }
 
+/** What `addPromotionCode` hands the cart page. */
+export type AddPromotionCodeResult = {
+  /** The new code is on the cart. */
+  applied: boolean
+  /** Codes the cart had before and still has. */
+  kept: string[]
+  /** Codes the cart had before and no longer has: they took nothing off the cart as it is now. */
+  removed: string[]
+}
+
+/**
+ * Adds one promotion code to the cart, keeping the codes it already has.
+ *
+ * `POST /store/carts/:id` with `promo_codes` replaces the cart's codes with
+ * the list sent (Medusa's `updateCartPromotionsWorkflow`, REPLACE), and the
+ * promotion field used to send the new code alone, so entering a second code
+ * silently removed the first. The codes the buyer entered before are now sent
+ * with it. They are read from the cart here, not taken from the page, so a
+ * page drawn before another code was added cannot drop that code. Automatic
+ * promotions are not sent: Medusa applies them whatever the list says.
+ *
+ * Medusa keeps a code only when it takes something off the cart as it is, so
+ * the new code may not be on the cart afterwards (`applied`), and an earlier
+ * one may be gone too (`removed`). A code the backend does not know is
+ * refused, and this throws.
+ */
+export async function addPromotionCode(code: string): Promise<AddPromotionCodeResult> {
+  const cart = await retrieveCart()
+
+  if (!cart) {
+    throw new Error("No existing cart found")
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const entered = code.trim()
+  const existing = (cart.promotions ?? [])
+    .filter((promotion) => !!promotion.code && !promotion.is_automatic)
+    .map((promotion) => promotion.code as string)
+  const codes = [...new Set([...existing, entered])]
+
+  return sdk.store.cart
+    .update(cart.id, { promo_codes: codes }, {}, headers)
+    .then(async ({ cart: updated }) => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+      const now = new Set(
+        (updated.promotions ?? []).map((promotion: HttpTypes.StoreCartPromotion) => promotion.code)
+      )
+      return {
+        applied: now.has(entered),
+        kept: existing.filter((kept) => kept !== entered && now.has(kept)),
+        removed: existing.filter((kept) => kept !== entered && !now.has(kept)),
+      }
+    })
+    .catch(medusaError)
+}
+
 export async function removeShippingMethod(shippingMethodId: string) {
   const cartId = await getCartId()
 

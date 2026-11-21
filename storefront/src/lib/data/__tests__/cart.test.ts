@@ -59,6 +59,7 @@ vi.mock("@/lib/data/attribution", () => ({
 }))
 
 import {
+  addPromotionCode,
   addToCart,
   applyPromotions,
   deleteLineItem,
@@ -327,6 +328,61 @@ describe("shipping & promotions", () => {
   it("applyPromotions throws without a cart id", async () => {
     h.getCartId.mockResolvedValue(undefined)
     await expect(applyPromotions(["X"])).rejects.toThrow("No existing cart found")
+  })
+
+  /**
+   * `POST /store/carts/:id { promo_codes }` replaces the cart's codes with
+   * the list sent (Medusa's `updateCartPromotionsWorkflow`, REPLACE). The
+   * field sent the new code alone, so a second code removed the first.
+   */
+  describe("addPromotionCode (the cart page's promotion field)", () => {
+    const cartWithCodes = (...promotions: Array<{ code: string; is_automatic?: boolean }>) => ({
+      cart: { id: "cart_1", promotions },
+    })
+
+    it("sends the codes the cart already has with the new one, read from the cart itself", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }, { code: "WELCOME", is_automatic: true }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "TEN" }, { code: "FIVE" }, { code: "WELCOME" }] } })
+
+      await expect(addPromotionCode(" FIVE ")).resolves.toEqual({ applied: true, kept: ["TEN"], removed: [] })
+
+      // The earlier code and the new one; not the automatic promotion,
+      // which Medusa applies whatever the list says.
+      expect(h.cartUpdate).toHaveBeenCalledWith("cart_1", { promo_codes: ["TEN", "FIVE"] }, {}, authed)
+      expect(h.revalidateTag).toHaveBeenCalledWith("tag")
+    })
+
+    it("says the new code is not on the cart when Medusa did not keep it, with the earlier code still there", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "TEN" }] } })
+
+      await expect(addPromotionCode("FREESHIP")).resolves.toEqual({ applied: false, kept: ["TEN"], removed: [] })
+    })
+
+    it("says which earlier code Medusa removed in the same update", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "FIVE" }] } })
+
+      await expect(addPromotionCode("FIVE")).resolves.toEqual({ applied: true, kept: [], removed: ["TEN"] })
+    })
+
+    it("sends a code the cart already has once", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "TEN" }] } })
+
+      await expect(addPromotionCode("TEN")).resolves.toEqual({ applied: true, kept: [], removed: [] })
+      expect(h.cartUpdate).toHaveBeenCalledWith("cart_1", { promo_codes: ["TEN"] }, {}, authed)
+    })
+
+    it("throws without an open cart, and when the backend refuses the code", async () => {
+      h.medusaFetch.mockResolvedValue({ cart: null })
+      await expect(addPromotionCode("FIVE")).rejects.toThrow("No existing cart found")
+      expect(h.cartUpdate).not.toHaveBeenCalled()
+
+      h.medusaFetch.mockResolvedValue(cartWithCodes())
+      h.cartUpdate.mockRejectedValue({ status: 400, response: { data: { message: "The promotion code NOPE is invalid" } } })
+      await expect(addPromotionCode("NOPE")).rejects.toThrow("The promotion code NOPE is invalid.")
+    })
   })
 
   it("removeShippingMethod deletes via medusaFetch", async () => {
