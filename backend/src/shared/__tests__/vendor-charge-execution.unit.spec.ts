@@ -455,17 +455,54 @@ describe("fulfillPaidCharge", () => {
 
     expect(result.fulfilled).toBe(true)
     // One access-pass entitlement per key in the pack, each carrying an expiry
-    // so the features lapse on their own when the window closes.
+    // so the features lapse on their own when the window closes. Since PL-1
+    // the pack is nursery management only: the production ledger is in every
+    // plan, and a paid Grower Tools charge no longer writes a row for it.
     const keys = world.grant.mock.calls
       .map((c) => (c[0] as Record<string, unknown>).feature_key)
       .sort()
-    expect(keys).toEqual(["vendor.nursery", "vendor.production_ledger"])
+    expect(keys).toEqual(["vendor.nursery"])
     for (const call of world.grant.mock.calls) {
       const input = call[0] as Record<string, unknown>
       expect(input.seller_id).toBe("sel_1")
       expect(input.expires_at).toBeInstanceOf(Date)
       expect((input.metadata as Record<string, unknown>).addon).toBe(
         "grower_pack"
+      )
+    }
+  })
+
+  it("grants every key of a multi-key pack when its charge is paid", async () => {
+    const world = makeWorld({
+      charges: [
+        promotionCharge({
+          kind: VendorChargeKind.ADDON,
+          status: VendorChargeStatus.PAID,
+          description: "Add-on — Commerce Tools (30 days)",
+          metadata: { addon_code: "commerce_pack" },
+        }),
+      ],
+    })
+
+    const result = await fulfillPaidCharge(world.container as never, "vc_1")
+
+    expect(result.fulfilled).toBe(true)
+    const keys = world.grant.mock.calls
+      .map((c) => (c[0] as Record<string, unknown>).feature_key)
+      .sort()
+    expect(keys).toEqual(["vendor.invoicing", "vendor.pick_pack", "vendor.pos"])
+    const expiries = new Set(
+      world.grant.mock.calls.map((c) =>
+        ((c[0] as Record<string, unknown>).expires_at as Date).getTime()
+      )
+    )
+    // One window for the whole pack.
+    expect(expiries.size).toBe(1)
+    for (const call of world.grant.mock.calls) {
+      const input = call[0] as Record<string, unknown>
+      expect(input.seller_id).toBe("sel_1")
+      expect((input.metadata as Record<string, unknown>).addon).toBe(
+        "commerce_pack"
       )
     }
   })

@@ -7,8 +7,13 @@ import {
   addonUndercutsPlan,
   getAddonDefinition,
   listPurchasableAddons,
+  universalKeysGrantedByAddon,
 } from "../addons"
-import { VENDOR_PLAN_CATALOG } from "../catalog"
+import {
+  UNIVERSAL_FEATURE_KEYS,
+  VENDOR_PLAN_CATALOG,
+  featureKeysForPlan,
+} from "../catalog"
 
 describe("add-on catalog", () => {
   it("has unique codes", () => {
@@ -46,13 +51,89 @@ describe("add-on catalog", () => {
 
   it("would catch a pack that did undercut a covered plan", () => {
     // The guard itself has to be tested, or the invariant above is a
-    // tautology. embed_pack's keys cover starter; price it below starter.
+    // tautology. embed_pack grants everything starter sells; price it below
+    // starter.
     const starter = VENDOR_PLAN_CATALOG.find((p) => p.code === "starter")!
-    const cheat = {
-      ...VENDOR_ADDON_CATALOG.find((a) => a.code === "embed_pack")!,
-      price_amount: starter.price_amount - 100,
+    const embed = VENDOR_ADDON_CATALOG.find((a) => a.code === "embed_pack")!
+    const cheat = { ...embed, price_amount: starter.price_amount - 100 }
+
+    // starter also carries the universal keys, which no pack may grant. So
+    // the pack's keys are NOT a superset of starter's full list, and a guard
+    // that compared the full list would let this cheat through.
+    expect(UNIVERSAL_FEATURE_KEYS.length).toBeGreaterThan(0)
+    for (const key of UNIVERSAL_FEATURE_KEYS) {
+      expect(starter.feature_keys).toContain(key)
+      expect(cheat.feature_keys).not.toContain(key)
     }
+
     expect(addonUndercutsPlan(cheat)).toBe("starter")
+    // At the plan's own price, or above it, the pack undercuts nothing.
+    expect(
+      addonUndercutsPlan({ ...embed, price_amount: starter.price_amount })
+    ).toBeNull()
+    expect(addonUndercutsPlan(embed)).toBeNull()
+  })
+
+  it("judges an undercut on what a plan sells, for every paid public plan", () => {
+    // A made-up pack granting exactly a plan's non-universal keys for one
+    // cent less undercuts that plan (or a cheaper one whose sold keys it also
+    // covers). Runs over starter, pro, scale and all_access.
+    const paid = VENDOR_PLAN_CATALOG.filter(
+      (p) => p.is_public && p.is_active && p.price_amount > 0
+    )
+    expect(paid.length).toBeGreaterThan(0)
+    for (const plan of paid) {
+      const cheat = {
+        ...VENDOR_ADDON_CATALOG[0],
+        code: `cheat_${plan.code}`,
+        price_amount: plan.price_amount - 1,
+        feature_keys: plan.feature_keys.filter(
+          (k) => !UNIVERSAL_FEATURE_KEYS.includes(k)
+        ),
+      }
+      expect(universalKeysGrantedByAddon(cheat)).toEqual([])
+      expect(addonUndercutsPlan(cheat)).not.toBeNull()
+    }
+  })
+
+  it("never grants a key every plan already carries", () => {
+    // A pack listing a universal key charges for what its buyer already has
+    // on any plan, `free` included.
+    for (const addon of VENDOR_ADDON_CATALOG) {
+      expect(universalKeysGrantedByAddon(addon)).toEqual([])
+      for (const key of UNIVERSAL_FEATURE_KEYS) {
+        expect(addon.feature_keys).not.toContain(key)
+      }
+      // So every key a pack grants is one the free plan lacks.
+      for (const key of addon.feature_keys) {
+        expect(featureKeysForPlan("free")).not.toContain(key)
+      }
+    }
+  })
+
+  it("would catch a pack that did grant a universal key", () => {
+    const grower = getAddonDefinition("grower_pack")!
+    const cheat = {
+      ...grower,
+      feature_keys: [...grower.feature_keys, ...UNIVERSAL_FEATURE_KEYS],
+    }
+    expect(universalKeysGrantedByAddon(cheat)).toEqual([...UNIVERSAL_FEATURE_KEYS])
+  })
+
+  it("sells Grower Tools as nursery management, without the production ledger", () => {
+    // PL-1: the pack used to grant `vendor.production_ledger` too. Its price
+    // and its 30-day term are deliberately not asserted here: PL-1 left both
+    // as they were and confirms neither (the ownership migration in
+    // docs/FBM_MONETIZATION_PLAN.md decides them).
+    const grower = getAddonDefinition("grower_pack")!
+    expect(grower.feature_keys).toEqual(["vendor.nursery"])
+    expect(grower.is_active).toBe(true)
+    // The copy says what the pack holds and where the ledger went, and does
+    // not offer the ledger as part of the pack.
+    expect(grower.description).toMatch(/^Nursery management/)
+    expect(grower.description).toMatch(
+      /production ledger and batch costing now come with every plan/
+    )
   })
 
   it("resolves codes and rejects unknowns", () => {
@@ -83,7 +164,7 @@ describe("add-ons under the all-access plan (Black Mask F8, OI-9)", () => {
   })
 
   it("covers a pack only when the plan holds every one of its keys", () => {
-    // starter carries embed + vault (embed_pack's exact keys) and nothing
+    // starter carries embed + vault (all of embed_pack's keys) and nothing
     // from commerce_pack.
     expect(addonCoveredByPlan(getAddonDefinition("embed_pack")!, "starter")).toBe(true)
     expect(addonCoveredByPlan(getAddonDefinition("commerce_pack")!, "starter")).toBe(false)

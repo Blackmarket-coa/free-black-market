@@ -3,6 +3,7 @@ import {
   VENDOR_FEATURE_KEYS,
   VENDOR_PLAN_CATALOG,
   featureKeysForPlan,
+  isUniversalFeatureKey,
   type VendorFeatureKey,
 } from "./catalog"
 
@@ -30,8 +31,8 @@ import {
  * "expired" and "locked".
  *
  * Pure — no imports beyond the plan catalog, no I/O — so the invariants
- * (valid keys, unique codes, no pack undercutting a plan it covers) assert
- * directly in unit tests.
+ * (valid keys, unique codes, no pack undercutting a plan it covers, no pack
+ * granting a key every plan already carries) assert directly in unit tests.
  */
 
 export type VendorAddonDefinition = {
@@ -57,6 +58,10 @@ export type VendorAddonDefinition = {
  * for less would make the plan irrational and turn add-ons into a discount
  * ladder nobody designed. Within that floor, packs price above the plan
  * pro-rata on purpose — the plan is the better deal for anyone staying.
+ *
+ * Second rule, also held by a drift test: **no pack grants a universal key**
+ * (`UNIVERSAL_FEATURE_KEYS` in `catalog.ts`). Every plan carries those, so a
+ * pack listing one would charge for what its buyer already has.
  */
 export const VENDOR_ADDON_CATALOG: VendorAddonDefinition[] = [
   {
@@ -72,14 +77,32 @@ export const VENDOR_ADDON_CATALOG: VendorAddonDefinition[] = [
     display_order: 0,
   },
   {
+    /**
+     * Nursery management only since PL-1 (2026-11-21). The pack used to carry
+     * `vendor.production_ledger` too; the production ledger and batch costing
+     * are now in every plan, so the pack stopped listing a key its buyer
+     * already holds, and its copy says where that tool went.
+     *
+     * The price and the 30-day term are the ones the pack had before that
+     * change, left untouched by it and confirmed by nobody: PL-1 sets no
+     * recurring price. `docs/FBM_MONETIZATION_PLAN.md` makes enhanced
+     * software a one-time purchase and calls the 30-day packs legacy; what
+     * this pack costs and how long it lasts is for that ownership migration
+     * to decide.
+     *
+     * A seller who bought the pack before the change keeps both entitlement
+     * rows to their expiry (`shared/vendor-addons.ts`: rows are written per
+     * key at grant time and never re-read from this list), and keeps costing
+     * afterwards through their plan.
+     */
     code: "grower_pack",
     display_name: "Grower Tools",
     description:
-      "Nursery management and the production ledger, for growers tracking batches from propagation to sale.",
+      "Nursery management for growers: listing attributes, wholesale channels and profit per square foot. The production ledger and batch costing now come with every plan.",
     price_amount: 3900,
     currency_code: "usd",
     duration_days: 30,
-    feature_keys: ["vendor.nursery", "vendor.production_ledger"],
+    feature_keys: ["vendor.nursery"],
     is_active: true,
     display_order: 1,
   },
@@ -246,17 +269,35 @@ export function addonExpiryFrom(
  * Would this pack, at this price, undercut a plan it covers? Exposed for the
  * drift test rather than inlined there, so the rule reads next to the catalog
  * it constrains.
+ *
+ * "Covers" is judged on what the plan SELLS: its keys less the universal ones.
+ * Every seller holds the universal keys whatever they buy, so a pack that
+ * grants the rest of a plan's keys hands over everything that plan adds.
+ * Compared against the plan's full key list, no pack could cover any plan
+ * once a universal key exists (packs may not grant one), and the guard would
+ * pass whatever a pack cost.
  */
 export function addonUndercutsPlan(addon: VendorAddonDefinition): string | null {
   const packKeys = new Set<string>(addon.feature_keys)
   for (const plan of VENDOR_PLAN_CATALOG) {
     if (!plan.is_public || !plan.is_active || plan.price_amount <= 0) continue
-    const covered = plan.feature_keys.every((k) => packKeys.has(k))
+    const sold = plan.feature_keys.filter((k) => !isUniversalFeatureKey(k))
+    const covered = sold.every((k) => packKeys.has(k))
     if (covered && addon.price_amount < plan.price_amount) {
       return plan.code
     }
   }
   return null
+}
+
+/**
+ * The universal keys this pack grants: none, for every pack in the catalog.
+ * Exposed for the drift test, like `addonUndercutsPlan`.
+ */
+export function universalKeysGrantedByAddon(
+  addon: VendorAddonDefinition
+): VendorFeatureKey[] {
+  return addon.feature_keys.filter((k) => isUniversalFeatureKey(k))
 }
 
 /** Every key an add-on can grant is a real plan feature key. For drift tests. */

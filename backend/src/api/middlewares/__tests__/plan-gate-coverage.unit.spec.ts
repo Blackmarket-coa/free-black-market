@@ -1,6 +1,7 @@
 import { readFileSync } from "fs"
 import { join } from "path"
 import {
+  UNIVERSAL_FEATURE_KEYS,
   VENDOR_FEATURE_KEYS,
   VENDOR_PLAN_CATALOG,
   featureKeysForPlan,
@@ -96,10 +97,39 @@ describe("plan gate coverage", () => {
     }
   })
 
-  it("keeps the free plan clear of every gated feature", () => {
-    // The free tier must never be gated out of something it is supposed to
-    // include — if a gated key appeared in `free`, the gate would be dead code.
+  it("gives the free plan the universal keys and no other gated feature", () => {
+    // A key a paid plan sells must never appear in `free`: its gate would pass
+    // everyone and the plan difference would be invisible to whoever pays for
+    // it. The universal keys are in `free` by definition, and they are all of
+    // it.
     const freeKeys = featureKeysForPlan("free")
-    expect(freeKeys).toEqual([])
+    expect([...freeKeys].sort()).toEqual([...UNIVERSAL_FEATURE_KEYS].sort())
+  })
+
+  it("keeps the kill switch and the plan gate on both production matchers", () => {
+    // `vendor.production_ledger` is universal (PL-1), so its plan gate passes
+    // every seller today. It stays registered on purpose: emptying
+    // `UNIVERSAL_FEATURE_KEYS` then puts the paywall back with no route
+    // change, and a failed plan lookup still answers 503 instead of opening
+    // the route. The flag stays in front of it, so a deployment with the
+    // module off answers 404.
+    const blocks = middlewaresSource.split(/\n\s*\{\s*\n/)
+    const gatesOf = (matcher: string) => {
+      const found = blocks.filter((b) => b.includes(`matcher: "${matcher}"`))
+      expect(found).toHaveLength(1)
+      return found[0]
+    }
+
+    const batches = gatesOf("/vendor/production-batches*")
+    expect(batches).toContain('requireFeatureFlagMiddleware("PRODUCTION_LEDGER_V1")')
+    expect(batches).toContain('requirePlanFeature("vendor.production_ledger")')
+
+    const costs = gatesOf("/vendor/production-costs*")
+    expect(costs).toContain('requireFeatureFlagMiddleware("PRODUCTION_COSTING_V1")')
+    expect(costs).toContain('requirePlanFeature("vendor.production_ledger")')
+
+    for (const key of UNIVERSAL_FEATURE_KEYS) {
+      expect(registeredFeatureKeys()).toContain(key)
+    }
   })
 })

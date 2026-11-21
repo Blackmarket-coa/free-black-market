@@ -1,6 +1,6 @@
 import VendorPlanService from "../service"
 import { VendorPlanStatus, VendorPlanAssignedBy } from "../models"
-import { featureKeysForPlan } from "../catalog"
+import { UNIVERSAL_FEATURE_KEYS, featureKeysForPlan } from "../catalog"
 
 /**
  * Exercises VendorPlanService against an in-memory CRUD fake, following the
@@ -118,9 +118,16 @@ describe("ensureAssignment", () => {
 })
 
 describe("getEntitledFeatureKeys", () => {
-  it("returns nothing for a free seller", async () => {
+  it("returns exactly the universal keys for a free seller", async () => {
+    // A seller with no assignment is put on `free`, which carries the tools
+    // every plan includes (PL-1: the production ledger) and nothing sold.
     const svc = makeService()
-    expect(await svc.getEntitledFeatureKeys(SELLER)).toEqual([])
+    expect(await svc.getEntitledFeatureKeys(SELLER)).toEqual([
+      ...UNIVERSAL_FEATURE_KEYS,
+    ])
+    expect(await svc.getEntitledFeatureKeys(SELLER)).toEqual([
+      "vendor.production_ledger",
+    ])
   })
 
   it("returns the plan's keys after an upgrade", async () => {
@@ -138,7 +145,12 @@ describe("getEntitledFeatureKeys", () => {
     await (svc as any).updateVendorPlanAssignments([
       { id: a!.id, status: VendorPlanStatus.CANCELED },
     ])
-    expect(await svc.getEntitledFeatureKeys(SELLER)).toEqual([])
+    // Everything pro sold is gone; what every plan includes stays.
+    const keys = await svc.getEntitledFeatureKeys(SELLER)
+    expect(keys).toEqual(featureKeysForPlan("free"))
+    expect(keys).toEqual([...UNIVERSAL_FEATURE_KEYS])
+    expect(keys).not.toContain("vendor.pos")
+    expect(keys).not.toContain("vendor.embed")
   })
 })
 

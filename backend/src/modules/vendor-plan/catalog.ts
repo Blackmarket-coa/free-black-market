@@ -41,6 +41,39 @@ export function isVendorFeatureKey(key: unknown): key is VendorFeatureKey {
   return typeof key === "string" && VENDOR_FEATURE_KEY_SET.has(key)
 }
 
+/**
+ * Feature keys every plan carries, `free` included: tools FBM no longer
+ * sells as a tier.
+ *
+ * `vendor.production_ledger` covers the production ledger and batch costing
+ * (`/vendor/production-batches*`, `/vendor/production-costs*`). Owner decision
+ * 2026-11-17 (PL-1): costing goes in every plan, not behind Scale or a
+ * recurring add-on.
+ *
+ * The key stays a `VendorFeatureKey` and both `requirePlanFeature` gates in
+ * `api/middlewares.ts` stay registered. Every plan row below spreads this
+ * list, so emptying it puts the paywall back for free, starter and pro in one
+ * line (scale, all_access and internal carry every key regardless). After
+ * that revert no pack sells the key either, until `grower_pack` is given it
+ * back in `addons.ts`.
+ *
+ * Two rules follow, each held by a unit spec: every plan carries every key
+ * listed here (`catalog.unit.spec.ts`), and no add-on pack grants one
+ * (`addons.unit.spec.ts`), since a pack would charge for what the buyer's
+ * plan already includes.
+ */
+export const UNIVERSAL_FEATURE_KEYS: readonly VendorFeatureKey[] = [
+  "vendor.production_ledger",
+]
+
+const UNIVERSAL_FEATURE_KEY_SET: ReadonlySet<string> = new Set(
+  UNIVERSAL_FEATURE_KEYS
+)
+
+export function isUniversalFeatureKey(key: unknown): boolean {
+  return typeof key === "string" && UNIVERSAL_FEATURE_KEY_SET.has(key)
+}
+
 /** Billing interval for a plan's recurring charge. */
 export type VendorPlanInterval = "month" | "year" | "none"
 
@@ -96,13 +129,16 @@ export type VendorPlanDefinition = {
  * `free` is required to exist — `getEntitledFeatureKeys` lazily assigns it to
  * any seller with no assignment row, so that "on the free plan" and "never
  * provisioned" are never ambiguous.
+ *
+ * Every row carries `UNIVERSAL_FEATURE_KEYS`: by spreading the list (free,
+ * starter, pro) or by carrying every key (scale, all_access, internal).
  */
 export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
   {
     code: "free",
     display_name: "Free",
     description:
-      "Everything needed to list and sell: products, orders, customers and payouts.",
+      "Everything needed to list and sell: products, orders, customers and payouts, plus the production ledger and batch costing.",
     price_amount: 0,
     currency_code: "usd",
     interval: "none",
@@ -112,7 +148,8 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     is_active: true,
     is_public: true,
     display_order: 0,
-    feature_keys: [],
+    // Exactly the universal keys: `free` sells nothing else.
+    feature_keys: [...UNIVERSAL_FEATURE_KEYS],
   },
   {
     code: "starter",
@@ -127,7 +164,11 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     is_active: true,
     is_public: true,
     display_order: 1,
-    feature_keys: ["vendor.embed", "vendor.document_vault"],
+    feature_keys: [
+      ...UNIVERSAL_FEATURE_KEYS,
+      "vendor.embed",
+      "vendor.document_vault",
+    ],
   },
   {
     code: "pro",
@@ -143,6 +184,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     is_public: true,
     display_order: 2,
     feature_keys: [
+      ...UNIVERSAL_FEATURE_KEYS,
       "vendor.embed",
       "vendor.document_vault",
       "vendor.pos",
@@ -156,7 +198,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     code: "scale",
     display_name: "Scale",
     description:
-      "Everything in Pro plus the readiness quests, production ledger and vertical modules.",
+      "Everything in Pro plus the readiness quests, nursery management and the buyer network.",
     price_amount: 24900,
     currency_code: "usd",
     interval: "month",

@@ -9,7 +9,7 @@ import {
   type AssignmentSnapshot,
 } from "../transitions"
 import { VendorPlanStatus } from "../models/vendor-plan-assignment"
-import { featureKeysForPlan } from "../catalog"
+import { UNIVERSAL_FEATURE_KEYS, featureKeysForPlan } from "../catalog"
 
 const NOW = new Date("2026-08-02T12:00:00Z")
 const NEXT_MONTH = new Date("2026-09-02T12:00:00Z")
@@ -140,14 +140,20 @@ describe("reconcileFeatureKeys", () => {
     expect(r.to_revoke).not.toContain("vendor.embed")
   })
 
-  it("revokes everything when dropping to free", () => {
-    const r = reconcileFeatureKeys({
-      plan_code: "free",
-      current_keys: featureKeysForPlan("scale"),
-    })
-    expect(r.desired).toEqual([])
+  it("revokes everything a plan sold when dropping to free, and keeps the universal keys", () => {
+    const scale = featureKeysForPlan("scale")
+    const r = reconcileFeatureKeys({ plan_code: "free", current_keys: scale })
+    // `free` holds exactly the keys every plan includes.
+    expect(r.desired).toEqual([...UNIVERSAL_FEATURE_KEYS])
     expect(r.to_grant).toEqual([])
-    expect(r.to_revoke.length).toBeGreaterThan(0)
+    // Every other key scale carried is revoked, and no universal one is.
+    expect([...r.to_revoke].sort()).toEqual(
+      scale.filter((k) => !UNIVERSAL_FEATURE_KEYS.includes(k)).sort()
+    )
+    expect(r.to_revoke.length).toBe(scale.length - UNIVERSAL_FEATURE_KEYS.length)
+    for (const key of UNIVERSAL_FEATURE_KEYS) {
+      expect(r.to_revoke).not.toContain(key)
+    }
   })
 })
 

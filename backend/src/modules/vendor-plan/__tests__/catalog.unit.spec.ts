@@ -3,11 +3,13 @@ import {
   DEFAULT_PLAN_CODE,
   PLANS_RETIRED_UNDER_ALL_ACCESS,
   PLATFORM_DEFAULT_FEE_PERCENT,
+  UNIVERSAL_FEATURE_KEYS,
   VENDOR_FEATURE_KEYS,
   VENDOR_PLAN_CATALOG,
   featureKeysForPlan,
   getPlanDefinition,
   isPlanOffered,
+  isUniversalFeatureKey,
   isVendorFeatureKey,
   offeredPlans,
   type VendorPlanDefinition,
@@ -56,10 +58,51 @@ describe("vendor plan catalog", () => {
     }
   })
 
-  it("keeps the free plan free and featureless", () => {
+  it("keeps the free plan free, carrying exactly the universal keys", () => {
+    // Both directions. A key a paid plan sells must not reach `free` (its
+    // gate would stop meaning anything), and a universal key must not be
+    // missing from it (a free seller would meet a paywall on a tool every
+    // plan includes).
     const free = getPlanDefinition(DEFAULT_PLAN_CODE)!
     expect(free.price_amount).toBe(0)
-    expect(free.feature_keys).toEqual([])
+    expect([...free.feature_keys].sort()).toEqual(
+      [...UNIVERSAL_FEATURE_KEYS].sort()
+    )
+  })
+
+  it("names the production ledger, and nothing else, as universal", () => {
+    // PL-1 (owner decision 2026-11-17): the production ledger and batch
+    // costing are in every plan. Emptying the list is how the paywall comes
+    // back, and adding to it gives a sold tool away, so the list is pinned.
+    expect(UNIVERSAL_FEATURE_KEYS).toEqual(["vendor.production_ledger"])
+    expect(new Set(UNIVERSAL_FEATURE_KEYS).size).toBe(
+      UNIVERSAL_FEATURE_KEYS.length
+    )
+    for (const key of UNIVERSAL_FEATURE_KEYS) {
+      expect(VENDOR_FEATURE_KEYS).toContain(key)
+      expect(isUniversalFeatureKey(key)).toBe(true)
+    }
+    expect(isUniversalFeatureKey("vendor.nursery")).toBe(false)
+    expect(isUniversalFeatureKey(undefined)).toBe(false)
+  })
+
+  it("carries every universal key on every plan", () => {
+    // Every row, not only the offered ones: a seller an operator put on a
+    // retired tier or on `internal` must not lose what `free` includes.
+    for (const plan of VENDOR_PLAN_CATALOG) {
+      for (const key of UNIVERSAL_FEATURE_KEYS) {
+        expect(featureKeysForPlan(plan.code)).toContain(key)
+      }
+    }
+  })
+
+  it("says in each plan's description only what that plan holds", () => {
+    // The copy is shown on the plan screen. `free` now names the tool it
+    // gained, and `scale` no longer claims it as something Scale adds.
+    expect(getPlanDefinition("free")!.description).toMatch(
+      /production ledger and batch costing/
+    )
+    expect(getPlanDefinition("scale")!.description).not.toMatch(/production/i)
   })
 
   describe.each(LADDERS)("offered ladder with %s", (_label, _on, offered) => {

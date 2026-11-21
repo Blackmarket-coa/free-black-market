@@ -5,6 +5,8 @@ import {
 } from "../vendor-addons"
 import { ENTITLEMENT_MODULE } from "../../modules/entitlement"
 import { EntitlementStatus } from "../../modules/entitlement/models/entitlement"
+import { VENDOR_ADDON_CATALOG } from "../../modules/vendor-plan/addons"
+import { UNIVERSAL_FEATURE_KEYS } from "../../modules/vendor-plan/catalog"
 import {
   clearPlanFeatureCache,
   getCachedPlanFeatures,
@@ -75,6 +77,46 @@ afterEach(() => clearPlanFeatureCache())
 
 describe("grantAddon", () => {
   it("grants one access-pass row per feature key, all sharing the expiry", async () => {
+    // commerce_pack: three keys, so "one row per key" is not a one-row case.
+    const { container, rows } = makeContainer()
+    const now = new Date("2026-08-01T00:00:00.000Z")
+
+    const owned = await grantAddon(container, {
+      sellerId: "sel_1",
+      code: "commerce_pack",
+      now,
+    })
+
+    expect(owned.active).toBe(true)
+    expect(owned.expires_at).toEqual(new Date("2026-08-31T00:00:00.000Z"))
+    expect(rows.map((r) => r.feature_key).sort()).toEqual([
+      "vendor.invoicing",
+      "vendor.pick_pack",
+      "vendor.pos",
+    ])
+    for (const row of rows) {
+      expect(row.expires_at).toEqual(owned.expires_at)
+      expect(row.metadata?.addon).toBe("commerce_pack")
+    }
+  })
+
+  it("grants exactly the pack's catalog keys, for every pack, and never a universal key", async () => {
+    for (const addon of VENDOR_ADDON_CATALOG) {
+      const { container, rows } = makeContainer()
+      await grantAddon(container, { sellerId: "sel_1", code: addon.code })
+
+      expect(rows.map((r) => r.feature_key).sort()).toEqual(
+        [...addon.feature_keys].sort()
+      )
+      for (const key of UNIVERSAL_FEATURE_KEYS) {
+        expect(rows.map((r) => r.feature_key)).not.toContain(key)
+      }
+    }
+  })
+
+  it("grants Grower Tools as nursery management only", async () => {
+    // PL-1: the production ledger is in every plan, so the pack no longer
+    // writes a `vendor.production_ledger` row.
     const { container, rows } = makeContainer()
     const now = new Date("2026-08-01T00:00:00.000Z")
 
@@ -84,16 +126,10 @@ describe("grantAddon", () => {
       now,
     })
 
-    expect(owned.active).toBe(true)
     expect(owned.expires_at).toEqual(new Date("2026-08-31T00:00:00.000Z"))
-    expect(rows.map((r) => r.feature_key).sort()).toEqual([
-      "vendor.nursery",
-      "vendor.production_ledger",
-    ])
-    for (const row of rows) {
-      expect(row.expires_at).toEqual(owned.expires_at)
-      expect(row.metadata?.addon).toBe("grower_pack")
-    }
+    expect(rows.map((r) => r.feature_key)).toEqual(["vendor.nursery"])
+    expect(rows[0].expires_at).toEqual(owned.expires_at)
+    expect(rows[0].metadata?.addon).toBe("grower_pack")
   })
 
   it("extends an open window instead of restarting it", async () => {
@@ -153,20 +189,38 @@ describe("grantAddon", () => {
 describe("revokeAddon", () => {
   it("revokes only the rows the pack granted", async () => {
     const { container, rows, entitlements } = makeContainer()
-    await grantAddon(container, { sellerId: "sel_1", code: "grower_pack" })
+    await grantAddon(container, { sellerId: "sel_1", code: "commerce_pack" })
     // A key held from another source must survive the pack's revocation.
     await entitlements.grant({
       seller_id: "sel_1",
-      feature_key: "vendor.nursery",
+      feature_key: "vendor.pos",
       metadata: { comp: "support" },
     })
 
-    const revoked = await revokeAddon(container, "sel_1", "grower_pack", "refund")
+    const revoked = await revokeAddon(container, "sel_1", "commerce_pack", "refund")
 
-    expect(revoked).toBe(2)
+    expect(revoked).toBe(3)
     const active = rows.filter((r) => r.status === EntitlementStatus.ACTIVE)
     expect(active).toHaveLength(1)
     expect(active[0].metadata?.comp).toBe("support")
+  })
+
+  it("revokes both rows of a Grower Tools pack bought before PL-1", async () => {
+    // Rows are found by `metadata.addon`, not by the pack's current key list,
+    // so a refund of a pack bought when it carried two keys ends both rows.
+    const { container, rows, entitlements } = makeContainer()
+    const expires_at = new Date(Date.now() + 10 * 86_400_000)
+    for (const feature_key of ["vendor.nursery", "vendor.production_ledger"]) {
+      await entitlements.grant({
+        seller_id: "sel_1",
+        feature_key,
+        expires_at,
+        metadata: { addon: "grower_pack", reason: null },
+      })
+    }
+
+    expect(await revokeAddon(container, "sel_1", "grower_pack", "refund")).toBe(2)
+    expect(rows.filter((r) => r.status === EntitlementStatus.ACTIVE)).toEqual([])
   })
 
   it("is a no-op when nothing is active", async () => {
