@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { buildFarmHarvestConsistencyIssues } from "../../consistency"
 import { forbidden } from "../../../../../shared/community-read-access"
-import { deletedBody, dismissLinksBeforeDelete, lotsByHarvest, ownedHarvest } from "../../_access"
+import { deletedBody, dismissLinksBeforeDelete, farmFailure, farmId, farmIds, lotsByHarvest, ownedHarvest } from "../../_access"
 import { definedFields } from "../../../../../shared/defined-fields"
 
 // Type for agriculture service methods
@@ -24,7 +24,9 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const harvestId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const harvestId = params.id
 
   try {
     // A harvest of the caller's farm, or 403 (`_access.ts`).
@@ -73,11 +75,8 @@ export async function GET(
     // Its lots, read on their own: the models define no relation.
     const lots = await lotsByHarvest(req, [harvestId])
     res.json({ harvest: { ...harvests[0], lots: lots.get(harvestId) ?? [] } })
-  } catch (error: any) {
-    res.status(500).json({ 
-      message: "Failed to fetch harvest", 
-      error: error.message 
-    })
+  } catch (error) {
+    farmFailure(req, res, "Failed to fetch harvest", error)
   }
 }
 
@@ -91,7 +90,9 @@ export async function PUT(
 ) {
   const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const harvestId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const harvestId = params.id
 
   try {
     // A harvest of the caller's farm, or 403 (`_access.ts`).
@@ -172,11 +173,8 @@ export async function PUT(
     })
 
     res.json({ harvest, consistency_issues })
-  } catch (error: any) {
-    res.status(500).json({ 
-      message: "Failed to update harvest", 
-      error: error.message 
-    })
+  } catch (error) {
+    farmFailure(req, res, "Failed to update harvest", error)
   }
 }
 
@@ -189,7 +187,9 @@ export async function DELETE(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const harvestId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const harvestId = params.id
 
   try {
     // A harvest of the caller's farm, or 403 (`_access.ts`).
@@ -211,10 +211,7 @@ export async function DELETE(
     // parses every answer as JSON, report "Failed to delete" for a delete
     // that had happened.
     res.status(200).json(deletedBody("harvest", harvestId))
-  } catch (error: any) {
-    res.status(500).json({ 
-      message: "Failed to delete harvest", 
-      error: error.message 
-    })
+  } catch (error) {
+    farmFailure(req, res, "Failed to delete harvest", error)
   }
 }

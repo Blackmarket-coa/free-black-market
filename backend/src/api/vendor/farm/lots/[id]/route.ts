@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { deletedBody, dismissLinksBeforeDelete, ownedLot } from "../../_access"
+import { deletedBody, dismissLinksBeforeDelete, farmFailure, farmId, farmIds, ownedLot } from "../../_access"
 import { definedFields } from "../../../../../shared/defined-fields"
 
 // Type for agriculture service methods
@@ -22,7 +22,9 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
     // A lot of the caller's farm, through its harvest, or 403 (`_access.ts`).
@@ -79,10 +81,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to fetch lot", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to fetch lot", error)
   }
 }
 
@@ -95,7 +94,9 @@ export async function PUT(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
     // The lot must be the caller's own, through its harvest. This checked only
@@ -149,10 +150,7 @@ export async function PUT(
 
     res.json({ lot })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to update lot", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to update lot", error)
   }
 }
 
@@ -165,7 +163,9 @@ export async function DELETE(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
     // The lot must be the caller's own, as for PUT: this deleted any store's
@@ -184,9 +184,6 @@ export async function DELETE(
     // that had happened.
     res.status(200).json(deletedBody("lot", lotId))
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to delete lot", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to delete lot", error)
   }
 }

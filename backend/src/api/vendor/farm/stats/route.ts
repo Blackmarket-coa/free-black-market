@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getSellerId } from "../../quests/_helpers"
-import { storeProducerId } from "../_access"
+import { farmFailure, storeProducerId } from "../_access"
 
 /**
  * GET /vendor/farm/stats
@@ -117,9 +117,6 @@ export async function GET(
       }
     })
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch farm stats",
-      error: error.message
-    })
+    farmFailure(req, res, "Failed to fetch farm stats", error)
   }
 }

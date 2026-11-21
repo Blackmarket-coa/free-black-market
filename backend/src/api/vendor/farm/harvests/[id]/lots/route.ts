@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ownedHarvest } from "../../../_access"
+import { farmFailure, farmId, farmIds, ownedHarvest } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -21,7 +21,9 @@ export async function POST(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const harvestId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const harvestId = params.id
 
   try {
     // A harvest of the caller's farm, or 403 (`_access.ts`).
@@ -76,9 +78,6 @@ export async function POST(
 
     res.status(201).json({ lot })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to create lot", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to create lot", error)
   }
 }

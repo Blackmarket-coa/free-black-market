@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { forbidden } from "../../../../../../shared/community-read-access"
-import { ownedLot } from "../../../_access"
+import { farmFailure, farmId, farmIds, optionalFarmId, ownedLot } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -23,7 +23,13 @@ export async function POST(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
+  // One id, or none, before any check (`farmId` in `_access.ts`).
+  const ids = farmIds(res, req.body, { product_id: optionalFarmId })
+  if (!ids) return
+  const { product_id } = ids
 
   try {
     // The lot must be the caller's own, through its harvest: this checked only
@@ -33,7 +39,6 @@ export async function POST(
     if (!owned) return
 
     const {
-      product_id,
       available_from,
       available_until,
       sales_channel,
@@ -59,12 +64,12 @@ export async function POST(
 
     // A product named here must be the store's own, as link-product requires:
     // this took any store's product (SD-145 review, measured 201).
-    if (product_id !== undefined && product_id !== null && product_id !== "") {
+    if (product_id) {
       const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
       const { data: sellerProducts } = await query.graph({
         entity: "seller_product",
         fields: ["product_id"],
-        filters: { seller_id: owned.caller.sellerId, product_id: String(product_id) },
+        filters: { seller_id: owned.caller.sellerId, product_id },
       })
       if (!sellerProducts?.length) {
         return forbidden(res)
@@ -101,10 +106,7 @@ export async function POST(
 
     res.status(201).json({ availability_window: availabilityWindow })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to create availability window", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to create availability window", error)
   }
 }
 
@@ -117,7 +119,9 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
     // The lot must be the caller's own: this listed any lot's windows for a
@@ -166,9 +170,6 @@ export async function GET(
 
     res.json({ availability_windows: windows || [] })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to fetch availability windows", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to fetch availability windows", error)
   }
 }

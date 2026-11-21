@@ -4,7 +4,7 @@ import { AGRICULTURE_MODULE } from "../../../../modules/agriculture"
 import { PRODUCER_MODULE } from "../../../../modules/producer"
 import { buildFarmHarvestConsistencyIssues } from "../consistency"
 import { getSellerId } from "../../quests/_helpers"
-import { lotsByHarvest, storeProducerId } from "../_access"
+import { farmFailure, lotsByHarvest, storeProducerId } from "../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -93,11 +93,8 @@ export async function GET(
       limit: parseInt(limit as string, 10),
       offset: parseInt(offset as string, 10),
     })
-  } catch (error: any) {
-    res.status(500).json({ 
-      message: "Failed to fetch harvests", 
-      error: error.message 
-    })
+  } catch (error) {
+    farmFailure(req, res, "Failed to fetch harvests", error)
   }
 }
 
@@ -209,10 +206,7 @@ export async function POST(
     }
 
     res.status(201).json({ harvest, consistency_issues })
-  } catch (error: any) {
-    res.status(500).json({ 
-      message: "Failed to create harvest", 
-      error: error.message 
-    })
+  } catch (error) {
+    farmFailure(req, res, "Failed to create harvest", error)
   }
 }

@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ownedLot } from "../../../_access"
+import { farmFailure, farmId, farmIds, ownedLot } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -21,7 +21,9 @@ export async function POST(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
     // The lot must be the caller's own, through its harvest: this checked only
@@ -41,10 +43,7 @@ export async function POST(
 
     res.json({ lot })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to mark lot as surplus", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to mark lot as surplus", error)
   }
 }
 
@@ -57,7 +56,9 @@ export async function DELETE(
   res: MedusaResponse
 ) {
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const lotId = req.params.id
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
     // The lot must be the caller's own, through its harvest: this checked only
@@ -75,9 +76,6 @@ export async function DELETE(
 
     res.json({ lot })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to remove surplus flag", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to remove surplus flag", error)
   }
 }
