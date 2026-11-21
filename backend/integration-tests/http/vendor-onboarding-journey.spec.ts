@@ -1,3 +1,6 @@
+import { createHmac, randomUUID } from "crypto"
+import http from "http"
+import type { AddressInfo } from "net"
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
@@ -33,7 +36,14 @@ jest.setTimeout(600 * 1000)
  *   module loaders on every boot (missing rows only), and
  *   `backfill-approved-seller-playbooks` assigns the sellers approved while
  *   the registry was empty.
- * - "Sign me up to carry deliveries" was dropped at approval.
+ * - "Sign me up to carry deliveries" was dropped at approval. It is now
+ *   carried, and it is the only thing that enrolls anyone: a logistics
+ *   vendor type used to, with the question answered no. With the Blackstar
+ *   emit not configured approval issues no credential (it issued one nobody
+ *   held and said it had emitted); with it configured the credential's
+ *   secret reaches Blackstar, is redacted wherever a delivery is read back,
+ *   and is cleared from the delivery row once delivered (the admin
+ *   deliveries route returned it in plaintext, and the row kept it).
  * - A Service vendor could create no product: the panel's form names no
  *   listing type and the default was physical_product, which Service does
  *   not allow. An untyped product now takes the playbook's default.
@@ -50,7 +60,7 @@ jest.setTimeout(600 * 1000)
  *
  * The first case runs on the database as the app booted it; the runner
  * truncates every table between cases and runs the module loaders again,
- * as a restart would. Spends 11 of the auth limiter's 20 a minute (filings
+ * as a restart would. Spends 15 of the auth limiter's 20 a minute (filings
  * and sign-ins; logins are registered through the auth module).
  */
 
@@ -138,6 +148,15 @@ medusaIntegrationTestRunner({
       (await container().resolve(PLAYBOOK_MODULE).listPlaybookAssignments({ seller_id: sellerId }))[0]
     const stubMail = () =>
       jest.spyOn(container().resolve(Modules.NOTIFICATION), "createNotifications").mockResolvedValue([] as any)
+    /** Every node credential ever issued to the store, revoked ones included. */
+    const credentialsOf = async (sellerId: string) =>
+      container().resolve(BLACKSTAR_FULFILLMENT_MODULE).listBlackstarNodeOperatorCredentials({ seller_id: sellerId })
+    /** The queued `node.operator.approved` deliveries, as the table holds them. */
+    const nodeDeliveries = async () =>
+      container().resolve(MARKETPLACE_WEBHOOKS_MODULE).listWebhookDeliveries({ event: "node.operator.approved" })
+    const settingsOf = async (token: string) =>
+      (await call(api.get("/vendor/node-operator", bearer(token)))).data.node_operator
+    const NODE_OPERATOR_OFF = { opted_in: false, credential: null, status: "off", message: null }
 
     /** The real boot loader, run against this database in the module's own container. */
     const runPlaybookLoader = async () => {
@@ -246,25 +265,34 @@ medusaIntegrationTestRunner({
         metadata: { roles: ["stall", "kitchen"], resources: ["transportation", "equipment", "goods"] },
       })
 
-      // The opt-in reached the metadata, and provisioning issued a credential.
+      // The opt-in reached the metadata. Blackstar's emit is not configured
+      // here, so there is no one to send a secret to: approval issued no
+      // credential and queued nothing (it used to issue one nobody held).
       expect((await metadataOf(sellerId)).node_operator_opt_in).toBe(true)
-      const credentials = await container()
-        .resolve(BLACKSTAR_FULFILLMENT_MODULE)
-        .listBlackstarNodeOperatorCredentials({ seller_id: sellerId })
-      expect(credentials).toEqual([expect.objectContaining({ status: "active", key_id: expect.stringMatching(/^bsk_/) })])
-      // With Blackstar's emit settings unset (as here), nothing was queued:
-      // the issued secret went to no one.
-      expect(
-        await container().resolve(MARKETPLACE_WEBHOOKS_MODULE).listWebhookDeliveries({ event: "node.operator.approved" })
-      ).toEqual([])
+      expect(await credentialsOf(sellerId)).toEqual([])
+      expect(await nodeDeliveries()).toEqual([])
 
+      // Settings says so plainly, and turning it on there issues nothing either.
       const token = await signIn(applicant)
-      const settings = await call(api.get("/vendor/node-operator", bearer(token)))
-      expect(settings.status).toBe(200)
-      expect(settings.data.node_operator).toEqual({
+      expect(await settingsOf(token)).toEqual({
         opted_in: true,
-        credential: expect.objectContaining({ key_id: credentials[0].key_id }),
+        credential: null,
+        status: "opted_in_no_credential",
+        message: expect.stringMatching(/opted in to carry deliveries.*not connected on this marketplace/),
       })
+      const turnedOn = await call(api.post("/vendor/node-operator", { opted_in: true }, bearer(token)))
+      expect(turnedOn.status).toBe(200)
+      expect(turnedOn.data.node_operator).toEqual({
+        opted_in: true,
+        credential: null,
+        secret: null,
+        provisioned: false,
+        reason: "blackstar_not_configured",
+        status: "opted_in_no_credential",
+        message: expect.stringMatching(/not connected on this marketplace/),
+      })
+      expect(await credentialsOf(sellerId)).toEqual([])
+      expect(await nodeDeliveries()).toEqual([])
 
       // The /onboarding PlaybookPicker's save.
       const picked = await call(
@@ -359,13 +387,164 @@ medusaIntegrationTestRunner({
       expect(planAfter.data.plan).toEqual(planBefore.data.plan)
       expect(planAfter.data.feature_keys).toEqual([])
       expect(metadata.node_operator_opt_in).toBe(false)
-      expect(
-        await container().resolve(BLACKSTAR_FULFILLMENT_MODULE).listBlackstarNodeOperatorCredentials({ seller_id: sellerId })
-      ).toEqual([])
-      expect((await call(api.get("/vendor/node-operator", bearer(token)))).data.node_operator).toEqual({
-        opted_in: false,
-        credential: null,
+      expect(await credentialsOf(sellerId)).toEqual([])
+      expect(await settingsOf(token)).toEqual(NODE_OPERATOR_OFF)
+    })
+
+    it("with the Blackstar emit configured: a logistics applicant who answered no is not enrolled; an opted-in applicant's secret reaches Blackstar, is never read back, and leaves the delivery row once delivered", async () => {
+      stubMail()
+      // A stand-in for Blackstar's inbound webhook, answering what the test says.
+      const received: Array<{ status: number; raw: string; body: any; headers: http.IncomingHttpHeaders }> = []
+      let answer = 500
+      const blackstar = http.createServer((req, res) => {
+        let raw = ""
+        req.on("data", (chunk) => (raw += chunk))
+        req.on("end", () => {
+          received.push({ status: answer, raw, body: JSON.parse(raw), headers: req.headers })
+          res.statusCode = answer
+          res.end("{}")
+        })
       })
+      await new Promise<void>((resolve) => blackstar.listen(0, "127.0.0.1", resolve))
+      const signingKey = randomUUID()
+      process.env.BLACKSTAR_WEBHOOK_SECRET = signingKey
+      process.env.BLACKSTAR_API_BASE = `http://127.0.0.1:${(blackstar.address() as AddressInfo).port}`
+      try {
+        // ---- A logistics vendor type is an archetype, not an answer.
+        const carrier = await login("lima")
+        const carrierRequestId = await file(carrier, `Lima Carriers ${uid()}`, {
+          playbook: "stall",
+          recommended: "stall",
+          roles: ["stall"],
+          resources: ["transportation"],
+          node: false,
+          vendor_type: "logistics",
+        })
+        const carrierApproved = await accept(carrierRequestId)
+        // 200 although the metadata write fails today (the Postgres enum has
+        // no "logistics"; approval logs it and goes on): the store has its
+        // seller, member, login link and playbook, and no seller_metadata row.
+        expect(carrierApproved.status).toBe(200)
+        const carrierSellerId = carrierApproved.data.seller.id as string
+        expect((await assignmentOf(carrierSellerId)).recipe_id).toBe("stall")
+        expect((await metadataOf(carrierSellerId))?.node_operator_opt_in ?? false).toBe(false)
+        expect(await credentialsOf(carrierSellerId)).toEqual([])
+        expect(await nodeDeliveries()).toEqual([])
+        expect(await settingsOf(await signIn(carrier))).toEqual(NODE_OPERATOR_OFF)
+
+        // ---- An applicant who answered yes.
+        const driver = await login("delta")
+        const driverRequestId = await file(driver, `Delta Kitchen ${uid()}`, {
+          playbook: "kitchen",
+          recommended: "kitchen",
+          roles: ["kitchen"],
+          resources: ["equipment", "transportation"],
+          node: true,
+          vendor_type: "kitchen",
+        })
+        const approved = await accept(driverRequestId)
+        expect(approved.status).toBe(200)
+        expect(JSON.stringify(approved.data)).not.toMatch(/secret/i)
+        const sellerId = approved.data.seller.id as string
+        expect((await metadataOf(sellerId)).node_operator_opt_in).toBe(true)
+        const [credential, ...otherCredentials] = await credentialsOf(sellerId)
+        expect(otherCredentials).toEqual([])
+        expect(credential).toMatchObject({ status: "active", key_id: expect.stringMatching(/^bsk_/) })
+
+        // One delivery is queued. Until Blackstar accepts it the row holds the
+        // envelope it has to send, secret and all.
+        const queued = await nodeDeliveries()
+        expect(queued).toHaveLength(1)
+        const deliveryId = queued[0].id as string
+        const secret = queued[0].payload.payload.credential.secret as string
+        expect(secret).toMatch(/^[0-9a-f]{64}$/)
+        expect(queued[0].payload.payload.credential.key_id).toBe(credential.key_id)
+        const redacted = { key_id: credential.key_id, secret: "[redacted]" }
+        const rowOf = async () =>
+          (await container().resolve(MARKETPLACE_WEBHOOKS_MODULE).listWebhookDeliveries({ id: deliveryId }))[0]
+
+        // Read back by an admin, whatever status it is in: no secret.
+        const admin = await adminToken()
+        const listedByAdmin = async () => {
+          const rows: any[] = []
+          for (const status of ["pending", "failed", "dead", "succeeded"]) {
+            const listed = await call(api.get(`/admin/blackstar/deliveries?status=${status}`, bearer(admin)))
+            expect(listed.status).toBe(200)
+            rows.push(...listed.data.deliveries)
+          }
+          return rows
+        }
+        const pendingView = await listedByAdmin()
+        expect(pendingView.find((row) => row.id === deliveryId)?.payload.payload.credential).toEqual(redacted)
+        expect(JSON.stringify(pendingView)).not.toContain(secret)
+
+        // Blackstar is down: the delivery fails and keeps what a retry needs;
+        // the replay route answers with the delivery, without the secret.
+        const webhooks = container().resolve(MARKETPLACE_WEBHOOKS_MODULE)
+        expect(await webhooks.attemptDelivery(deliveryId)).toBe(false)
+        expect((await rowOf()).payload.payload.credential.secret).toBe(secret)
+        const replayed = await call(
+          api.post(`/admin/blackstar/deliveries/${deliveryId}/replay`, { attempt_now: false }, bearer(admin))
+        )
+        expect(replayed.status).toBe(200)
+        expect(replayed.data.delivery.payload.payload.credential).toEqual(redacted)
+        expect(JSON.stringify(replayed.data)).not.toContain(secret)
+        expect(JSON.stringify(await listedByAdmin())).not.toContain(secret)
+
+        // Blackstar accepts: it is sent the real secret, signed, and the row
+        // lets go of it.
+        answer = 202
+        expect(await webhooks.attemptDelivery(deliveryId)).toBe(true)
+        const accepted = () => received.filter((request) => request.status === 202)
+        // Once, unless the app's own drain job got to the pending row in the
+        // same instant; either way what was sent is the real secret.
+        expect(accepted().length).toBeGreaterThanOrEqual(1)
+        for (const request of accepted()) {
+          expect(request.body).toMatchObject({
+            event_type: "node.operator.approved",
+            payload: { seller_id: sellerId, credential: { key_id: credential.key_id, secret } },
+          })
+          expect(request.headers["x-fbm-signature"]).toBe(
+            createHmac("sha256", signingKey).update(`${request.headers["x-fbm-timestamp"]}.${request.raw}`).digest("hex")
+          )
+        }
+        const sentBeforeRetry = accepted().length
+        const delivered = await rowOf()
+        expect(delivered.status).toBe("succeeded")
+        expect(delivered.payload.payload.credential).toEqual(redacted)
+        expect(delivered.payload.payload.seller_id).toBe(sellerId)
+        const stillHeld = await pg().raw(
+          `SELECT count(*)::int AS n FROM marketplace_webhook_delivery WHERE payload::text LIKE ?`,
+          [`%${secret}%`]
+        )
+        expect(stillHeld.rows[0].n).toBe(0)
+        expect(JSON.stringify(await listedByAdmin())).not.toContain(secret)
+        // A delivered row is not sent again: its secret is gone.
+        expect(await webhooks.attemptDelivery(deliveryId)).toBe(true)
+        expect(accepted()).toHaveLength(sentBeforeRetry)
+
+        // ---- The vendor's own secret comes from Settings: re-issued, shown once.
+        const token = await signIn(driver)
+        expect(await settingsOf(token)).toMatchObject({
+          opted_in: true,
+          status: "active",
+          message: null,
+          credential: { key_id: credential.key_id },
+        })
+        const reissued = await call(api.post("/vendor/node-operator", { opted_in: true }, bearer(token)))
+        expect(reissued.status).toBe(200)
+        expect(reissued.data.node_operator).toMatchObject({ opted_in: true, provisioned: true, reason: null, status: "active" })
+        const shownOnce = reissued.data.node_operator.secret as string
+        expect(shownOnce).toMatch(/^[0-9a-f]{64}$/)
+        expect(shownOnce).not.toBe(secret)
+        expect(reissued.data.node_operator.credential.key_id).not.toBe(credential.key_id)
+        expect(JSON.stringify(await settingsOf(token))).not.toContain(shownOnce)
+        expect(JSON.stringify(await listedByAdmin())).not.toContain(shownOnce)
+      } finally {
+        delete process.env.BLACKSTAR_WEBHOOK_SECRET
+        delete process.env.BLACKSTAR_API_BASE
+        await new Promise((resolve) => blackstar.close(resolve))
+      }
     })
 
     it("the registry is seeded again after the tables are emptied, and the loader inserts only what is missing, keeping an operator's edits", async () => {
@@ -471,12 +650,9 @@ medusaIntegrationTestRunner({
       expect((await assignmentOf(sellerId)).recipe_id).toBe("service")
 
       expect((await metadataOf(sellerId)).node_operator_opt_in).toBe(false)
-      expect(
-        await container().resolve(BLACKSTAR_FULFILLMENT_MODULE).listBlackstarNodeOperatorCredentials({ seller_id: sellerId })
-      ).toEqual([])
+      expect(await credentialsOf(sellerId)).toEqual([])
       const token = await signIn(applicant)
-      const settings = await call(api.get("/vendor/node-operator", bearer(token)))
-      expect(settings.data.node_operator).toEqual({ opted_in: false, credential: null })
+      expect(await settingsOf(token)).toEqual(NODE_OPERATOR_OFF)
 
       const created = await call(api.post("/vendor/seller-products", await panelProductPayload(token, "Coaching session"), bearer(token)))
       // The route answers 200, not 201, as it always has.
