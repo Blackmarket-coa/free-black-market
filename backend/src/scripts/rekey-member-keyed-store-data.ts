@@ -504,11 +504,27 @@ async function conflictsFor(pg: Pg, target: RekeyTarget, index: UniqueIndex): Pr
 }
 
 /**
- * An index predicate as Postgres prints it (`pg_get_expr`), for a raw query:
- * knex reads a bare `?` as a binding, so the jsonb `?` operator is escaped.
+ * An index predicate as Postgres prints it (`pg_get_expr`), or a target's
+ * `keepWhen` SQL, made safe to embed in a `pg.raw` query.
+ *
+ * knex's pg dialect (`positionBindings`, knex 3.2.10) reads every `?` as a
+ * binding unless an odd number of backslashes stands directly before it, and
+ * then drops those backslashes. So each `?` gets one backslash (the jsonb `?`,
+ * `?|` and `?&` operators reach Postgres unchanged), every other backslash
+ * passes through untouched, and a backslash directly before a `?` cannot be
+ * sent at all: escaped, it would be read as a binding, which shifts every
+ * real binding after it or, inside a string literal, silently changes the
+ * literal. Such a predicate is refused; the caller reports the table as
+ * failed and keeps its rows.
  */
-function predicateSql(predicate: string | null): string {
-  return predicate ? `(${predicate.replace(/\?/g, "\\?")})` : "TRUE"
+export function predicateSql(predicate: string | null): string {
+  if (!predicate) return "TRUE"
+  if (predicate.includes("\\?")) {
+    throw new Error(
+      `This predicate has a backslash directly before "?", which knex cannot send to Postgres unchanged; the table is left as it is: ${predicate}`
+    )
+  }
+  return `(${predicate.split("?").join("\\?")})`
 }
 
 type Plan = { report: TargetReport; rekeyCtids: string[]; keptIds: Set<string> }
