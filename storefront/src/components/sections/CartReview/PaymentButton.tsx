@@ -339,7 +339,14 @@ const StripePaymentButton = ({
             (pi && pi.status === "requires_capture") ||
             (pi && pi.status === "succeeded")
           ) {
-            onPaymentCompleted()
+            // The card was confirmed already (an earlier click whose order
+            // was refused or lost): Stripe's error is about the second
+            // confirmation, not the payment, so the order goes ahead and the
+            // error is not shown. Returned, so that `submitting` stays set,
+            // and the button disabled, until the order is placed or refused;
+            // unreturned, the `finally` below re-enabled it at once, and a
+            // second click sent a second completion of the same cart.
+            return onPaymentCompleted()
           }
 
           setErrorMessage(error.message || null)

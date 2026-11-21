@@ -416,6 +416,62 @@ describe("the pay button when the card session is for another amount than the ca
   })
 })
 
+/**
+ * A second attempt on a session Stripe has already confirmed: an earlier click
+ * confirmed the card and its order was then refused (a guard's 400, a 409), or
+ * the answer was lost. `confirmCardPayment` then answers with an error that
+ * carries the intent, already `requires_capture`, and the order goes ahead.
+ */
+describe("the pay button on a card session Stripe has already confirmed", () => {
+  const ALREADY_CONFIRMED = "You cannot confirm this PaymentIntent because it has already succeeded after being previously confirmed."
+
+  beforeEach(() => {
+    h.cardEntered = true
+  })
+
+  it.each(["requires_capture", "succeeded"])(
+    "stays submitting until the order is placed (intent %s), so Place order takes no second click meanwhile",
+    async (status) => {
+      checkout(cartWith(20, [{ provider_id: CARD, amount: 20 }]), [CARD])
+      h.confirmCardPayment.mockResolvedValueOnce({ error: { message: ALREADY_CONFIRMED, payment_intent: { status } } })
+      const updatesAtClick = h.stateUpdates.length
+      let whilePlacing: unknown[] | undefined
+      h.placeOrder.mockImplementationOnce(async () => {
+        // A turn of the event loop: a `finally` that did not wait for the
+        // order would have cleared `submitting` by now.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        whilePlacing = h.stateUpdates.slice(updatesAtClick)
+        return { ok: true }
+      })
+
+      await h.payButton.props?.onClick?.()
+
+      expect(h.placeOrder).toHaveBeenCalledTimes(1)
+      // `submitting` set, and nothing else, while the order was being placed:
+      // the button is loading, so disabled (atoms/Button).
+      expect(whilePlacing).toEqual([true])
+      const after = h.stateUpdates.slice(updatesAtClick)
+      // Cleared once the order has come back, and Stripe's complaint about
+      // the second confirmation was never put in front of the buyer.
+      expect(after[after.length - 1]).toBe(false)
+      expect(after).not.toContain(ALREADY_CONFIRMED)
+    }
+  )
+
+  it("still shows Stripe's error, and places no order, when the card was declined", async () => {
+    checkout(cartWith(20, [{ provider_id: CARD, amount: 20 }]), [CARD])
+    h.confirmCardPayment.mockResolvedValueOnce({
+      error: { message: "Your card was declined.", payment_intent: { status: "requires_payment_method" } },
+    })
+    const updatesAtClick = h.stateUpdates.length
+
+    await h.payButton.props?.onClick?.()
+
+    expect(h.placeOrder).not.toHaveBeenCalled()
+    expect(h.stateUpdates.slice(updatesAtClick)).toEqual([true, "Your card was declined.", false])
+  })
+})
+
 describe("Update payment, under the notice that the session is for another amount", () => {
   beforeEach(() => {
     h.cardEntered = true
