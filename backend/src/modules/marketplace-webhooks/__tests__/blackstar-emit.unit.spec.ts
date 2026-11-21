@@ -161,6 +161,88 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
     )
   })
 
+  describe("a delivery that carries a secret (node.operator.approved)", () => {
+    const NODE_SECRET = "c".repeat(64)
+    const emitNodeApproval = (svc: MarketplaceWebhooksService) =>
+      svc.emitBlackstar(
+        "node.operator.approved",
+        { external_ref: "sel_1", seller_id: "sel_1", credential: { key_id: "bsk_abc", secret: NODE_SECRET } },
+        { eventId: "evt_node" }
+      )
+    const answer = (ok: boolean) =>
+      jest.spyOn(global, "fetch" as any).mockImplementation(async (_url: any, init: any) => {
+        sent.push(JSON.parse(init.body))
+        return { ok, status: ok ? 202 : 500, text: async () => (ok ? "{}" : "boom") } as any
+      })
+    let sent: any[]
+    beforeEach(() => {
+      sent = []
+    })
+
+    it("is never listed with the secret: the operator's view redacts it, whatever the status", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+
+      const listed = (await svc.listBlackstarDeliveries({})) as any[]
+      expect(listed).toHaveLength(1)
+      expect(listed[0].payload.payload.credential).toEqual({ key_id: "bsk_abc", secret: "[redacted]" })
+      expect(JSON.stringify(listed)).not.toContain(NODE_SECRET)
+      // The row itself still holds it: the delivery has not been sent yet.
+      expect(rows[0].payload.payload.credential.secret).toBe(NODE_SECRET)
+    })
+
+    it("keeps the secret at rest while it may still have to be sent, and a replay answers without it", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      answer(false)
+
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(false)
+      expect(rows[0].status).toBe("failed")
+      expect(rows[0].payload.payload.credential.secret).toBe(NODE_SECRET)
+
+      const replayed = (await svc.replayBlackstarDelivery(rows[0].id, { attemptNow: false })) as any
+      expect(replayed.delivery.status).toBe("pending")
+      expect(replayed.delivery.payload.payload.credential).toEqual({ key_id: "bsk_abc", secret: "[redacted]" })
+      expect(rows[0].payload.payload.credential.secret).toBe(NODE_SECRET)
+    })
+
+    it("sends Blackstar the real secret, then clears it from the row once the delivery has landed", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      answer(true)
+
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(true)
+
+      expect(sent).toHaveLength(1)
+      expect(sent[0].payload.credential).toEqual({ key_id: "bsk_abc", secret: NODE_SECRET })
+      expect(rows[0].status).toBe("succeeded")
+      expect(rows[0].payload.payload.credential).toEqual({ key_id: "bsk_abc", secret: "[redacted]" })
+      expect(rows[0].payload.event_id).toBe("evt_node")
+      expect(JSON.stringify(rows[0])).not.toContain(NODE_SECRET)
+    })
+
+    it("never sends a delivered row again: its secret is gone", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      answer(true)
+      await svc.attemptDelivery(rows[0].id)
+
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(true)
+      expect(sent).toHaveLength(1)
+      await expect(svc.replayBlackstarDelivery(rows[0].id)).rejects.toThrow(/already succeeded/)
+    })
+
+    it("leaves a delivery with no secret exactly as it was after it lands", async () => {
+      const { svc, rows } = makeService()
+      await svc.emitBlackstar("order.created", { source_order_ref: "ord_1" }, { eventId: "evt_order" })
+      const before = JSON.stringify(rows[0].payload)
+      answer(true)
+
+      await svc.attemptDelivery(rows[0].id)
+      expect(JSON.stringify(rows[0].payload)).toBe(before)
+    })
+  })
+
   it("schedules a retry on delivery failure instead of dying on attempt one", async () => {
     const { svc, rows } = makeService()
     await svc.emitBlackstar("order.cancelled", { source_order_ref: "ord_x" }, { eventId: "evt_x" })

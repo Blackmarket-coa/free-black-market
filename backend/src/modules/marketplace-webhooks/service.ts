@@ -9,6 +9,7 @@ import WebhookDelivery, {
   WebhookDeliveryStatus,
 } from "./models/webhook-delivery"
 import { isBlackoutEventType } from "./models/blackout-events"
+import { redactSecrets } from "./redact"
 import {
   BLACK_MASK_CLAIM_LEASE_MS,
   BLACK_MASK_FETCH_TIMEOUT_MS,
@@ -28,6 +29,20 @@ import {
 
 const RETRY_BACKOFF_MINUTES = [1, 5, 30] as const
 const MAX_ATTEMPTS = RETRY_BACKOFF_MINUTES.length + 1
+
+/**
+ * A stored payload as plain JSON with its secrets redacted (`redact.ts`).
+ * Through JSON first, so whatever shape the row's json column comes back in,
+ * nothing is passed over for not being a plain object.
+ */
+const redactedPayload = (payload: unknown): unknown =>
+  payload === null || payload === undefined
+    ? payload
+    : redactSecrets(JSON.parse(JSON.stringify(payload)))
+
+/** A delivery row as a caller may see it: the same row, no secret in its payload. */
+const withRedactedPayload = <T extends { payload?: unknown }>(delivery: T): T =>
+  ({ ...delivery, payload: redactedPayload(delivery.payload) }) as T
 
 /**
  * Sentinel subscription id for the global Blackout outbound channel (§1).
@@ -257,6 +272,10 @@ class MarketplaceWebhooksService extends MedusaService({
    * one that was never meant to be. The inbound direction got a receipt table
    * and an ordering guard on 2026-09-03; this is the outbound direction
    * getting its first pair of eyes.
+   *
+   * Every row comes back with the secrets in its payload redacted: a
+   * `node.operator.approved` envelope carries the node credential's secret,
+   * and this is what `GET /admin/blackstar/deliveries` returns.
    */
   async listBlackstarDeliveries(args: {
     status?: WebhookDeliveryStatus | WebhookDeliveryStatus[]
@@ -266,10 +285,11 @@ class MarketplaceWebhooksService extends MedusaService({
       subscription_id: BLACKSTAR_SUBSCRIPTION_ID,
     }
     if (args.status) filters.status = args.status
-    return this.listWebhookDeliveries(filters, {
+    const deliveries = await this.listWebhookDeliveries(filters, {
       order: { created_at: "DESC" },
       take: Math.min(Math.max(1, args.limit ?? 50), 200),
     })
+    return deliveries.map(withRedactedPayload)
   }
 
   /**
@@ -285,7 +305,11 @@ class MarketplaceWebhooksService extends MedusaService({
    *
    * Refuses a SUCCEEDED delivery: replaying one that landed is not a retry,
    * it is a duplicate, and the fact that Blackstar would dedupe it is not a
-   * reason to send it.
+   * reason to send it. (Its payload's secrets were cleared when it landed, so
+   * there would be nothing whole to send either.)
+   *
+   * The delivery it returns, which the replay route answers with, has its
+   * payload's secrets redacted.
    */
   async replayBlackstarDelivery(
     deliveryId: string,
@@ -315,7 +339,11 @@ class MarketplaceWebhooksService extends MedusaService({
     }
 
     const [fresh] = await this.listWebhookDeliveries({ id: delivery.id })
-    return { delivery: fresh, attempted: !!opts.attemptNow, succeeded }
+    return {
+      delivery: fresh ? withRedactedPayload(fresh) : fresh,
+      attempted: !!opts.attemptNow,
+      succeeded,
+    }
   }
 
   /**
@@ -670,6 +698,11 @@ class MarketplaceWebhooksService extends MedusaService({
    * config-driven destination. Shares the retry/backoff state machine.
    */
   private async attemptBlackstarDelivery(delivery: any): Promise<boolean> {
+    if (delivery.status === WebhookDeliveryStatus.SUCCEEDED) {
+      // Delivered already, and its payload's secrets were cleared when it
+      // landed: sending it again would send "[redacted]" as a credential.
+      return true
+    }
     const cfg = blackstarEmitConfig()
     if (!cfg) {
       // Config went away after enqueue — stay pending for a later drain.
@@ -719,6 +752,7 @@ class MarketplaceWebhooksService extends MedusaService({
     }
 
     if (succeeded) {
+      const cleared = redactedPayload(delivery.payload)
       await (this as any).updateWebhookDeliveries({
         id: delivery.id,
         attempt,
@@ -727,6 +761,11 @@ class MarketplaceWebhooksService extends MedusaService({
         response_body: responseBody,
         delivered_at: new Date(),
         next_attempt_at: null,
+        // Blackstar has it, and a succeeded delivery is never sent again, so
+        // a secret the envelope carried (a node credential's) has no reason
+        // to stay in the table. Until here it had to: a retry sends the same
+        // bytes.
+        ...(JSON.stringify(cleared) !== rawBody ? { payload: cleared } : {}),
       })
       return true
     }

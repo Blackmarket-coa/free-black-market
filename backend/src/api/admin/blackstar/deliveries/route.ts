@@ -10,7 +10,9 @@ import { WebhookDeliveryStatus } from "../../../../modules/marketplace-webhooks/
  * (retrying). Pass `status=succeeded|pending` for the rest. Each row is the
  * delivery record itself — envelope, attempt count, last response code and
  * body — because "it failed" is not a diagnosis and the response body usually
- * is.
+ * is. With one thing taken out: a secret the envelope carries (the node
+ * credential in `node.operator.approved`) reads "[redacted]". This route
+ * used to return it in plaintext to any admin.
  *
  * Until this route existed, a delivery that died was invisible from every
  * screen. See `listBlackstarDeliveries`.
