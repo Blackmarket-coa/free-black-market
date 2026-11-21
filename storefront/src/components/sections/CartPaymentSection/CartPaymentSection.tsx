@@ -32,6 +32,14 @@ type StoreCardPaymentMethod = any & {
 const CARD_SESSION_NOT_OPENED =
   "We could not start the card payment. Choose the payment method again to retry."
 
+/** The region lists no provider this build offers (a region with only Medusa's manual provider, in production). */
+const NO_PAYMENT_METHOD =
+  "No payment method is available for this order. Please contact the store."
+
+/** The list could not be fetched (`listCartPaymentMethods` answers null). */
+const PAYMENT_METHODS_NOT_LOADED =
+  "We couldn't load the payment methods. Refresh the page to try again."
+
 const CartPaymentSection = ({
   cart,
   availablePaymentMethods,
@@ -64,6 +72,8 @@ const CartPaymentSection = ({
   // NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 off, so the session starts
   // exactly as before.
   const sessionData = paymentSessionDataFor(cart, phase1ModuleFlags.consumerSubscriptions)
+
+  const hasPaymentMethods = (availablePaymentMethods?.length ?? 0) > 0
 
   const setPaymentMethod = async (method: string) => {
     setError(null)
@@ -177,13 +187,25 @@ const CartPaymentSection = ({
       </div>
       <div>
         <div className={isOpen ? "block" : "hidden"}>
-          {!paidByGiftcard && availablePaymentMethods?.length && (
+          {/* A count, never a bare length: `list?.length && (…)` draws "0". */}
+          {!paidByGiftcard && !hasPaymentMethods && (
+            <ErrorMessage
+              error={
+                availablePaymentMethods
+                  ? NO_PAYMENT_METHOD
+                  : PAYMENT_METHODS_NOT_LOADED
+              }
+              data-testid="payment-no-methods"
+            />
+          )}
+
+          {!paidByGiftcard && hasPaymentMethods && (
             <>
               <RadioGroup
                 value={selectedPaymentMethod}
                 onChange={(value: string) => setPaymentMethod(value)}
               >
-                {availablePaymentMethods.map((paymentMethod) => (
+                {(availablePaymentMethods ?? []).map((paymentMethod) => (
                   <div key={paymentMethod.id}>
                     {isStripeFunc(paymentMethod.id) ? (
                       <StripeCardContainer
