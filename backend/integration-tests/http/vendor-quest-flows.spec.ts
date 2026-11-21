@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import {
   createAuthenticatedSeller,
   authHeader,
@@ -168,19 +169,36 @@ medusaIntegrationTestRunner({
         expect(batches.data.production_batches).toHaveLength(1)
 
         // ── Nursery listing attributes (upsert) ────────────────────────────
+        // On one of the store's own products: the route refuses a product
+        // that is not linked to the caller's store (SD-158), which an
+        // invented id like "prod_test_123" never was.
+        const [plant] = await getContainer()
+          .resolve(Modules.PRODUCT)
+          .createProducts([
+            {
+              title: "Elderberry liner",
+              handle: `elderberry-liner-${Date.now()}`,
+              status: "published",
+              options: [{ title: "Size", values: ["1 gal"] }],
+              variants: [{ title: "1 gal", options: { Size: "1 gal" } }],
+            },
+          ])
+        await getContainer()
+          .resolve(ContainerRegistrationKeys.LINK)
+          .create({ [SELLER_MODULE]: { seller_id: ctx.seller.id }, [Modules.PRODUCT]: { product_id: plant.id } })
         const upsert = await safe(
           api.post(
             "/vendor/nursery/products",
-            { product_id: "prod_test_123", subtype: "live_plant_1gal", hardiness_zone: "7a-9b" },
+            { product_id: plant.id, subtype: "live_plant_1gal", hardiness_zone: "7a-9b" },
             h
           )
         )
         expect(upsert.status).toBe(201)
-        expect(upsert.data.attribute.product_id).toBe("prod_test_123")
+        expect(upsert.data.attribute.product_id).toBe(plant.id)
         const upsert2 = await safe(
           api.post(
             "/vendor/nursery/products",
-            { product_id: "prod_test_123", subtype: "live_plant_3gal" },
+            { product_id: plant.id, subtype: "live_plant_3gal" },
             h
           )
         )

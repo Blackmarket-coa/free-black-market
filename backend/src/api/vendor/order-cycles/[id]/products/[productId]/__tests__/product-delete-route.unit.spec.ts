@@ -54,10 +54,7 @@ const makeService = (o: Overrides = {}) => ({
     if (o.cycle === null) throw new Error("not found")
     return o.cycle ?? CYCLE
   }),
-  retrieveOrderCycleProduct: jest.fn(async () => {
-    if (o.product === null) throw new Error("not found")
-    return o.product ?? PRODUCT
-  }),
+  listOrderCycleProducts: jest.fn(async () => (o.product === null ? [] : [o.product ?? PRODUCT])),
   listOrderCycleSellers: jest.fn(async () => o.memberships ?? []),
   deleteOrderCycleProducts: jest.fn(async () => undefined),
 })
@@ -101,6 +98,10 @@ const callDelete = async (
 
 const MEMBER = [{ seller_id: "sel_member", is_active: true }]
 
+// A row that is missing, in another cycle, or another store's gets the same
+// answer (SD-158): the status says nothing about which row ids exist.
+const FORBIDDEN = { message: "You do not have access to this record.", type: "not_allowed" }
+
 describe("DELETE /vendor/order-cycles/:id/products/:productId", () => {
   it("401s without an authenticated seller", async () => {
     const service = makeService()
@@ -123,21 +124,22 @@ describe("DELETE /vendor/order-cycles/:id/products/:productId", () => {
     expect(service.deleteOrderCycleProducts).not.toHaveBeenCalled()
   })
 
-  it("404s when the product belongs to a DIFFERENT cycle", async () => {
+  it("403s when the product belongs to a DIFFERENT cycle", async () => {
     // The bug this route is written to avoid. Without the belongs-to check a
     // coordinator of oc_1 guessing a productId deletes a row out of oc_other.
     const service = makeService({
       product: { id: "ocp_1", order_cycle_id: "oc_other", seller_id: "sel_coord" },
     })
     const res = await callDelete(service, "sel_coord")
-    expect(res.statusCode).toBe(404)
+    expect({ status: res.statusCode, body: res.body }).toEqual({ status: 403, body: FORBIDDEN })
     expect(service.deleteOrderCycleProducts).not.toHaveBeenCalled()
   })
 
-  it("404s when the product does not exist", async () => {
+  it("403s when the product does not exist, the same answer as for another cycle's", async () => {
     const service = makeService({ product: null })
     const res = await callDelete(service, "sel_coord")
-    expect(res.statusCode).toBe(404)
+    expect({ status: res.statusCode, body: res.body }).toEqual({ status: 403, body: FORBIDDEN })
+    expect(service.listOrderCycleProducts).toHaveBeenCalledWith({ id: "ocp_1" }, { take: 1 })
     expect(service.deleteOrderCycleProducts).not.toHaveBeenCalled()
   })
 
@@ -167,8 +169,20 @@ describe("DELETE /vendor/order-cycles/:id/products/:productId", () => {
       product: { id: "ocp_1", order_cycle_id: "oc_1", seller_id: "sel_member" },
     })
     const res = await callDelete(service, "sel_other")
-    expect(res.statusCode).toBe(403)
+    expect({ status: res.statusCode, body: res.body }).toEqual({ status: 403, body: FORBIDDEN })
     expect(service.deleteOrderCycleProducts).not.toHaveBeenCalled()
+  })
+
+  it("answers a failed delete with what failed, never the error's text", async () => {
+    const service = makeService()
+    service.deleteOrderCycleProducts.mockRejectedValueOnce(
+      new Error('delete from "order_cycle_product" where "id" = $1 - deadlock detected')
+    )
+    const res = await callDelete(service, "sel_coord")
+    expect({ status: res.statusCode, body: res.body }).toEqual({
+      status: 500,
+      body: { message: "Failed to remove product from order cycle" },
+    })
   })
 
   it("refuses on a dispatched or cancelled cycle, mirroring the sibling POST", async () => {

@@ -1,14 +1,18 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import OrderCycleModuleService from "../../../../../../../modules/order-cycle/service"
-import { resolveExchangeAccess } from "../../../../_access"
+import { ORDER_CYCLE_MODULE } from "../../../../../../../modules/order-cycle"
+import type OrderCycleModuleService from "../../../../../../../modules/order-cycle/service"
+import { forbidden } from "../../../../../../../shared/community-read-access"
+import { createLogger } from "../../../../../../../shared/logger"
+import { parseRouteInput, routeFailure } from "../../../../../../../shared/route-input"
+import {
+  addExchangeProductsBody,
+  cycleRowsHeldByOthers,
+  resolveExchangeAccess,
+  saveOwnCycleProduct,
+  storeOwnsVariants,
+} from "../../../../_access"
 
-interface AddProductsBody {
-  products: Array<{
-    variant_id: string
-    available_quantity?: number
-    override_price?: number
-  }>
-}
+const log = createLogger("api/vendor/order-cycles/[id]/exchanges/[exchangeId]/products")
 
 /**
  * Products on one exchange of an order cycle.
@@ -28,7 +32,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const loaded = await resolveExchangeAccess(req, res, false)
   if (!loaded) return
 
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
+  const orderCycleService = req.scope.resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
 
   try {
     const products = await orderCycleService.listOrderCycleProducts({
@@ -36,39 +40,64 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
     res.json({ products })
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch products", error: error.message })
+    routeFailure(log, req, res, "Failed to fetch products", error)
   }
 }
 
-// POST /vendor/order-cycles/:id/exchanges/:exchangeId/products
-export const POST = async (req: MedusaRequest<AddProductsBody>, res: MedusaResponse) => {
+/**
+ * POST /vendor/order-cycles/:id/exchanges/:exchangeId/products — put the
+ * store's own variants on its own exchange.
+ *
+ * Every row this writes belongs to the exchange's seller, so the exchange must
+ * be the caller's: the coordinator may still edit or remove a participant's
+ * exchange itself (`resolveExchangeAccess`), but not write rows in the
+ * participant's name. Every variant must be of a product the store owns, and
+ * each row written is the one matched by cycle, variant and store
+ * (`_access.ts`, SD-158). This took any variant id and, through the service's
+ * upsert on (cycle, variant), moved another store's row onto this exchange and
+ * rewrote its price and quantity. Everything is checked before anything is
+ * written.
+ */
+export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const loaded = await resolveExchangeAccess(req, res, true)
   if (!loaded) return
 
-  const { products } = req.body
-  if (!Array.isArray(products) || products.length === 0) {
-    return res.status(400).json({ message: "products must be a non-empty array" })
-  }
+  const body = parseRouteInput(res, req.body, addExchangeProductsBody)
+  if (!body) return
 
-  const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
+  const orderCycleService = req.scope.resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
   const { access, exchange } = loaded
+  const variantIds = body.products.map((product) => product.variant_id)
 
   try {
-    // The service upserts on (cycle, variant) and takes the cycle id from the
-    // exchange itself. Re-implementing it here always inserted, so adding a
-    // variant already in the cycle tripped the unique index and 500'd.
-    const created = await orderCycleService.addProductsToExchange(
-      exchange.id,
-      products.map((product) => ({
-        variant_id: product.variant_id,
-        seller_id: exchange.seller_id || access.sellerId,
-        available_quantity: product.available_quantity,
-        override_price: product.override_price,
-      }))
-    )
+    if (exchange.seller_id !== access.sellerId) {
+      return forbidden(res)
+    }
+    if (!(await storeOwnsVariants(req, access.sellerId, variantIds))) {
+      return forbidden(res)
+    }
+    // The cycle comes from the exchange itself, so a mismatched path id can
+    // never decide where a row lands.
+    const cycleId = exchange.order_cycle_id
+    if (await cycleRowsHeldByOthers(orderCycleService, cycleId, access.sellerId, variantIds)) {
+      return res.status(409).json({
+        message: "Another store already lists one of these variants in this order cycle",
+      })
+    }
+
+    const created: unknown[] = []
+    for (const product of body.products) {
+      created.push(
+        await saveOwnCycleProduct(orderCycleService, cycleId, product.variant_id, access.sellerId, {
+          exchange_id: exchange.id,
+          available_quantity: product.available_quantity,
+          override_price: product.override_price,
+        })
+      )
+    }
 
     res.status(201).json({ products: created })
   } catch (error) {
-    res.status(500).json({ message: "Failed to add products", error: error.message })
+    routeFailure(log, req, res, "Failed to add products", error)
   }
 }

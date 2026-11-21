@@ -1,32 +1,55 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { NURSERY_VERTICAL_MODULE } from "../../../../../modules/nursery-vertical"
-import type NurseryVerticalModuleService from "../../../../../modules/nursery-vertical/service"
+import { createLogger } from "../../../../../shared/logger"
+import { definedFields } from "../../../../../shared/defined-fields"
+import { parseRouteInput, routeFailure } from "../../../../../shared/route-input"
 import { getSellerId } from "../../../quests/_helpers"
+import { asAttributeUpdate, attributePath, nurseryService, ownedAttribute, updateAttributeBody } from "../../_access"
 
-/** PUT /vendor/nursery/products/:id — update an attribute row (seller-scoped). */
+const log = createLogger("api/vendor/nursery/products/[id]")
+
+/**
+ * PUT /vendor/nursery/products/:id — update one of the store's attribute rows.
+ *
+ * The row must be the store's and on one of its products (`ownedAttribute`);
+ * any other, missing included, is `forbidden()`. Only the attribute columns
+ * are written: the body used to be spread into the update, `metadata` and the
+ * timestamps included.
+ */
 export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
   const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
-  const service = req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)
-  const attr = await service.retrieveNurseryProductAttribute(req.params.id)
-  if (attr.seller_id !== sellerId) return res.status(404).json({ message: "Not found" })
+  const path = parseRouteInput(res, req.params, attributePath)
+  if (!path) return
+  const fields = parseRouteInput(res, req.body, updateAttributeBody)
+  if (!fields) return
 
-  const { id, seller_id, product_id, ...data } = (req.body ?? {}) as Record<string, unknown>
-  await service.updateNurseryProductAttributes({ id: req.params.id, ...data })
-  const attribute = await service.retrieveNurseryProductAttribute(req.params.id)
-  res.json({ attribute })
+  try {
+    const row = await ownedAttribute(req, res, sellerId, path.id)
+    if (!row) return
+    const service = nurseryService(req)
+    await service.updateNurseryProductAttributes(asAttributeUpdate({ ...definedFields(fields), id: row.id }))
+    const attribute = await service.retrieveNurseryProductAttribute(row.id)
+    res.json({ attribute })
+  } catch (error) {
+    routeFailure(log, req, res, "Failed to update nursery attributes", error)
+  }
 }
 
-/** DELETE /vendor/nursery/products/:id — remove nursery attributes for a product. */
+/** DELETE /vendor/nursery/products/:id — remove one of the store's attribute rows. */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
-  const service = req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)
-  const attr = await service.retrieveNurseryProductAttribute(req.params.id)
-  if (attr.seller_id !== sellerId) return res.status(404).json({ message: "Not found" })
+  const path = parseRouteInput(res, req.params, attributePath)
+  if (!path) return
 
-  await service.deleteNurseryProductAttributes(req.params.id)
-  res.json({ id: req.params.id, deleted: true })
+  try {
+    const row = await ownedAttribute(req, res, sellerId, path.id)
+    if (!row) return
+    await nurseryService(req).deleteNurseryProductAttributes(row.id)
+    res.json({ id: row.id, deleted: true })
+  } catch (error) {
+    routeFailure(log, req, res, "Failed to delete nursery attributes", error)
+  }
 }

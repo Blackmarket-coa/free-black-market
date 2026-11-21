@@ -1,11 +1,17 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { z } from "zod"
 import { ORDER_CYCLE_MODULE } from "../../../../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../../../../modules/order-cycle/service"
+import { forbidden } from "../../../../../../shared/community-read-access"
+import { createLogger } from "../../../../../../shared/logger"
+import { parseRouteInput, recordId, routeFailure } from "../../../../../../shared/route-input"
 import { resolveCycleAccess } from "../../../_access"
 
-type OrderCycleProductRecord = Awaited<
-  ReturnType<OrderCycleModuleService["retrieveOrderCycleProduct"]>
->
+const log = createLogger("api/vendor/order-cycles/[id]/products/[productId]")
+
+const productPath = z.object({ id: recordId, productId: recordId })
+
+type OrderCycleProductRow = { id: string; order_cycle_id: string; seller_id: string }
 
 /**
  * DELETE /vendor/order-cycles/:id/products/:productId
@@ -21,15 +27,21 @@ type OrderCycleProductRecord = Awaited<
  * their own products through the sibling `POST`, which stamps `seller_id` from
  * the caller, so they must be able to take them back out; and a coordinator
  * runs the cycle. It is deliberately NOT coordinator-only like the fees route,
- * whose deletions change settlement amounts.
+ * whose deletions change settlement amounts. Removal is the one power over
+ * another store's row the coordinator has: the sibling POST writes only the
+ * caller's own rows, the coordinator's included (SD-158, `_access.ts`).
  *
  * The product must belong to the cycle named in the path. Without that check a
  * guessed `:id`/`:productId` pair deletes a row out of a stranger's cycle —
  * the defect that was live on `exchanges/:exchangeId/products` until 2026-09-08
- * and on this surface's fees route before it.
+ * and on this surface's fees route before it. A row that is missing, in
+ * another cycle, or another store's (for a participant) gets the same
+ * `forbidden()`, so the status says nothing about which row ids exist.
  */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
-  const { id, productId } = req.params
+  const path = parseRouteInput(res, req.params, productPath)
+  if (!path) return
+  const { id, productId } = path
 
   // Participant or coordinator may reach the cycle; who may delete this
   // particular row is decided below, once we know whose product it is.
@@ -42,45 +54,30 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
     ORDER_CYCLE_MODULE
   )
 
-  let product: OrderCycleProductRecord
   try {
-    product = await orderCycleService.retrieveOrderCycleProduct(productId)
-  } catch (_error) {
-    res.status(404).json({ message: "Product not found in order cycle" })
-    return
-  }
+    const [product] = (await orderCycleService.listOrderCycleProducts(
+      { id: productId },
+      { take: 1 }
+    )) as OrderCycleProductRow[]
 
-  // Belongs-to check. 404 rather than 403 — a caller who cannot see the cycle
-  // this row is in should not learn that the id exists.
-  if (product.order_cycle_id !== id) {
-    res.status(404).json({ message: "Product not found in order cycle" })
-    return
-  }
+    const isOwner = product?.seller_id === access.sellerId
+    if (!product || product.order_cycle_id !== id || (!access.isCoordinator && !isOwner)) {
+      return forbidden(res)
+    }
 
-  const isOwner = product.seller_id === access.sellerId
-  if (!access.isCoordinator && !isOwner) {
-    res.status(403).json({ message: "Access denied" })
-    return
-  }
+    // Mirrors the sibling POST: a dispatched or cancelled cycle is closed to
+    // product changes in both directions. Removing a product from a cycle whose
+    // boxes have already gone out would rewrite what was actually sent.
+    if (["dispatched", "cancelled"].includes(access.orderCycle.status)) {
+      return res.status(400).json({
+        message:
+          "Cannot remove products from a dispatched or cancelled order cycle",
+      })
+    }
 
-  // Mirrors the sibling POST: a dispatched or cancelled cycle is closed to
-  // product changes in both directions. Removing a product from a cycle whose
-  // boxes have already gone out would rewrite what was actually sent.
-  if (["dispatched", "cancelled"].includes(access.orderCycle.status)) {
-    res.status(400).json({
-      message:
-        "Cannot remove products from a dispatched or cancelled order cycle",
-    })
-    return
-  }
-
-  try {
-    await orderCycleService.deleteOrderCycleProducts(productId)
+    await orderCycleService.deleteOrderCycleProducts(product.id)
     res.status(200).json({ success: true })
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error"
-    res
-      .status(500)
-      .json({ message: "Failed to remove product from order cycle", error: message })
+  } catch (error) {
+    routeFailure(log, req, res, "Failed to remove product from order cycle", error)
   }
 }
