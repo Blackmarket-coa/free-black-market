@@ -46,6 +46,16 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/dashboard"),
           },
           {
+            // The dashboard's delivery step: a stock location and a pickup or
+            // shipping option from one screen.
+            path: "delivery-setup",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Pickup and shipping",
+            },
+            lazy: () => import("../../routes/delivery-setup"),
+          },
+          {
             path: "finances",
             errorElement: <ErrorBoundary />,
             handle: {

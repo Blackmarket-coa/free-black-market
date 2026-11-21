@@ -47,6 +47,8 @@ export const createBackend = () => {
   const sent: Sent[] = []
   let routes: Array<{ method: string; path: string | RegExp; reply: Reply }> =
     []
+  let holds: Array<{ method: string; path: string; gate: Promise<void> }> = []
+  let once: Array<{ method: string; path: string; reply: Reply }> = []
 
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://panel.test")
@@ -69,11 +71,26 @@ export const createBackend = () => {
             ? r.path === record.path
             : r.path.test(record.path))
       )
-    return route
-      ? route.reply(record)
-      : json(404, {
-          message: `no route for ${record.method} ${record.path}`,
-        })
+    const first = once.findIndex(
+      (o) => o.method === record.method && o.path === record.path
+    )
+    const response =
+      first >= 0
+        ? once.splice(first, 1)[0].reply(record)
+        : route
+          ? route.reply(record)
+          : json(404, {
+              message: `no route for ${record.method} ${record.path}`,
+            })
+    // A held request has reached the backend and been answered; the answer is
+    // kept from the panel until the spec releases it.
+    const hold = holds.find(
+      (h) => h.method === record.method && h.path === record.path
+    )
+    if (hold) {
+      await hold.gate
+    }
+    return response
   })
 
   return {
@@ -82,11 +99,30 @@ export const createBackend = () => {
     on: (method: string, path: string | RegExp, reply: Reply) => {
       routes.push({ method, path, reply })
     },
+    /** Answer the next such request this way, then go back to its route. */
+    once: (method: string, path: string, reply: Reply) => {
+      once.push({ method, path, reply })
+    },
+    /**
+     * Keep the answers to such requests from the panel until the returned
+     * function is called: the state of a write in flight.
+     */
+    hold: (method: string, path: string) => {
+      let release: () => void = () => undefined
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      holds.push({ method, path, gate })
+      return () => {
+        holds = holds.filter((h) => h.gate !== gate)
+        release()
+      }
+    },
     /** The requests as "METHOD /path", in the order they were sent. */
     calls: () => sent.map((s) => `${s.method} ${s.path}`),
     reset: () => {
       sent.length = 0
       routes = []
+      holds = []
+      once = []
       fetch.mockClear()
     },
   }

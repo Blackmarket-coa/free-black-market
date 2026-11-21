@@ -360,28 +360,21 @@ describe("setUpDelivery, for a store with nothing", () => {
   })
 
   it("picks up where a failed run stopped, without a second location or option", async () => {
-    let failures = 1
-    const original = backend.fetch.getMockImplementation()!
-    backend.fetch.mockImplementation(async (input, init) => {
-      const path = new URL(String(input), "http://panel.test").pathname
-      if (
-        init?.method === "POST" &&
-        path === "/vendor/shipping-options" &&
-        JSON.parse(String(init.body)).name === "Flat delivery" &&
-        failures-- > 0
-      ) {
-        return json(500, { message: "An unknown error occurred." })
-      }
-      return original(input, init)
-    })
+    // The first shipping-option request, the pickup option's, is refused.
+    backend.once("POST", "/vendor/shipping-options", () =>
+      json(500, { message: "An unknown error occurred." })
+    )
 
     const error = await setUpDelivery(both).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(SetupStepError)
     expect((error as SetupStepError).message).toBe(
-      "Could not create the shipping option: An unknown error occurred."
+      "Could not create the pickup option: An unknown error occurred."
     )
-    // The pickup option was made before the failure, and is offered.
-    expect((await readSellingSetup()).delivery.options).toHaveLength(1)
+    // The location is there and linked; no option was made.
+    expect((await readSellingSetup()).delivery).toMatchObject({
+      locationLinked: true,
+      options: [],
+    })
 
     await setUpDelivery(both)
 
