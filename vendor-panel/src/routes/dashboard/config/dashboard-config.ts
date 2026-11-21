@@ -1,3 +1,4 @@
+import type { SellingSetup } from "../../../lib/selling-setup"
 import { VendorType, VendorFeatures } from "../../../providers/vendor-type-provider"
 
 /**
@@ -95,9 +96,51 @@ export function getPrimaryCTARoute(type: VendorType): string {
 }
 
 /**
- * Get onboarding steps based on vendor type
+ * Whether the dashboard leaves setup (SD-151 (4)).
+ *
+ * It left once Mercur's `products` and `locations_shipping` were both true.
+ * Mercur sets `locations_shipping` when any stock location exists and
+ * `products` when any product does, a draft included, so a store whose
+ * product could not be added to a cart ("Sales channel … is not associated
+ * with any stock location") or checked out ("Seller shipping method not
+ * found!") was shown as set up.
+ *
+ * Now: the profile is complete, and a buyer could check out
+ * (lib/selling-setup.ts: a stock location linked to the sales channel, a
+ * shipping option on it, a published product in stock or untracked). A store
+ * buyers have already ordered from stays out of setup: selling out or pausing
+ * an option must not put the checklist back over its orders.
  */
-export function getOnboardingSteps(type: VendorType, features: VendorFeatures) {
+export function isStoreSetUp({
+  onboarding,
+  selling,
+  orderCount,
+}: {
+  onboarding: { store_information?: boolean } | null | undefined
+  selling: Pick<SellingSetup, "ready"> | null | undefined
+  orderCount: number
+}): boolean {
+  if (!onboarding?.store_information) {
+    return false
+  }
+  return orderCount > 0 || Boolean(selling?.ready)
+}
+
+/**
+ * Get onboarding steps based on vendor type
+ *
+ * `selling` is what the store's delivery and listings are now. The delivery
+ * and product steps say what is missing and link to where it is fixed; with
+ * none given (the store has not been read) they say what a new store needs.
+ */
+export function getOnboardingSteps(
+  type: VendorType,
+  features: VendorFeatures,
+  selling?: Pick<SellingSetup, "delivery" | "listing"> | null
+) {
+  const delivery = selling?.delivery
+  const listing = selling?.listing
+
   const baseSteps = [
     {
       key: "store_information",
@@ -113,32 +156,77 @@ export function getOnboardingSteps(type: VendorType, features: VendorFeatures) {
       icon: "Building",
     },
     {
-      key: "locations_shipping",
-      title: features.hasDeliveryZones ? "Set up delivery zones" : "Set up shipping",
-      description: features.hasDeliveryZones
-        ? "Define where you deliver or provide services"
-        : "Configure shipping options and pickup locations",
-      to: "/settings/locations",
+      // Done only when a stock location is linked to the sales channel and
+      // the store has a pickup or shipping option on it.
+      key: "delivery",
+      title: "Set up pickup or shipping",
+      description: !delivery || !delivery.location
+        ? "Say where your goods are and how buyers get them. Buyers cannot check out until you do."
+        : !delivery.locationLinked
+        ? `${delivery.location.name} is not linked to your sales channel, so buyers cannot add your products to a cart.`
+        : delivery.options.length === 0
+        ? `${delivery.location.name} has no pickup or shipping option, so buyers cannot check out.`
+        : `Buyers can choose: ${delivery.options.map((option) => option.name).join(", ")}.`,
+      to: "/delivery-setup",
       icon: "MapPin",
     },
   ]
 
-  // Type-specific product step
+  // Type-specific product step: done when a buyer can add one to a cart.
   if (features.hasProducts) {
-    baseSteps.push({
-      key: "products",
-      title: type === "producer" 
-        ? "Add your first product"
-        : type === "garden"
-        ? "Post your first harvest"
-        : type === "maker"
-        ? "Add your first creation"
-        : "Add your first product",
-      description: "Get started by adding items to your store",
-      to: "/products/create",
-      icon: "Tag",
-    })
+    const firstProduct = type === "producer"
+      ? "Add your first product"
+      : type === "garden"
+      ? "Post your first harvest"
+      : type === "maker"
+      ? "Add your first creation"
+      : "Add your first product"
+
+    baseSteps.push(
+      listing?.buyable
+        ? {
+            key: "products",
+            title: firstProduct,
+            description: `${listing.buyable.title} is published and can be bought.`,
+            to: "/products",
+            icon: "Tag",
+          }
+        : listing?.needsStock
+        ? {
+            key: "products",
+            title: `Add stock to ${listing.needsStock.title}`,
+            description: delivery?.locationLinked
+              ? "It is published, but none is in stock, so buyers cannot add it to a cart."
+              : "It is published, but it has no stock: set up pickup or shipping first, then say how many you have.",
+            to: `/products/${listing.needsStock.id}/stock`,
+            icon: "Tag",
+          }
+        : listing?.draft
+        ? {
+            key: "products",
+            title: `Publish ${listing.draft.title}`,
+            description: "It is saved as a draft, which buyers cannot see.",
+            to: `/products/${listing.draft.id}`,
+            icon: "Tag",
+          }
+        : {
+            key: "products",
+            title: firstProduct,
+            description: "Get started by adding items to your store",
+            to: "/products/create",
+            icon: "Tag",
+          }
+    )
   }
+
+  // Not needed to leave setup: buyers can order before the store can be paid.
+  baseSteps.push({
+    key: "stripe_connection",
+    title: "Set up payouts",
+    description: "Connect a US bank account through Stripe so your sales can be paid out to you.",
+    to: "/stripe-connect",
+    icon: "ShoppingCart",
+  })
 
   if (features.hasMenu) {
     baseSteps.push({

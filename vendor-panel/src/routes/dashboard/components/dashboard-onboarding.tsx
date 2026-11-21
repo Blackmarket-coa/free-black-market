@@ -23,6 +23,7 @@ import {
   CalendarMini,
 } from "@medusajs/icons"
 import { Link } from "react-router-dom"
+import type { SellingSetup } from "../../../lib/selling-setup"
 import { useVendorType } from "../../../providers/vendor-type-provider"
 import { 
   getDashboardTitle, 
@@ -32,10 +33,10 @@ import {
 } from "../config/dashboard-config"
 
 type DashboardProps = {
-  products?: boolean
-  locations_shipping?: boolean
+  /** The store's delivery and listings, read back from the backend. */
+  selling?: SellingSetup | null
   store_information?: boolean
-  stripe_connect?: boolean
+  stripe_connection?: boolean
   menu?: boolean
   plots?: boolean
   volunteers?: boolean
@@ -80,10 +81,9 @@ const HELP_RESOURCES = [
 ]
 
 export const DashboardOnboarding = ({
-  products,
-  locations_shipping,
+  selling,
   store_information,
-  // stripe_connect,
+  stripe_connection,
   menu,
   plots,
   volunteers,
@@ -101,14 +101,17 @@ export const DashboardOnboarding = ({
 
   // Get type-specific content with defensive fallbacks
   const welcomeMessage = getWelcomeMessage(vendorType) ?? "Manage your store, products, and orders."
-  const onboardingSteps = getOnboardingSteps(vendorType, features) ?? []
+  const onboardingSteps = getOnboardingSteps(vendorType, features, selling) ?? []
   const beginnerTips = getBeginnerTips(vendorType) ?? []
 
-  // Build completion map from props
+  // Build completion map from props. Delivery and products are done by what
+  // a buyer needs (lib/selling-setup.ts), not by Mercur's flags, which turn
+  // true for any stock location and any product, a draft included.
   const completionMap: Record<string, boolean> = {
     store_information: Boolean(store_information),
-    locations_shipping: Boolean(locations_shipping),
-    products: Boolean(products),
+    delivery: Boolean(selling?.delivery.ready),
+    products: Boolean(selling?.listing.buyable),
+    stripe_connection: Boolean(stripe_connection),
     menu: Boolean(menu),
     plots: Boolean(plots),
     volunteers: Boolean(volunteers),

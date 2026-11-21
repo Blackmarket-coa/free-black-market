@@ -6,12 +6,21 @@ import { DashboardOnboarding } from "./components/dashboard-onboarding"
 import { EconomicStandingCard } from "./components/economic-standing-card"
 import { ChartSkeleton } from "./components/chart-skeleton"
 import { useReviews } from "../../hooks/api/review"
+import { useSellingSetup } from "../../hooks/api/selling-setup"
 import { isFetchError } from "../../lib/is-fetch-error"
+import { isStoreSetUp } from "./config/dashboard-config"
 
 export const Dashboard = () => {
   const [isClient, setIsClient] = useState(false)
   useEffect(() => setIsClient(true), [])
 
+  if (!isClient) return null
+
+  return <DashboardContent />
+}
+
+/** The dashboard once the page is in the browser: setup, or the store's numbers. */
+export const DashboardContent = () => {
   const {
     onboarding,
     isError: isOnboardingError,
@@ -34,6 +43,20 @@ export const Dashboard = () => {
     error: reviewsError,
     refetch: refetchReviews,
   } = useReviews()
+  // Whether a buyer could check out: Mercur's onboarding flags do not say.
+  // Not asked for a store buyers have already ordered from, which is past
+  // setup whatever this would answer (isStoreSetUp).
+  const hasOrders = (orders?.length ?? 0) > 0
+  const needsSelling = !isPendingOrders && !isOrdersError && !hasOrders
+  const {
+    data: selling,
+    isPending: isSellingUnread,
+    isError: isSellingFailed,
+    error: sellingError,
+    refetch: refetchSelling,
+  } = useSellingSetup({ enabled: needsSelling })
+  const isPendingSelling = needsSelling && isSellingUnread
+  const isSellingError = needsSelling && isSellingFailed
 
   const notFulfilledOrders =
     orders?.filter((order) => order.fulfillment_status === "not_fulfilled")
@@ -44,9 +67,7 @@ export const Dashboard = () => {
   const reviewsToReply =
     reviews?.filter((review: any) => !review?.seller_note).length || 0
 
-  if (!isClient) return null
-
-  if (isPending || isPendingOrders || isPendingReviews) {
+  if (isPending || isPendingOrders || isPendingReviews || isPendingSelling) {
     return (
       <div>
         <ChartSkeleton />
@@ -54,8 +75,9 @@ export const Dashboard = () => {
     )
   }
 
-  if (isOnboardingError || isOrdersError || isReviewsError) {
-    const error = onboardingError || ordersError || reviewsError
+  // An unreadable store is not a set-up one: the error is shown, with Retry.
+  if (isOnboardingError || isOrdersError || isReviewsError || isSellingError) {
+    const error = onboardingError || ordersError || reviewsError || sellingError
     const errorMessage = isFetchError(error)
       ? error.status === 401
         ? "Your session has expired. Please sign in again."
@@ -85,6 +107,7 @@ export const Dashboard = () => {
               refetchOnboarding()
               refetchOrders()
               refetchReviews()
+              refetchSelling()
             }}
           >
             Retry
@@ -95,17 +118,19 @@ export const Dashboard = () => {
   }
 
   if (
-    !onboarding?.products ||
-    !onboarding?.locations_shipping ||
-    !onboarding?.store_information
-    // !onboarding?.stripe_connect
+    !isStoreSetUp({
+      onboarding,
+      selling,
+      orderCount: orders?.length ?? 0,
+    })
   )
     return (
       <DashboardOnboarding
-        products={onboarding?.products}
-        locations_shipping={onboarding?.locations_shipping}
+        selling={selling}
         store_information={onboarding?.store_information}
-        stripe_connect={onboarding?.stripe_connect}
+        // Mercur's field is `stripe_connection`. The dashboard read
+        // `stripe_connect`, which no response carries.
+        stripe_connection={onboarding?.stripe_connection}
         menu={onboarding?.menu}
         plots={onboarding?.plots}
         volunteers={onboarding?.volunteers}
