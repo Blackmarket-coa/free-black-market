@@ -312,6 +312,19 @@ export const PHASE0_FEATURE_FLAGS = {
   // confirms the card, before this checkout runs (the storefront never sets
   // it).
   TICKET_ORDER_SETTLEMENT_V1: "FF_TICKET_ORDER_SETTLEMENT_V1",
+  // Plates pilot, South Carolina first (docs/PLATES_SC_PILOT_PLAN.md). Gates
+  // what sellers are shown from the jurisdiction-rule store: `/vendor/plates/*`
+  // answers 404 with it off. It does NOT gate the admin rule routes
+  // (`/admin/jurisdiction-rules`, `-sources`, `-coverage`): the rules have to
+  // be seeded and signed off before this is set, and a reviewed rule stays
+  // reviewed with it off. Rules are information only; with the flag on or off,
+  // nothing in the rule store blocks a sale or touches cart or checkout.
+  // Default off. BEFORE SETTING IT: run src/scripts/seed-jurisdiction-rules.ts,
+  // set JURISDICTION_RULE_REVIEWER_EMAILS (unset means nobody can review), and
+  // have a reviewer sign off all sixteen South Carolina rules so coverage
+  // reads `covered`. The vendor-panel twin VITE_FF_PLATES_V1 arrives with the
+  // panel phases; set the backend flag first.
+  PLATES_V1: "FF_PLATES_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

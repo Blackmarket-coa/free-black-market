@@ -1465,6 +1465,16 @@ export default defineMiddlewares({
         requirePlanFeature("vendor.nursery"),
       ],
     },
+    // Plates pilot: what FBM's sources say about a state's home-based food
+    // rules, for the seller to read. Flag-gated (404 when off) and not
+    // plan-gated: this is information every seller is shown, on every plan.
+    {
+      matcher: "/vendor/plates*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("PLATES_V1"),
+      ],
+    },
     // Plan self-service. Authenticated but deliberately NOT plan-gated: a
     // vendor must always be able to see and change their own plan, especially
     // when that plan is the reason something else is denied.
