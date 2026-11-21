@@ -1,9 +1,5 @@
 import { Migration } from "@medusajs/framework/mikro-orm/migrations"
-import {
-  addRawBigNumberColumnsSql,
-  dropRawBigNumberColumnsSql,
-  type RawCompanion,
-} from "../../../lib/raw-big-number-columns"
+import { addRawBigNumberColumnsSql, type RawCompanion } from "../../../lib/raw-big-number-columns"
 
 /**
  * SD-63: add the `raw_<field>` companions of the donation module's
@@ -31,7 +27,10 @@ export class Migration20261117DonationRawBigNumberColumns extends Migration {
     for (const sql of addRawBigNumberColumnsSql(COLUMNS)) this.addSql(sql)
   }
 
-  override async down(): Promise<void> {
-    for (const sql of dropRawBigNumberColumnsSql(COLUMNS)) this.addSql(sql)
-  }
+  /**
+   * Nothing. The columns stay: this migration cannot tell one it added from
+   * one the schema already had, and dropping the second kind would destroy
+   * values Medusa wrote. Code that predates them does not read them.
+   */
+  override async down(): Promise<void> {}
 }

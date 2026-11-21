@@ -1,16 +1,12 @@
-import {
-  addRawBigNumberColumnsSql,
-  dropRawBigNumberColumnsSql,
-  rawDefaultLiteral,
-  type RawCompanion,
-} from "../raw-big-number-columns"
+import { addRawBigNumberColumnsSql, rawDefaultLiteral, type RawCompanion } from "../raw-big-number-columns"
 
 /**
  * The SQL the SD-63 migrations run, by its shape. What it does to a real
  * table is pinned on Postgres (integration-tests/http/
  * module-bignumber-inserts.spec.ts); this keeps the statements themselves
  * from changing unnoticed, since a change here changes migrations that have
- * not run yet on some database.
+ * not run yet on some database. `sd63-migrations-sql.unit.spec.ts` pins every
+ * statement of every migration that uses it.
  */
 describe("raw-big-number-columns", () => {
   const columns: RawCompanion[] = [
@@ -50,13 +46,6 @@ describe("raw-big-number-columns", () => {
     expect(addPost).toBe(`ALTER TABLE "demand_post"\n  ADD COLUMN IF NOT EXISTS "raw_target_price" JSONB NULL;`)
     expect(backfillPost).toContain(`UPDATE "demand_post"`)
     expect(sql.join("\n")).not.toContain(`"raw_target_price" SET`)
-  })
-
-  it("drops what it added", () => {
-    expect(dropRawBigNumberColumnsSql(columns)).toEqual([
-      `ALTER TABLE "demand_bounty"\n  DROP COLUMN IF EXISTS "raw_amount",\n  DROP COLUMN IF EXISTS "raw_amount_paid_out";`,
-      `ALTER TABLE "demand_post"\n  DROP COLUMN IF EXISTS "raw_target_price";`,
-    ])
   })
 
   it("writes a default as Medusa's raw JSON, and refuses what is not a plain number or identifier", () => {

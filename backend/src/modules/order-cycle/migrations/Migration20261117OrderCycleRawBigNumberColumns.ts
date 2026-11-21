@@ -1,9 +1,5 @@
 import { Migration } from "@medusajs/framework/mikro-orm/migrations"
-import {
-  addRawBigNumberColumnsSql,
-  dropRawBigNumberColumnsSql,
-  type RawCompanion,
-} from "../../../lib/raw-big-number-columns"
+import { addRawBigNumberColumnsSql, type RawCompanion } from "../../../lib/raw-big-number-columns"
 
 /**
  * SD-63: add the `raw_<field>` companions of the order-cycle module's
@@ -20,17 +16,23 @@ import {
  * `order_cycle_product` had the companion under the wrong name:
  * `Migration20251227015616` created the pair as `price_override` /
  * `raw_price_override`, and `Migration20251227174700` renamed only the
- * NUMERIC half to `override_price`. The leftover is renamed rather than left
- * beside a new column, so any value in it stays paired with the number it
- * was written for; a schema that already has `raw_override_price` keeps it,
- * and the leftover (nullable, never written by the model) is left alone.
+ * NUMERIC half to `override_price`. Its values, if any, were written for the
+ * number that is now `override_price`, so:
+ *
+ * - only the old name exists (a database built from the migrations): it is
+ *   renamed, and its values stay paired with their numbers;
+ * - both names exist: each row whose `raw_override_price` is empty beside a
+ *   number takes the old column's value, and the old column is left where it
+ *   is (nullable, never written by the model);
+ * - only the new name exists: nothing to do.
  *
  * Shapes follow each field's declaration (nullable, required, or required
  * with a default), as Medusa's own migrations give them. Existing rows are
  * backfilled from the NUMERIC column in Medusa's raw format before any NOT
- * NULL, and the migration is a no-op on a schema that already has the
- * columns: see `lib/raw-big-number-columns.ts`. Measured, and kept from
- * coming back, by `integration-tests/http/module-schema-drift.spec.ts`.
+ * NULL, and a schema that already has the columns keeps them: see
+ * `lib/raw-big-number-columns.ts`, which also says what happens on a schema
+ * it was not written for. Measured, and kept from coming back, by
+ * `integration-tests/http/module-schema-drift.spec.ts`.
  */
 const COLUMNS: RawCompanion[] = [
   ["enterprise_fee", "amount", "required"],
@@ -46,26 +48,35 @@ const hasColumn = (column: string) => `EXISTS (
          AND column_name = '${column}'
     )`
 
-/** Rename `from` to `to` on order_cycle_product when only `from` exists. */
-const renameIfOnly = (from: string, to: string) => `
+const ADOPT_LEGACY_COMPANION = `
   DO $$
   BEGIN
-    IF ${hasColumn(from)} AND NOT ${hasColumn(to)} THEN
-      ALTER TABLE "order_cycle_product" RENAME COLUMN "${from}" TO "${to}";
+    IF ${hasColumn("raw_price_override")} THEN
+      IF NOT ${hasColumn("raw_override_price")} THEN
+        ALTER TABLE "order_cycle_product" RENAME COLUMN "raw_price_override" TO "raw_override_price";
+      ELSE
+        EXECUTE 'UPDATE "order_cycle_product"
+                    SET "raw_override_price" = "raw_price_override"
+                  WHERE "raw_override_price" IS NULL
+                    AND "raw_price_override" IS NOT NULL
+                    AND "override_price" IS NOT NULL';
+      END IF;
     END IF;
   END $$;
 `
 
 export class Migration20261117OrderCycleRawBigNumberColumns extends Migration {
   override async up(): Promise<void> {
-    this.addSql(renameIfOnly("raw_price_override", "raw_override_price"))
+    this.addSql(ADOPT_LEGACY_COMPANION)
     for (const sql of addRawBigNumberColumnsSql(COLUMNS)) this.addSql(sql)
   }
 
-  override async down(): Promise<void> {
-    // Back to what the earlier migrations left: the companion under its old
-    // name on order_cycle_product, and none on the other three tables.
-    this.addSql(renameIfOnly("raw_override_price", "raw_price_override"))
-    for (const sql of dropRawBigNumberColumnsSql(COLUMNS)) this.addSql(sql)
-  }
+  /**
+   * Nothing. The columns stay: this migration cannot tell one it added from
+   * one the schema already had, and dropping the second kind would destroy
+   * values Medusa wrote. Renaming `raw_override_price` back is no safer: on a
+   * schema that had it before this migration, that would take the model's
+   * own column away. Code that predates the companions does not read them.
+   */
+  override async down(): Promise<void> {}
 }

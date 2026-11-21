@@ -24,17 +24,10 @@ export class Migration20261117DemandBountyMilestonesNullable extends Migration {
     this.addSql(`ALTER TABLE "demand_bounty" ALTER COLUMN "milestones" DROP NOT NULL;`)
   }
 
-  /** Restores NOT NULL only when no bounty holds NULL milestones. */
-  override async down(): Promise<void> {
-    this.addSql(`
-      DO $$
-      BEGIN
-        IF EXISTS (SELECT 1 FROM "demand_bounty" WHERE "milestones" IS NULL) THEN
-          RAISE NOTICE 'demand_bounty: rows with NULL milestones exist; NOT NULL not restored';
-        ELSE
-          ALTER TABLE "demand_bounty" ALTER COLUMN "milestones" SET NOT NULL;
-        END IF;
-      END $$;
-    `)
-  }
+  /**
+   * Nothing. NOT NULL is not put back: this migration cannot tell a column it
+   * relaxed from one that was already nullable (a schema built from the
+   * models), and the model writes NULL here either way.
+   */
+  override async down(): Promise<void> {}
 }

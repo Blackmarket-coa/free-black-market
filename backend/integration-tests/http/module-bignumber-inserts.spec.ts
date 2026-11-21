@@ -15,6 +15,7 @@ import { ORDER_SUBCONTRACT_MODULE } from "../../src/modules/order-subcontract"
 import { SERVICE_PROGRAM_MODULE } from "../../src/modules/service-program"
 import { VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE } from "../../src/modules/vendor-hype-operations-prediction"
 import { addRawBigNumberColumnsSql, type RawCompanion } from "../../src/lib/raw-big-number-columns"
+import { Migration20261117OrderCycleRawBigNumberColumns } from "../../src/modules/order-cycle/migrations/Migration20261117OrderCycleRawBigNumberColumns"
 import type OrderCycleModuleService from "../../src/modules/order-cycle/service"
 import type DemandPoolModuleService from "../../src/modules/demand-pool/service"
 
@@ -214,6 +215,41 @@ medusaIntegrationTestRunner({
       const generated = await cycles.generateBoxesForCycle(cycle.id)
       expect(generated).toMatchObject({ generated: 1, skipped: 0 })
       expect(await stored("share_box", generated.boxes[0].id, ["total_price"])).toEqual({ total_price: n("450") })
+    })
+
+    it("order-cycle, on a schema that has the companion under both names: a row with none under the new name takes the old one's", async () => {
+      try {
+        // The old name back beside the new one, as on a schema where somebody
+        // added `raw_override_price` by hand without renaming the leftover.
+        await pg().raw(`ALTER TABLE "order_cycle_product" ADD COLUMN "raw_price_override" jsonb NULL`)
+        await pg().raw(`
+          INSERT INTO "order_cycle_product"
+            ("id", "order_cycle_id", "variant_id", "seller_id", "override_price", "raw_price_override", "raw_override_price") VALUES
+            ('ocp_old_only', 'oc_x', 'v1', 'sel_1', 450, '{"value":"450","precision":20}', NULL),
+            ('ocp_both', 'oc_x', 'v2', 'sel_1', 99.5, '{"value":"1","precision":20}', '{"value":"99.5","precision":20}'),
+            ('ocp_no_number', 'oc_x', 'v3', 'sel_1', NULL, '{"value":"7","precision":20}', NULL),
+            ('ocp_neither', 'oc_x', 'v4', 'sel_1', 12.50, NULL, NULL)`)
+
+        const migration = new Migration20261117OrderCycleRawBigNumberColumns({} as never, {} as never)
+        await migration.up()
+        for (const sql of migration.getQueries()) await pg().raw(sql as string)
+
+        const { rows } = await pg().raw(
+          `SELECT "id", "raw_override_price", "raw_price_override" FROM "order_cycle_product" ORDER BY "id"`
+        )
+        expect(rows).toEqual([
+          // Its own value kept; the old column's differing one ignored.
+          { id: "ocp_both", raw_override_price: raw("99.5"), raw_price_override: raw("1") },
+          // Neither name had one: backfilled from the number.
+          { id: "ocp_neither", raw_override_price: raw("12.5"), raw_price_override: null },
+          // No number to pair with: left empty.
+          { id: "ocp_no_number", raw_override_price: null, raw_price_override: raw("7") },
+          // Carried over from the old name.
+          { id: "ocp_old_only", raw_override_price: raw("450"), raw_price_override: raw("450") },
+        ])
+      } finally {
+        await pg().raw(`ALTER TABLE "order_cycle_product" DROP COLUMN IF EXISTS "raw_price_override"`)
+      }
     })
 
     it("demand-pool: a post, a participant, a bounty with no milestones, and a supplier proposal", async () => {
