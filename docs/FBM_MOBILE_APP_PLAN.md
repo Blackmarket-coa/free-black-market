@@ -16,6 +16,8 @@ Use the [mobile implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md
 
 ## Confirmed requirements
 
+The [December launch readiness audit](FBM_DECEMBER_LAUNCH_READINESS.md) records subsequent founder decisions: community-first income opportunities, founder-owned existing enhancements, open geographic storyboard publishing, original-copy sales and supported transfers, a $250 current monthly cost, Windows/Linux development with Forge reuse, and a December 31 public web/iOS/Android target. Its scoped reuse matrix and backlog distinguish source foundations from release evidence; no runtime behavior is changed.
+
 1. One signed-in member experience supports buying, selling, trading and negotiation. Activities are not permanent account classes or separate mandatory portals.
 2. Character creation learns goals, resources and practical participation, previews a starter build and automatically configures a useful personal portal. Reuse the resource quiz, playbooks and asset matcher where appropriate.
 3. Game view is standard. An accessible compact view provides the same actions. Direct access to search, messages, urgent tasks and checkout never requires avatar movement.

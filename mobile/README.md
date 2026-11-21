@@ -229,6 +229,8 @@ drifted apart; CI runs it on every PR.
 
 ## iOS on Linux/CI
 
+See the [November 21 FBM/Forge readiness audit](../docs/FBM_DECEMBER_LAUNCH_READINESS.md) before regenerating a shell. Reuse this existing `mobile/` target. Forge's Capacitor adapter recognizes standalone targets and `capacitor/`, so nested `mobile/` discovery needs an explicit tested mapping; preserve this project's pnpm lockfile and TypeScript config. Its iOS action syncs/opens Xcode, and its desktop macOS release job is not an FBM iOS archive/sign/upload pipeline. Use a verified macOS/Xcode build service while authoring on Windows/Linux; real iPhone and Android tests remain required.
+
 The Xcode project in `ios/` is generated and committed, but building it
 (and `pod install`) requires macOS. Android builds work anywhere with an
 Android SDK.

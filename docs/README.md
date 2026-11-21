@@ -1,5 +1,7 @@
 # Documentation Index
 
+> **December launch audit (2026-11-21):** [Business baseline and FBM/Forge readiness](FBM_DECEMBER_LAUNCH_READINESS.md) records founder-confirmed economics/community direction, existing mobile and creator-tool reuse, platform build boundaries, verification limits and a prioritized backlog for the December 31 target.
+
 > **Shared game planning (2026-11-21):** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adapts Blackout's original companion/collection/cooperative exploration direction to FBM, including optional AR, creator packs, consent, code-adoption boundaries and verified commerce/delivery acceptance. Accepted planning only; no game or dependencies installed.
 
 > **App plan and source review (2026-11-20):** [FBM iOS/Android app plan](FBM_MOBILE_APP_PLAN.md) records the unified portal, marketplace/map behavior, equipment purchases and staged acceptance. [Mobile implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) accounts for all 99 local modules/providers, static plugins/add-ons, selected custom workflows and verification limits. This supersedes older mobile-only scope restrictions as product direction, not runtime behavior.
