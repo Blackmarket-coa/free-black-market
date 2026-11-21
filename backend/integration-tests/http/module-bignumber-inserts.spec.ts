@@ -252,7 +252,7 @@ medusaIntegrationTestRunner({
       }
     })
 
-    it("demand-pool: a post, a participant, a bounty with no milestones, and a supplier proposal", async () => {
+    it("demand-pool: a post, a participant, a bounty with no milestones, a supplier proposal, and a milestone paid out", async () => {
       const pools = getContainer().resolve<DemandPoolModuleService>(DEMAND_POOL_MODULE)
       const post = await pools.createDemandPost({
         creator_id: `cus_${uid()}`,
@@ -311,6 +311,26 @@ medusaIntegrationTestRunner({
         total_escrowed: n("0"),
         final_unit_price: none,
         final_total_price: none,
+      })
+
+      // A milestone completed. Its atomic UPDATE is SQL, not the ORM, and it
+      // writes the paid-out total and its companion together: before, the
+      // companion kept the "0" it was inserted with beside a paid-out 10.
+      const staged = await pools.addBounty({
+        demand_post_id: post.id,
+        contributor_id: `cus_${uid()}`,
+        objective: "NEGOTIATE_PRICE",
+        amount: 40,
+        milestones: [
+          { description: "Quote", percentage: 25, condition: "a signed quote" },
+          { description: "Delivery", percentage: 75, condition: "delivered" },
+        ],
+      })
+      const completed = await pools.completeBountyMilestone(staged.id, 0, post.id)
+      expect(completed).toMatchObject({ payout_amount: 10, total_paid_out: 10, new_status: "MILESTONE_PARTIAL" })
+      expect(await stored("demand_bounty", staged.id, ["amount", "amount_paid_out"])).toEqual({
+        amount: n("40"),
+        amount_paid_out: n("10"),
       })
     })
 

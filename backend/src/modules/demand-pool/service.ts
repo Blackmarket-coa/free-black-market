@@ -493,9 +493,10 @@ class DemandPoolModuleService extends MedusaService({
     // completion of a DIFFERENT index cannot clobber it via a whole-array
     // overwrite) and bumps milestones_completed / amount_paid_out with
     // `col = col + delta`. The WHERE guard makes double-completion of the same
-    // index a no-op (rowCount 0). demand_bounty stores amount_paid_out as a
-    // plain NUMERIC with no `raw_` sibling, so the raw-SQL increment is read
-    // back correctly by the ORM.
+    // index a no-op (rowCount 0). `amount_paid_out` is a bigNumber, so its
+    // `raw_amount_paid_out` companion (migrated by SD-63) is written in the
+    // same statement, from the same sum, in the form Medusa writes; left
+    // alone it kept its value from the insert ("0" beside a paid-out 100).
     //
     // `?::int` in the guard is load-bearing, not decoration. `->` is overloaded:
     // with an INTEGER it indexes into a jsonb array, with TEXT it looks up an
@@ -511,7 +512,8 @@ class DemandPoolModuleService extends MedusaService({
         `UPDATE demand_bounty
             SET milestones = jsonb_set(milestones, array[?::text, 'completed'], 'true'::jsonb),
                 milestones_completed = milestones_completed + 1,
-                amount_paid_out = amount_paid_out + ?,
+                amount_paid_out = amount_paid_out + ?::numeric,
+                raw_amount_paid_out = jsonb_build_object('value', trim_scale(amount_paid_out + ?::numeric)::text, 'precision', 20),
                 status = (CASE WHEN milestones_completed + 1 >= ? THEN 'COMPLETED' ELSE 'MILESTONE_PARTIAL' END)::bounty_status_enum,
                 updated_at = NOW()
           WHERE id = ?
@@ -522,6 +524,7 @@ class DemandPoolModuleService extends MedusaService({
         RETURNING milestones_completed, amount_paid_out, status`,
         [
           milestoneIndex,
+          payoutAmount,
           payoutAmount,
           totalMilestones,
           bountyId,
