@@ -84,3 +84,28 @@ describe("getVendorNavigationForTest extension gating", () => {
     expect(farmWithHarvests?.items?.some((item) => item.to === "/farm/harvests")).toBe(true)
   })
 })
+
+describe("the cottage-food dashboard (SD-152 (8))", () => {
+  const targets = (features: VendorFeatures) =>
+    getVendorNavigationForTest({ vendorType: "maker", features }).coreRoutes
+
+  it("is in the sidebar for a seller with products, with its three pages", () => {
+    const entry = targets({ ...baseFeatures, hasProducts: true }).find(
+      (route) => route.to === "/cottage-food"
+    )
+
+    expect(entry?.label).toBe("Cottage Food")
+    expect(entry?.items?.map((item) => item.to)).toEqual([
+      "/cottage-food/profile",
+      "/cottage-food/sales",
+      "/cottage-food/labels",
+    ])
+  })
+
+  it("is not shown to a seller without products", () => {
+    expect(
+      targets(baseFeatures).some((route) => route.to === "/cottage-food")
+    ).toBe(false)
+  })
+})
+

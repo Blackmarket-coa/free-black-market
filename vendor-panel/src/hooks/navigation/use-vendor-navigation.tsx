@@ -269,6 +269,21 @@ function getVendorNavigationConfig({
         },
       ],
     },
+    // The home-kitchen dashboard: permit, sales cap, label wording. It was
+    // routed (/cottage-food) and reachable only by typing the address or from
+    // the launch wizard (SD-152 (8)). Shown to every seller with products:
+    // it is opt-in, and nothing says in advance who makes food at home.
+    {
+      icon: <DocumentText />,
+      label: "Cottage Food",
+      to: "/cottage-food",
+      showFor: (f) => f.hasProducts,
+      items: [
+        { label: "Profile", to: "/cottage-food/profile" },
+        { label: "Sales log", to: "/cottage-food/sales" },
+        { label: "Labels", to: "/cottage-food/labels" },
+      ],
+    },
     // Menu items for restaurants
     {
       icon: <Newspaper />,
