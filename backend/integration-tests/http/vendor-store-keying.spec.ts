@@ -712,13 +712,21 @@ medusaIntegrationTestRunner({
           }
         }
         const letGo = setTimeout(release, 60_000)
+        let dryBlocked: RekeySummary
         let blocked: RekeySummary
         try {
+          // The dry run reads under the same bounds: it reports the table it
+          // cannot read and goes on; a table that is only being written reads.
+          dryBlocked = await rekeyMemberKeyedStoreData(container(), { apply: false, timeouts: { lockTimeoutMs: 300 } })
           blocked = await rekeyMemberKeyedStoreData(container(), { apply: true, timeouts: { lockTimeoutMs: 300 }, log: (l) => lines.push(l) })
         } finally {
           clearTimeout(letGo)
           await release()
         }
+        expect(reportOf(dryBlocked, "cottage_food_profile")).toMatchObject({ status: "failed", unread: true, rekey: [] })
+        expect(reportOf(dryBlocked, "cottage_food_profile").error).toMatch(/lock timeout/)
+        expect(ids(reportOf(dryBlocked, "vendor_customer_tier").rekey)).toContain(activeTier.id)
+        expect(ids(reportOf(dryBlocked, "cottage_food_sales_entry").keptWithParent)).toContain(profiledSale.id)
         const tierBlocked = reportOf(blocked, "vendor_customer_tier")
         expect({ status: tierBlocked.status, rekeyed: tierBlocked.rekey.length }).toEqual({ status: "failed", rekeyed: 0 })
         expect(tierBlocked.error).toMatch(/lock timeout/)
