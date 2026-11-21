@@ -5,7 +5,7 @@ import { PRODUCER_MODULE } from "../../../../modules/producer"
 import { daysUntil } from "../../../../shared/expiry"
 import { createLogger } from "../../../../shared/logger"
 import { getSellerId } from "../../quests/_helpers"
-import { storeProducerId } from "../_access"
+import { farmFailure, storeLinkedToProducer, storeProducerId } from "../_access"
 import { definedFields } from "../../../../shared/defined-fields"
 
 interface ProducerServiceType {
@@ -19,18 +19,30 @@ type LinkService = { create: (data: Record<string, unknown>) => Promise<unknown>
 const log = createLogger("api/vendor/farm/profile")
 
 /**
- * Which unique column a create collided on: Medusa maps Postgres's 23505 to
- * "Producer with handle: x, already exists." (or `seller_id: …`), and the
- * raw error names the constraint. `seller_id` means the store already has a
- * profile (two creates racing past the check below); `handle` means another
- * farm uses the address.
+ * The columns Medusa names when a create breaks a unique constraint.
+ *
+ * No constraint name reaches the route: Medusa's dbErrorMapper turns
+ * Postgres's 23505 into a MedusaError reading
+ * "Producer with <column>: <value>, already exists." and keeps neither the
+ * constraint nor Postgres's detail. The column comes from that detail
+ * (`Key (handle)=(...)`), is an identifier, and stands before the value, so it
+ * is read from the message's fixed prefix, never searched for in the whole
+ * text: the value is a handle the caller chose, and a taken handle containing
+ * "seller_id" read as a second profile (SD-145 review).
+ */
+const UNIQUE_CLASH = /^Producer with ([a-z_]+(?:, [a-z_]+)*): [\s\S]*, already exists\.$/
+
+/**
+ * Which unique column a create collided on, or null for any other error.
+ * `seller_id` means the store already has a profile (two creates racing past
+ * the check below); `handle` means another farm uses the address (a removed
+ * farm's included: the constraint covers soft-deleted rows).
  */
 const uniqueClash = (error: unknown): "seller_id" | "handle" | "other" | null => {
-  const e = error as { code?: string; message?: string; detail?: string; constraint?: string } | null
-  const text = `${e?.message ?? ""} ${e?.detail ?? ""} ${e?.constraint ?? ""}`
-  if (e?.code !== "23505" && !/already exists|duplicate key/i.test(text)) return null
-  if (/seller_id/.test(text)) return "seller_id"
-  if (/handle/.test(text)) return "handle"
+  const match = UNIQUE_CLASH.exec(error instanceof Error ? error.message : "")
+  if (!match) return null
+  if (match[1] === "seller_id") return "seller_id"
+  if (match[1] === "handle") return "handle"
   return "other"
 }
 
@@ -130,10 +142,7 @@ export async function GET(
 
     res.json({ producer, recertification_alerts })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to fetch farm profile", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to fetch farm profile", error)
   }
 }
 
@@ -144,15 +153,17 @@ export async function GET(
  * It created the producer without the store (`seller_id` is required, so the
  * insert failed: 500), and then linked it with a shape Medusa's Link cannot
  * read (`{ producer_seller: ... }` throws a TypeError, measured). Had the
- * insert worked, every attempt would have left a producer with no store link,
- * listed by GET /store/producers (it lists every public producer), and the
- * panel's retry would have collided with the first one's handle. The producer
- * is now the store's (`seller_id`), created not public, linked by module key,
- * and made public only once linked; if the link cannot be made it is removed
- * again, and if even that fails the answer says so (the producer stays
- * unlinked and not public, listed nowhere). A store that already has a
+ * insert worked, every attempt would have left a producer behind, published
+ * by GET /store/producers (it lists every public producer) although the
+ * create had answered 500, and the panel's retry would have collided with the
+ * first one's handle. The producer is now the store's (`seller_id`), created
+ * not public, linked by module key, and made public only once linked; if the
+ * link cannot be made it is removed again, and if even that fails the answer
+ * says so (the producer stays unlinked and not public, listed nowhere, until
+ * a PUT makes it public, which links it first). A store that already has a
  * profile gets 409, as does a handle another farm uses, each with its own
- * message, including when two creates race past the check.
+ * message, including when two creates race past the check. No error's own
+ * text is answered: it is logged (`farmFailure`).
  */
 export async function POST(
   req: MedusaRequest,
@@ -207,7 +218,7 @@ export async function POST(
       cover_image,
       // Not public until it is linked to the store: GET /store/producers
       // lists every public producer, so one left behind by a failure below
-      // would be listed with no store behind it.
+      // would be published although its create answered 500.
       public_profile_enabled: false,
     })
   } catch (error) {
@@ -218,10 +229,10 @@ export async function POST(
     if (clash === "handle") {
       return res.status(409).json({ message: "That farm handle is already taken" })
     }
-    return res.status(clash ? 409 : 500).json({
-      message: clash ? "A farm profile with these details already exists" : "Failed to create farm profile",
-      error: (error as Error).message,
-    })
+    if (clash) {
+      return res.status(409).json({ message: "A farm profile with these details already exists" })
+    }
+    return farmFailure(req, res, "Failed to create farm profile", error)
   }
 
   try {
@@ -245,14 +256,9 @@ export async function POST(
         message:
           "Failed to create farm profile. A producer record was left behind, unlinked and not public; contact support to remove it.",
         producer_id: producer.id,
-        error: (linkError as Error).message,
-        undo_error: (undoError as Error).message,
       })
     }
-    return res.status(500).json({
-      message: "Failed to create farm profile",
-      error: (linkError as Error).message,
-    })
+    return farmFailure(req, res, "Failed to create farm profile", linkError)
   }
 
   // Linked: the profile is the store's, and now public.
@@ -271,13 +277,26 @@ export async function POST(
 
 /**
  * PUT /vendor/farm/profile
- * Update the producer profile for the current seller
+ * Update the producer profile for the current seller.
+ *
+ * A profile is made public only once it is linked to the store, as POST makes
+ * it. A producer whose create failed and whose undo failed too is left
+ * unlinked and not public; this made it public anyway and GET
+ * /store/producers listed it (SD-145 review). `public_profile_enabled: true`
+ * on a producer the store's link does not name now makes that link first,
+ * with the call POST makes, and makes it public only if the link was made;
+ * otherwise 409 and nothing changes. Linking rather than refusing: the
+ * producer is the store's own (`seller_id`), a refusal would leave it
+ * unpublishable short of support, and the v1 launch flow makes every
+ * producer without the link (public by default), so a refusal would also
+ * stop those from being made public again once turned off.
  */
 export async function PUT(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
   const producerService = req.scope.resolve<ProducerServiceType>(PRODUCER_MODULE)
+  const link = req.scope.resolve<LinkService>(ContainerRegistrationKeys.LINK)
   const sellerId = await getSellerId(req)
 
   if (!sellerId) {
@@ -309,6 +328,26 @@ export async function PUT(
       public_profile_enabled,
     } = req.body as Record<string, unknown>
 
+    if (public_profile_enabled !== undefined && typeof public_profile_enabled !== "boolean") {
+      return res.status(400).json({ message: "public_profile_enabled must be true or false", type: "invalid_data" })
+    }
+    if (public_profile_enabled === true && !(await storeLinkedToProducer(req, sellerId, producerId))) {
+      try {
+        await link.create({
+          [SELLER_MODULE]: { seller_id: sellerId },
+          [PRODUCER_MODULE]: { producer_id: producerId },
+        })
+      } catch (linkError) {
+        log.error(
+          `[farm/profile] producer ${producerId} of store ${sellerId} is not linked to it and could not be linked now (${(linkError as Error).message}); it was not made public`
+        )
+        return res.status(409).json({
+          message:
+            "This farm profile is not linked to your store yet and could not be linked now, so it was not made public. Try again, or contact support.",
+        })
+      }
+    }
+
     // Only the fields given (`shared/defined-fields.ts`): an omitted one,
     // passed as undefined, made every partial update a 500.
     const producer = await producerService.updateProducers({
@@ -334,9 +373,10 @@ export async function PUT(
 
     res.json({ producer })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to update farm profile", 
-      error: error.message 
-    })
+    // The error's text is no longer answered, so a taken handle says so.
+    if (uniqueClash(error) === "handle") {
+      return res.status(409).json({ message: "That farm handle is already taken" })
+    }
+    farmFailure(req, res, "Failed to update farm profile", error)
   }
 }
