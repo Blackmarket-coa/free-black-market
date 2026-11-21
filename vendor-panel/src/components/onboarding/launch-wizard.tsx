@@ -284,13 +284,23 @@ export function LaunchWizard() {
     return Math.max(0, steps.findIndex((s) => s.id === state.wizard_step))
   }, [state, steps])
 
+  // One mutation for a step's own save (`before`) and the record of the step
+  // reached, so that its key covers the whole press.
   const advanceStep = useMutation({
     mutationKey: ADVANCE_KEY,
-    mutationFn: (body: Record<string, unknown>) =>
-      authedFetch<{ state: OnboardingState }>("/vendor/onboarding", {
+    mutationFn: async ({
+      body,
+      before,
+    }: {
+      body: Record<string, unknown>
+      before?: () => Promise<void>
+    }) => {
+      await before?.()
+      return authedFetch<{ state: OnboardingState }>("/vendor/onboarding", {
         method: "PATCH",
         body: JSON.stringify(body),
-      }),
+      })
+    },
     onSuccess: ({ state: s }) => setState(s),
   })
   const { pending: submitting, isBusyNow } = useIsBusy(ADVANCE_KEY)
@@ -298,12 +308,13 @@ export function LaunchWizard() {
   /** Record the step reached. Resolves false, with a toast, when it was not saved. */
   const advance = async (
     step: WizardStep,
-    overrides: { selling_type?: SellingType } = {}
+    overrides: { selling_type?: SellingType } = {},
+    before?: () => Promise<void>
   ) => {
     const body: Record<string, unknown> = { step }
     if (overrides.selling_type !== undefined) body.selling_type = overrides.selling_type
     try {
-      await advanceStep.mutateAsync(body)
+      await advanceStep.mutateAsync({ body, before })
       return true
     } catch (err) {
       toast.error("Could not save step", { description: (err as Error).message })
@@ -317,20 +328,24 @@ export function LaunchWizard() {
       toast.error("Pick what you're selling")
       return
     }
-    // Create the profile up front so the home-kitchen step appears and the
-    // seller's dashboard is ready the moment they land on it. Empty body —
-    // every field is filled in later and all of them are optional.
-    if (homeKitchen) {
-      try {
-        await authedFetch("/vendor/cottage-food/onboarding", {
-          method: "POST",
-          body: JSON.stringify({}),
-        })
-      } catch {
-        // Non-fatal: they can still set this up from the dashboard.
+    await advance(
+      "step_2",
+      { selling_type: sellingType as SellingType },
+      async () => {
+        // Create the profile up front so the home-kitchen step appears and
+        // the seller's dashboard is ready the moment they land on it. Empty
+        // body — every field is filled in later and all of them are optional.
+        if (!homeKitchen) return
+        try {
+          await authedFetch("/vendor/cottage-food/onboarding", {
+            method: "POST",
+            body: JSON.stringify({}),
+          })
+        } catch {
+          // Non-fatal: they can still set this up from the dashboard.
+        }
       }
-    }
-    await advance("step_2", { selling_type: sellingType as SellingType })
+    )
   }
 
   /**
@@ -340,22 +355,23 @@ export function LaunchWizard() {
    */
   const completeCottageFood = async () => {
     if (isBusyNow()) return
-    try {
-      await authedFetch("/vendor/cottage-food/onboarding", {
-        method: "POST",
-        body: JSON.stringify({
-          operation_type: cottageOperation,
-          jurisdiction_label: cottageJurisdiction,
-          permit_number: cottagePermit,
-          label_disclosure_text: cottageDisclosure,
-        }),
-      })
-    } catch (err) {
-      toast.error("Couldn't save that — you can add it later from Cottage food", {
-        description: (err as Error).message,
-      })
-    }
-    await advance("step_4")
+    await advance("step_4", {}, async () => {
+      try {
+        await authedFetch("/vendor/cottage-food/onboarding", {
+          method: "POST",
+          body: JSON.stringify({
+            operation_type: cottageOperation,
+            jurisdiction_label: cottageJurisdiction,
+            permit_number: cottagePermit,
+            label_disclosure_text: cottageDisclosure,
+          }),
+        })
+      } catch (err) {
+        toast.error("Couldn't save that — you can add it later from Cottage food", {
+          description: (err as Error).message,
+        })
+      }
+    })
   }
 
   const back = async () => {

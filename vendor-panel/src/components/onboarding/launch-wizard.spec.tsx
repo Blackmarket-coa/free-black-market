@@ -710,6 +710,30 @@ describe('"You\'re live!"', () => {
 })
 
 describe("the wizard", () => {
+  it("records the selling type and the step once for a double click", async () => {
+    // A vendor who chose a selling type and came back to the first step.
+    store.db.onboarding.wizard_step = "step_1"
+    store.db.onboarding.selling_type = "physical"
+    const release = backend.hold("PATCH", "/vendor/onboarding")
+    await show(<LaunchWizard />)
+    const next = ui.button("Continue")
+
+    ui.press(next)
+    ui.press(next)
+    await vi.waitFor(() => expect(writes()).toHaveLength(1))
+    render(<LaunchWizard />)
+    expect(ui.button("Continue")).toMatchObject({ disabled: true, isLoading: true })
+
+    release()
+    await settled()
+    expect(writes()).toEqual(["PATCH /vendor/onboarding"])
+    expect(backend.sent.at(-1)?.body).toEqual({
+      step: "step_2",
+      selling_type: "physical",
+    })
+    expect(render(<LaunchWizard />)).toContain("Your first listing")
+  })
+
   it("at the listing step, remembers the product a vendor made and moves on without making another", async () => {
     store.db.onboarding.wizard_step = "step_2"
     store.db.onboarding.selling_type = "physical"
