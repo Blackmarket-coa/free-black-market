@@ -119,6 +119,17 @@ deployment's env. Market creators cannot set either.
 | `VENDOR_HYPE_JURISDICTION_PROFILES` | — | counsel has approved a jurisdiction for a wider profile | JSON object of jurisdiction code to profile code, e.g. `{"US-NV":"US-REGULATED-CASH"}`. Codes are upper-cased; a subdivision inherits its country unless mapped itself. Fails closed: unparseable JSON is ignored whole, and an entry naming an unknown profile (or remapping a profile code) is dropped, each logged at error level. A valid entry under the wrong key still widens that key (`US` for `US-NV` widens every state): check the effective mapping in the startup log. Changing it changes the recorded `policy_version`. |
 | `VENDOR_HYPE_POLICY_VERSION` | — | optional | A label **appended** to the derived version as `+label:<value>` (for example a counsel ticket), 1-64 characters of `A-Z a-z 0-9 . _ -`; anything else is ignored and logged at error level. It can no longer replace the version: it used to, so any string could relabel the rules without changing them. |
 
+## Jurisdiction rules (Plates pilot)
+
+Added with the jurisdiction-rule store (`backend/src/modules/jurisdiction-rules`,
+`docs/PLATES_SC_PILOT_PLAN.md` Phase 2). Rules are information only: neither
+variable can block a sale.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `JURISDICTION_RULE_REVIEWER_EMAILS` | — | a rule is to be signed off | Comma-separated emails of the admin users who may sign off a jurisdiction rule (`POST /admin/jurisdiction-rules/:id/review`). **Unset or empty means nobody can review**; there is no default reviewer. Matched exactly, including letter case, against the email stored on the admin user: Medusa keeps admin emails unique only as exact strings, so a lenient match could be passed by a second account in a different case. Set it to the email of an admin user that already exists. The reviewer recorded on a rule is the authenticated admin, never a value from the request. Read at request time, so a change needs no rebuild. |
+| `FF_PLATES_V1` | off | sellers are to see the rules | Only the literal `true` enables it. Gates `/vendor/plates/*` (404 when off). Does **not** gate `/admin/jurisdiction-rules`, `/admin/jurisdiction-sources` or `/admin/jurisdiction-coverage`: the rules are seeded (`pnpm medusa exec ./src/scripts/seed-jurisdiction-rules.ts`) and signed off before this is set. Turning it off again leaves every reviewed rule reviewed. |
+
 ## In-app bug reporter
 
 Added with the in-app "Report a bug" entry points in storefront, vendor
