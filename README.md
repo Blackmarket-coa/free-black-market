@@ -1,5 +1,7 @@
 # Free Black Market (FBM)
 
+> **FBM app direction (2026-11-21):** [iOS and Android app plan](docs/FBM_MOBILE_APP_PLAN.md) defines the standalone unified portal, changing Coalition-backed marketplace, customizable tools, sites and fulfillment. [Shared game and creator commerce](docs/FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adds accepted original-companion/cooperative exploration planning, optional AR, creator packs and verified delivery requirements. [Implementation inventory](docs/FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) reconciles all 99 local modules/providers, plugin catalogs, reuse and actual gaps. This is documentation and scoped source review, not an implemented game, adopted dependency or shipped-app claim.
+
 > **Implementation review (2026-11-12):** [Cost-reduction and implementation inventory](docs/IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md) separates substantive code, default-off features, contract-only endpoints and operational needs. Enhancement features are **one-time purchases; no subscription**. Legacy recurring plans and plan-dependent commissions still require migration. Source/CI evidence does not establish live availability.
 
 > **MVP scope (2026-11-03):** [FBM Resource Exchange MVP](docs/FBM_RESOURCE_EXCHANGE_MVP.md) defines the first-session journey, four target exchange primitives, regional pilot, privacy and legal gates, release criteria, and metrics. This is a proposed acceptance contract, **not a claim of deployed functionality**.

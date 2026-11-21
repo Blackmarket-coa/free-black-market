@@ -1,5 +1,9 @@
 # Documentation Index
 
+> **Shared game planning (2026-11-21):** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adapts Blackout's original companion/collection/cooperative exploration direction to FBM, including optional AR, creator packs, consent, code-adoption boundaries and verified commerce/delivery acceptance. Accepted planning only; no game or dependencies installed.
+
+> **App plan and source review (2026-11-20):** [FBM iOS/Android app plan](FBM_MOBILE_APP_PLAN.md) records the unified portal, marketplace/map behavior, equipment purchases and staged acceptance. [Mobile implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) accounts for all 99 local modules/providers, static plugins/add-ons, selected custom workflows and verification limits. This supersedes older mobile-only scope restrictions as product direction, not runtime behavior.
+
 > **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
 
 > **Current implementation review (2026-11-12):** [Cost-reduction and implementation inventory](IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md) records the source/CI audit, unfinished workflows, default-off gates, pricing migration and physical-service dependencies. **Enhancement features are one-time purchases; no subscription.** Runtime/deployment verification remains outstanding.
@@ -15,6 +19,10 @@ This index organizes project docs by purpose. Start with the repo-root
 `README.md` for the platform overview and quick start.
 
 ## Platform Architecture & Economy
+
+- [FBM_MOBILE_APP_PLAN.md](FBM_MOBILE_APP_PLAN.md) — standalone iOS/Android product requirements, candidate navigation, automatic map changes, operations, one-time equipment and acceptance sequence
+- [FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) — shared original-companion game, cooperative exploration, creator prompts/packs, commerce contracts, consent, OSS evaluation and staged verification
+- [FBM_MOBILE_IMPLEMENTATION_INVENTORY.md](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) — complete local module/static registry index, targeted workflow findings, scaffolds and scoped test/CI evidence
 
 - [FBM_UNIFIED_MEMBER_PORTAL_PLAN.md](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) — canonical unified member experience, character survey → automatic portal, equipment, goods auctions, Coalition/Blackstar reuse, pinned source evidence and ordered acceptance backlog
 - `docs/FBM_PRODUCT_STRATEGY.md` — canonical product north star: buyer and seller outcomes, pain points, recurring utility, product principles, trust/claims rules, success measures, and implementation sequence (tracked in GitHub issue #912)
@@ -56,10 +64,9 @@ This index organizes project docs by purpose. Start with the repo-root
 - `docs/POSTURE_A_COMPLIANCE.md` — FinCEN payment-facilitator frame; the
   lines that cannot be crossed under v1. Required reading before touching
   money-moving code.
-- `docs/ADDON_COMMITMENTS.md` — what is promised about paid add-ons and the
-  commission, why there is no "purchased for life" charter (the code sells
-  fixed windows, not lifetime licences), and what a lifetime SKU would need
-  before it could ship
+- `docs/ADDON_COMMITMENTS.md` — legacy implemented fixed-window add-on behavior and
+  commission history; the one-time enhancement target and required ownership
+  migration are defined by the current charter and app plan
 - `docs/FISCAL_SPONSOR_DECISION.md` — fiscal sponsor evaluation and the open
   items before donation disbursement goes live
 - `docs/runbooks/STELLAR_USDC_BRIDGE.md` — Stellar/USDC treasury operations

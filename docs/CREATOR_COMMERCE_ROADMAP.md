@@ -1,5 +1,9 @@
 # Creator Commerce Roadmap
 
+> **2026-11-21 accepted planning update:** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) defines original companion assets, cosmetics, reusable quest/learning packs, creator prompts, rights/manifest review, and the verified FBM purchase → entitlement → signed bytes → compatible runtime → seller settlement journey. Game editors/pack installation are future work. Carry Blackout's metadata-only listing payload, durable-draft resume, and content-to-offer association gaps as release blockers for this path; existing digital-product records do not prove delivery. AI personas remain excluded from sale, including upstream catalogue/checkout enforcement and legacy metadata review, while historical purchases and unrelated rights are preserved.
+>
+> **Pricing authority:** The [Resource Exchange Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) supersedes historical subscription and tier references below: one-time software/content-pack purchases, transparent at-cost hosted usage, processing-fees-first and flat 3% sales commission, with no duplicate Blackout cut. Older Present/Partial/Missing findings retain their original scope and do not certify the new game commerce path.
+
 This document captures the Creator Commerce optimization initiative — gap analysis,
 phase plan, and acceptance criteria — derived from the strategic brief targeting
 TikTok Shop / ShopMy / Whatnot / Gumroad / Patreon / Discord-app caliber creator

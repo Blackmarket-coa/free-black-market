@@ -124,13 +124,13 @@ The exit right is open-source forking. Any coalition that disagrees with executi
 
 The petition feature is built on top of existing `governance` and `cooperative` module primitives. The differentiation milestone work adds the petition object type, the proposal-deliberation-vote lifecycle for petitions, the surfacing of petition results to the maintainer, and the maintainer's execution-or-decline response surface.
 
-### §2.8 Mobile as Blackout
+### §2.8 Shared mobile services and standalone FBM
 
-Blackout is the primary mobile surface for the entire ecosystem. The Capacitor wrapper for Blackout is the canonical mobile application, and FBM commerce flows are embedded as views within the Blackout application. Users install one application, not two.
+**Updated product direction, 2026-11-20:** FBM targets standalone iOS and Android apps built around its unified member portal. This supersedes the earlier one-Blackout-app-only assumption and permanent desktop-only seller scope. See the [FBM app plan](FBM_MOBILE_APP_PLAN.md) and [source inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md).
 
-This means the FBM storefront is exposed to mobile users through the Blackout client rather than as a separate FBM mobile application. Storefront work in the foundation milestone includes ensuring the storefront templates render correctly inside the Blackout Capacitor wrapper, with appropriate authentication delegation to the Blackout-side Matrix session.
+Blackout remains an ecosystem client and supplies the shared Coalition map/community authority; Blackstar supplies transport. FBM reuses these services and existing embed/session contracts without introducing duplicate business records or making another app a mandatory shell for its supported core workflows.
 
-iOS deployment is deferred until Mac access is available; Android is the priority for foundation milestone mobile work.
+The current FBM Capacitor projects load the deployed storefront. Full portal composition, virtual marketplace, mobile business operations and map-update wiring remain planned work. Both platforms are targets; iOS build/signing still requires suitable macOS/Xcode infrastructure and device validation. No deployment or release is established by this direction update.
 
 ### §2.9 Fork management posture
 

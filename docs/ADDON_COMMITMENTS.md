@@ -1,5 +1,7 @@
 # Add-on and Pricing Commitments
 
+> **Current product direction (2026-11-20):** this document describes legacy implemented 30-day access and historical commitments. Enhanced FBM software is now planned as one-time purchases with persistent/versioned ownership under the [charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) and [app plan](FBM_MOBILE_APP_PLAN.md). The fixed-window implementation below is not the approved future equipment offering. Billing/ownership migration and preservation of existing rights remain required; this notice does not change live charges or entitlements.
+
 What FBM promises about paid add-ons and the commission, and what those
 promises are worth.
 

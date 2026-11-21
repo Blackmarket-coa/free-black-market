@@ -3,6 +3,10 @@
 Capacitor shell that packages the FBM storefront (`../storefront`) as an
 installable iOS and Android app.
 
+**Product plan (2026-11-20):** [FBM app plan](../docs/FBM_MOBILE_APP_PLAN.md) targets one customizable member portal for gameplay, commerce, Coalition discovery, sites, inventory and fulfillment. [Implementation inventory](../docs/FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) separates source, scaffolds and unverified runtime behavior. The sections below describe the current shell; they are not permanent limits on mobile seller tools.
+
+**Shared-game planning (2026-11-21):** [Coalition game and creator commerce](../docs/FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adds accepted original-companion/collection/cooperation planning and optional camera AR. Pokemon Walk, PraxisMapper and LocAR.js are evaluation candidates, not installed dependencies. Verify physical iOS/Android browser/Capacitor behavior, camera/location/orientation denial, saving/resume, drift/calibration, performance, signed pack delivery/application, purchase restoration/refunds and privacy before release. Map interaction and ordinary commerce remain usable without AR or travel.
+
 ## How it works
 
 The storefront is a server-rendered Next.js app (`output: "standalone"`),
@@ -25,12 +29,12 @@ https://freeblackmarket.com  ──loaded by──▶  native WebView (iOS / And
 - Storefront-side integration (deep links, push registration, the gated
   buy-on-web button, the checkout cookie handoff) lives in
   `storefront/src/lib/native/` and `storefront/src/components/providers/NativeAppBridge.tsx`.
-- Note `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §2.8 ("Mobile as Blackout"):
-  the Blackout Capacitor wrapper remains the canonical coalition mobile
-  surface, with FBM embedded in it. This shell is the additive,
-  FBM-standalone distribution channel; it reuses the same embed
-  conventions (`X-FBM-Embed-Origin`, `/api/auth/embed-bootstrap`) rather
-  than replacing them.
+- FBM has its own planned iOS/Android distribution channel while reusing
+  shared Blackout Coalition and Blackstar services. Existing Blackout embed
+  conventions (`X-FBM-Embed-Origin`, `/api/auth/embed-bootstrap`) remain
+  relevant; a standalone app does not require duplicate map or transport
+  authorities. The November 20 app plan supersedes the older one-app-only
+  assumption in the operations guide.
 
 ## Quick start
 
@@ -57,17 +61,22 @@ FBM_MOBILE_SERVER_URL=https://staging.freeblackmarket.com pnpm sync
 | `@capacitor/device` | device region for the external-purchase policy |
 | `@capacitor/push-notifications` | order/marketplace alerts (FCM + APNs) |
 
-## External purchase policy (Apple / US storefront)
+## Current external-checkout helper
 
-Apple's no-entitlement external purchase link rule is **US-storefront
-only**, so the storefront gates its "Complete purchase on web" button
-(`storefront/src/lib/native/external-purchase.ts`):
+The current implementation gates its "Complete purchase on web" button
+(`storefront/src/lib/native/external-purchase.ts`) as follows. This describes
+code, not approval for selling digital equipment in every storefront:
 
 - iOS shell → button only on the US storefront (device region as v1
   proxy; fails closed when unknown). Other regions wait on the EU/other
   entitlement addendum.
 - Android shell → always allowed, opens the system browser.
 - Plain web → not applicable (already the web).
+
+Before paid digital enhancements launch, verify the actual storefront/region,
+current platform billing rules, restoration and refund handling. Device language
+is not an authoritative App Store storefront lookup. See the app plan for the
+physical-commerce versus digital-feature distinction.
 
 The button hands the Medusa cart to the external browser through a
 short-lived signed token minted by `POST /api/native/checkout-handoff`
@@ -92,8 +101,10 @@ End-to-end path: shell → storefront → backend registry → FCM.
 - **Backend** (`backend/src/modules/native-push`): stores tokens, sends via
   FCM HTTP v1 (`FCM_SERVICE_ACCOUNT_JSON`, fail-closed when unset), and
   disables tokens FCM reports dead. Reference consumer: the
-  `order.placed` → "Order confirmed" subscriber; call
-  `nativePush.sendToCustomer(...)` from any other subscriber to add more.
+  `order.placed` subscriber already sends buyer confirmation and seller
+  new-order alerts; `order.canceled` sends seller cancellation alerts. Seller
+  device registration has a separate authenticated path. Other event families
+  and actual iOS/Android delivery still need validation.
 
 ## Vendor surface (in-app)
 
@@ -108,11 +119,12 @@ fulfillment actions that are genuinely phone-shaped:
 | In transit | mark delivered |
 | Complete | none |
 
-Everything else — products, payouts, returns, order changes, POS,
-anything that moves money — stays in the full vendor panel on desktop.
-That is a boundary, not a backlog: those flows need desktop-grade input
-or carry refund/payout side effects that do not belong behind a one-tap
-button on a phone.
+Products, payouts, returns, order changes, POS and most business tools
+currently remain in the full vendor panel. The target app progressively
+brings supported operations into the unified portal with appropriate review,
+permissions and recovery. This current limitation is not a permanent
+desktop-only product rule. Generic pick/pack is still a schema/echo scaffold;
+share-box packing has separate substantive backend behavior.
 
 **Sign-out.** The vendor surface has its own sign-out (it detaches this
 device from seller pushes as it clears the cookie), independent of the
@@ -132,12 +144,11 @@ server action (Medusa issues them with a 1-day life and nothing else
 renews them; cookies are sealed during a Server Component render, so the
 refresh cannot happen where the session is read).
 
-**Strategic note.** `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §2.8 makes
-Blackout the canonical coalition mobile app and the full vendor panel the
-canonical seller tool. This surface does not change either claim — it is
-an additive convenience on the FBM standalone channel, scoped to the two
-things a vendor cannot do from a desk: find out an order arrived, and
-move it along while away from the shop.
+**Migration note.** Keep current vendor URLs and workflows available until
+corresponding in-app tools are verified. Shared domains remain owned by FBM
+(commerce), Coalition (community/geography) and Blackstar (transport); the
+member experience should not require installation of another app to perform
+its supported core actions.
 
 ## Deep links
 

@@ -1,5 +1,9 @@
 # FBM unified farmers market: character creation, equipment, and portal plan
 
+> **2026-11-21 shared-game addendum:** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) accepts Blackout's original companion/collection/cooperative exploration direction for FBM's shared World experience. It defines optional AR, consent, separate play/reputation ledgers, original creator packs and purchase-to-runtime delivery gates. No new global game tab, duplicate game/map authority, imported dependency, paid AI persona, or implemented-game claim. Existing R1 scope and economic/privacy rules remain in force.
+
+> **2026-11-20 mobile addendum:** [FBM app plan](FBM_MOBILE_APP_PLAN.md) applies this experience to standalone iOS and Android apps, including sites, inventory and fulfillment. [Current implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) supersedes the November 12 evidence below for rechecked paths. Reuse the existing asset matcher, launch orchestration, channel jobs, aid lifecycle/allocation, booking/cart linkage, box scheduling, seller push and parcel tracking. The complete portal, world, general direct trades, goods auctions and permanent enhancement ownership remain implementation work. Candidate navigation/art direction is proposed, not selected.
+
 **Decision date:** November 12, 2026  
 **Status:** Approved product direction; proposed implementation and release plan grounded in source inspection. This documentation update does not change application code, billing, production flags, deployment or permissions.  
 **Latest direction:** One signed-in portal combines buying, selling, trading, and auctions in an online farmers market. Character creation is the primary survey and automatic portal-building journey. Game view is standard. Reuse existing FBM code first; OSS fills verified gaps. Paid enhancements, plugins, settings, modules, and portal builds are functional equipment, one-time purchases; no subscriptions.
@@ -24,7 +28,7 @@ The character represents the user's chosen goals and growing toolkit. It is an e
 
 **Working visual direction:** warm, playful solarpunk with recognizable objects, short labels, calm motion and clear feedback. Character creation uses class/starter/evolution inspiration from WoW/Pokémon with original names and artwork. Exploration, dialogue and trading are functional ways to navigate the market.
 
-## 2. Audit scope and confidence
+## 2. Historical November 12 audit scope and confidence
 
 Inspected the full file trees of:
 
@@ -34,7 +38,7 @@ Inspected the full file trees of:
 
 Read selected implementation files across storefront, customer account, vendor routes/onboarding, progression, XP rewards, entitlement, plugin registry/install, playbooks, cottage food, demand pools, mutual aid, opportunity scoring, production costing, shared UI, Matrix chat, and Blackout map/bridge code. The appendix provides pinned source links.
 
-This is a targeted source audit, not an exhaustive review of every line or a running-stack validation. “Exists” means inspected source exists. It does not establish deployment, enabled flags, working infrastructure, populated data, or successful transactions. Repository tests were not run because this task produced a plan without application changes. Production commits, configuration, and operational readiness remain release-stage verification.
+This is a targeted source audit, not an exhaustive review of every line or a running-stack validation. “Exists” means inspected source exists. It does not establish deployment, enabled flags, working infrastructure, populated data, or successful transactions. Repository tests were not run for the November 12 planning pass. The November 20 inventory separately records 242 passing logic tests and an additional suite blocked by missing dependencies; neither establishes complete runtime validation. Production commits, configuration, and operational readiness remain release-stage verification.
 
 ### Code-grounded findings
 
