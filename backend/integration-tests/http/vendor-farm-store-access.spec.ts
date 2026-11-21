@@ -180,7 +180,8 @@ medusaIntegrationTestRunner({
         const refused = jest.spyOn(link(), "create").mockRejectedValueOnce(new Error("link refused for the test"))
 
         const failed = await call(api.post("/vendor/farm/profile", { name: "Retry Farm", handle }, bearer(c.member)))
-        expect({ status: failed.status, error: failed.data?.error }).toEqual({ status: 500, error: "link refused for the test" })
+        // What failed, and not the error's own text (logged instead).
+        expect({ status: failed.status, body: failed.data }).toEqual({ status: 500, body: { message: "Failed to create farm profile" } })
         // The route's own link call was the one refused.
         expect(refused).toHaveBeenCalledTimes(1)
         expect(await producersWithHandle(handle)).toEqual([])
@@ -195,10 +196,17 @@ medusaIntegrationTestRunner({
       it("a handle another farm uses, and a store that already has a profile, each get 409 with their own message, also when creates race", async () => {
         const a = await team(`Handle Farm ${uid()}`)
         const b = await team(`Copy Farm ${uid()}`)
-        const taken = await farmProfile(a.owner)
+        // A handle with "seller_id" in it: the clash's column is read from the
+        // error's fixed prefix, not searched for in its text, where the
+        // handle appears too.
+        const taken = await farmProfile(a.owner, `farm-seller_id-${uid()}`)
 
         const handleClash = await call(api.post("/vendor/farm/profile", { name: "Copy", handle: taken.handle }, bearer(b.owner)))
-        expect({ status: handleClash.status, message: handleClash.data?.message }).toEqual({ status: 409, message: "That farm handle is already taken" })
+        expect({ status: handleClash.status, body: handleClash.data }).toEqual({ status: 409, body: { message: "That farm handle is already taken" } })
+        // The same on PUT, which no longer answers the error's text.
+        await farmProfile(b.owner)
+        const renamed = await call(api.put("/vendor/farm/profile", { handle: taken.handle }, bearer(b.member)))
+        expect({ status: renamed.status, body: renamed.data }).toEqual({ status: 409, body: { message: "That farm handle is already taken" } })
 
         // Two creates for one store racing past the check: the second meets
         // the producer's unique seller_id, and is told the store has a profile.
@@ -214,7 +222,7 @@ medusaIntegrationTestRunner({
         const c = await team(`Stuck Farm ${uid()}`)
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const handle = `stuck-farm-${uid()}`
-        jest.spyOn(link(), "create").mockRejectedValueOnce(new Error("link refused for the test"))
+        const linkCreate = jest.spyOn(link(), "create").mockRejectedValueOnce(new Error("link refused for the test"))
         const undo = jest.spyOn(container().resolve(PRODUCER_MODULE), "deleteProducers").mockRejectedValueOnce(new Error("delete refused for the test"))
 
         const failed = await call(api.post("/vendor/farm/profile", { name: "Stuck Farm", handle }, bearer(c.owner)))
@@ -226,13 +234,48 @@ medusaIntegrationTestRunner({
             message:
               "Failed to create farm profile. A producer record was left behind, unlinked and not public; contact support to remove it.",
             producer_id: left.id,
-            error: "link refused for the test",
-            undo_error: "delete refused for the test",
           },
         })
         expect(left.public_profile_enabled).toBe(false)
         expect(await linkRowsOf(left.id)).toEqual([])
-        expect((await api.get("/store/producers", pak)).data.producers.map((p: { handle: string }) => p.handle)).not.toContain(handle)
+        const listedHandles = async () => (await api.get("/store/producers", pak)).data.producers.map((p: { handle: string }) => p.handle)
+        expect(await listedHandles()).not.toContain(handle)
+        const publicOf = async () => (await pg().raw(`SELECT public_profile_enabled FROM producer WHERE id = ?`, [left.id])).rows[0].public_profile_enabled
+
+        // Making it public makes the missing link first. When that fails too:
+        // 409, and it stays unlinked, not public, and unlisted.
+        linkCreate.mockClear().mockRejectedValueOnce(new Error("link refused again for the test"))
+        const refused = await call(api.put("/vendor/farm/profile", { public_profile_enabled: true }, bearer(c.member)))
+        expect(linkCreate).toHaveBeenCalledTimes(1)
+        expect({ status: refused.status, body: refused.data }).toEqual({
+          status: 409,
+          body: {
+            message:
+              "This farm profile is not linked to your store yet and could not be linked now, so it was not made public. Try again, or contact support.",
+          },
+        })
+        expect(await publicOf()).toBe(false)
+        expect(await linkRowsOf(left.id)).toEqual([])
+        expect(await listedHandles()).not.toContain(handle)
+        linkCreate.mockRestore()
+
+        // Only true or false: a string would have reached the column.
+        const stringly = await call(api.put("/vendor/farm/profile", { public_profile_enabled: "true" }, bearer(c.member)))
+        expect({ status: stringly.status, body: stringly.data }).toEqual({
+          status: 400,
+          body: { message: "public_profile_enabled must be true or false", type: "invalid_data" },
+        })
+        expect(await publicOf()).toBe(false)
+
+        // When the link can be made: linked to the store, then public and listed.
+        const published = await call(api.put("/vendor/farm/profile", { public_profile_enabled: true }, bearer(c.owner)))
+        expect({ status: published.status, id: published.data?.producer?.id, public: published.data?.producer?.public_profile_enabled }).toEqual({
+          status: 200,
+          id: left.id,
+          public: true,
+        })
+        expect(await linkRowsOf(left.id)).toEqual([c.store.id])
+        expect(await listedHandles()).toContain(handle)
       })
     })
 
@@ -379,6 +422,58 @@ medusaIntegrationTestRunner({
         expect({ status: ownWindow.status, product: ownWindow.data?.availability_window?.product_id }).toEqual({ status: 201, product: own.id })
         const bare = await call(api.post(`/vendor/farm/lots/${lotId}/availability`, { unit_price: 4 }, bearer(a.member)))
         expect(bare.status).toBe(201)
+      })
+
+      it("ids are one string each: an array, which a filter reads as IN, is refused with 400 before any check, and nothing is written or unlinked", async () => {
+        const a = await team(`Array Farm ${uid()}`)
+        const b = await team(`Array Shop ${uid()}`)
+        await farmProfile(a.owner)
+        await farmProfile(b.owner)
+        const { lotId } = await harvestWithLot(a.owner, 5)
+        const own = await storeProduct(a.store.id)
+        const theirs = await storeProduct(b.store.id)
+        const windowsOf = async (id: string) =>
+          (
+            await query().graph({ entity: "availability_window", fields: ["id", "product_id", "is_active"], filters: { lot_id: id } })
+          ).data.map((w: { id: string; product_id: string | null; is_active: boolean }) => [w.product_id, w.is_active])
+        const productLinksOf = async (productId: string) =>
+          (await query().graph({ entity: "product_availability_window", fields: ["availability_window_id"], filters: { product_id: productId } })).data
+        const oneId = (field: string) => ({ message: `${field} must be one id`, type: "invalid_data" })
+
+        // The review's case: the store's product and another store's, as one
+        // product_id. It passed the seller_product check and its INSERT failed
+        // with the SQL in the 500.
+        for (const [label, path, body, field] of [
+          ["link-product product_id", "link-product", { product_id: [own.id, theirs.id] }, "product_id"],
+          ["link-product variant_id", "link-product", { product_id: own.id, variant_id: [own.variants[0].id, theirs.variants[0].id] }, "variant_id"],
+          ["link-product location_id", "link-product", { product_id: own.id, location_id: { $ne: null } }, "location_id"],
+          ["availability product_id", "availability", { product_id: [own.id, theirs.id] }, "product_id"],
+        ] as const) {
+          const res = await call(api.post(`/vendor/farm/lots/${lotId}/${path}`, body, bearer(a.member)))
+          expect({ label, status: res.status, body: res.data }).toEqual({ label, status: 400, body: oneId(field) })
+        }
+        expect(await windowsOf(lotId)).toEqual([])
+        expect(await productLinksOf(own.id)).toEqual([])
+        expect(await productLinksOf(theirs.id)).toEqual([])
+
+        // DELETE with the store's window and another store's in one array:
+        // refused, and both stay offered and linked.
+        const offered = await call(api.post(`/vendor/farm/lots/${lotId}/link-product`, { product_id: own.id }, bearer(a.member)))
+        expect(offered.status).toBe(201)
+        const theirLot = await harvestWithLot(b.owner, 2)
+        const theirOffer = await call(api.post(`/vendor/farm/lots/${theirLot.lotId}/link-product`, { product_id: theirs.id }, bearer(b.owner)))
+        expect(theirOffer.status).toBe(201)
+        const unlink = await call(
+          api.delete(`/vendor/farm/lots/${lotId}/link-product`, {
+            ...bearer(a.member),
+            data: { availability_window_id: [offered.data.availability_window.id, theirOffer.data.availability_window.id] },
+          })
+        )
+        expect({ status: unlink.status, body: unlink.data }).toEqual({ status: 400, body: oneId("availability_window_id") })
+        expect(await windowsOf(lotId)).toEqual([[own.id, true]])
+        expect(await windowsOf(theirLot.lotId)).toEqual([[theirs.id, true]])
+        expect((await productLinksOf(own.id)).length).toBe(1)
+        expect((await productLinksOf(theirs.id)).length).toBe(1)
       })
 
       it("DELETE answers 200 with Medusa's deletion body; a lot takes its windows and their product links with it, and a harvest its lots and its producer link", async () => {
