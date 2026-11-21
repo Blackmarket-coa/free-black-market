@@ -153,7 +153,8 @@ describe("a region with no payment method this build offers", () => {
   it("says the list could not be loaded when the fetch failed", () => {
     const text = textOf(checkout(cartWith(25, [plainLine]), null))
 
-    expect(text).toContain("We couldn't load the payment methods. Refresh the page to try again.".replace("'", "&#x27;"))
+    // Static markup escapes every apostrophe, so every one is replaced here.
+    expect(text).toContain("We couldn't load the payment methods. Refresh the page to try again.".replace(/'/g, "&#x27;"))
     expect(text).not.toMatch(/No payment method is available/)
   })
 })
