@@ -34,7 +34,8 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  *     food profile's sales entries), so a child is never moved away from its
  *     parent;
  *   - rows a target's own rule keeps: a supplier proposal that a held pool
- *     selected stays with that pool's member id (see `keepWhen`).
+ *     selected keeps that pool's member id (see `keepWhen`, and its comment
+ *     on what the hold leaves the store unable to do).
  *
  * `apply` rewrites one table per transaction, in the order of the list. Each
  * table is locked against writes (SHARE ROW EXCLUSIVE; reads continue) for the
@@ -43,7 +44,10 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  * and each statement runs at most `statement_timeout` (2 min), so the run
  * never queues writers behind a long wait; a table that times out, or fails
  * any other way, rolls back alone, is reported, and the run goes on to the
- * next. A second run finds nothing left to rekey.
+ * next. The dry run's reads, and the read that reports a failed table, run
+ * under the same two bounds, read only; a failed table that cannot be read
+ * again either is reported as not counted, and the rows that hang off it
+ * keep their member ids. A second run finds nothing left to rekey.
  *
  * Posture A (docs/POSTURE_A_COMPLIANCE.md): no hawala ledger table, no ledger
  * account, and nothing that moves or re-homes Coalition Credits is ever
@@ -218,12 +222,21 @@ export const REKEY_TARGETS: readonly RekeyTarget[] = [
   // POST /vendor/collective/demand-pools/:id/proposals. A proposal names its
   // supplier, and the pool's selection copies it into
   // `demand_post.selected_supplier_id` (held below). A proposal that a pool
-  // has selected under a member id stays with that member id, so the pair
-  // stays consistent until the decision: rekeyed alone, the accepted proposal
-  // named the store while the pool kept the member, and "Only the selected
-  // supplier can link an order cycle" refused the store (measured in review).
-  // Proposals no pool selected are rekeyed; selected later, the pool's escrow
-  // goes to the store, as for every proposal made since SD-145.
+  // has selected under a member id keeps that member id, so the pool and the
+  // proposal it accepted name the same supplier until the decision on the
+  // pool. Keeping it does not make it usable, and neither would rekeying it
+  // alone; both of these follow from the hold on the pool (measured in
+  // review, and pinned in vendor-store-keying.spec.ts):
+  //   - the store is refused when it links the pool to an order cycle it
+  //     coordinates, "Only the selected supplier can link an order cycle":
+  //     linkOrderCycle compares the pool's member id with the store id the
+  //     route now passes;
+  //   - the kept proposal is not among the store's own proposals for the
+  //     pool: GET .../proposals lists by the store id.
+  // Proposals no pool has selected are rekeyed. A pool that selects one later
+  // copies the store id, so its escrow is paid to the store's own
+  // SELLER_EARNINGS account (processGroupPurchase), as for every proposal
+  // made since SD-145.
   {
     table: "supplier_proposal",
     column: "supplier_id",
@@ -254,7 +267,8 @@ export const HELD_FOR_DECISION: readonly HeldColumn[] = [
   {
     table: "hawala_vendor_payment",
     column: "payer_vendor_id",
-    writtenBy: "pos/checkout (now refusing every call until the decision)",
+    writtenBy:
+      "pos/checkout (the actor, a member id) and POST /vendor/hawala/payments (the store, through resolveVendorSellerId, at this tree); both now refuse every call until the decision (shared/vendor-to-vendor-payments.ts)",
     reason:
       "hawala ledger table: the payer of a vendor-to-vendor payment; the payment debited the SELLER_EARNINGS account owned by this id, member-owned ones included",
     detail: ["payer_ledger_account_id", "payee_vendor_id", "amount", "currency_code", "status"],
@@ -274,7 +288,7 @@ export const HELD_FOR_DECISION: readonly HeldColumn[] = [
     writtenBy:
       "GET /vendor/farm/grower-dashboard before SD-145 (getGrowerPayoutHistory: getOrCreateSellerEarnings with the actor's member id, minted on the member's first read), and the hawala earnings route before resolveVendorSellerId",
     reason:
-      "ledger accounts owned by a member id. They can be credited (processGroupPurchase, when a pool's selected supplier was a member id), and pos/checkout keyed by the member would have moved USD out of them to any payee; every member-owned SELLER_EARNINGS account and its balance is listed below",
+      "ledger accounts owned by a member id. They can be credited (processGroupPurchase, when a pool's selected supplier was a member id), and pos/checkout, keyed by the member, would have moved USD out of them to any payee (POST /vendor/hawala/payments pays from the store's own account instead; both now refuse); every member-owned SELLER_EARNINGS account and its balance is listed below",
     detail: ["owner_type", "account_type", "currency_code", "balance", "available_balance"],
   },
 ]
@@ -338,6 +352,11 @@ export type TargetReport = {
   /** Unique indexes on the column that use expressions: not checked here; a clash there rolls the table back. */
   uncheckedIndexes: string[]
   error?: string
+  /**
+   * A failed table that could not be read again within the bounds either:
+   * `found` and the lists are unknown, not zero. None of its rows changed.
+   */
+  unread?: true
 }
 
 export type HeldReport = HeldColumn & {
@@ -494,7 +513,16 @@ function predicateSql(predicate: string | null): string {
 
 type Plan = { report: TargetReport; rekeyCtids: string[]; keptIds: Set<string> }
 
-async function plan(pg: Pg, target: RekeyTarget, keptByTable: Map<string, Set<string>>): Promise<Plan> {
+/**
+ * The ids each table kept, for its children (`keepWithParent`). ALL_KEPT
+ * stands for a table whose failed apply could not even be read again: none of
+ * its rows moved, and which ones it holds is unknown, so a child keeps every
+ * row that names a parent of it.
+ */
+const ALL_KEPT = "all rows kept" as const
+type KeptByTable = Map<string, Set<string> | typeof ALL_KEPT>
+
+async function plan(pg: Pg, target: RekeyTarget, keptByTable: KeptByTable): Promise<Plan> {
   const report: TargetReport = {
     table: target.table,
     column: target.column,
@@ -542,7 +570,7 @@ async function plan(pg: Pg, target: RekeyTarget, keptByTable: Map<string, Set<st
     } else if (conflictIndex.has(row.row_ctid)) {
       report.conflicts.push({ ...ref, index: conflictIndex.get(row.row_ctid) as string })
       keptIds.add(row.id)
-    } else if (row.via.some((parentId) => parentId && keptParents.has(parentId))) {
+    } else if (row.via.some((parentId) => parentId && (keptParents === ALL_KEPT || keptParents.has(parentId)))) {
       report.keptWithParent.push(ref)
       keptIds.add(row.id)
     } else if (row.kept_by_rule) {
@@ -563,24 +591,55 @@ function tidArray(ctids: readonly string[]): string {
   return `{${ctids.map((ctid) => `"${ctid.replace(/[^0-9(),]/g, "")}"`).join(",")}}`
 }
 
+/**
+ * Run `work` in one transaction under the run's bounds. Without them a lock
+ * waits behind any open writer for as long as it stays open, and queues every
+ * later write to the table behind itself; a timeout fails the transaction,
+ * which rolls back, and the caller reports it and goes on to the next table.
+ * The bounds are SET LOCAL, so they end with the transaction and never reach
+ * the pool's other users.
+ *
+ * Every read of a target goes through here as well as apply's lock and
+ * update: the dry run's plan, and the re-plan that reports a table whose
+ * apply failed, which ran outside any bound (SD-145 review). Those two are
+ * read only.
+ */
+async function bounded<R>(
+  pg: Pg,
+  timeouts: RekeyTimeouts,
+  access: "read only" | "read write",
+  work: (trx: Pg) => Promise<R>
+): Promise<R> {
+  return pg.transaction(async (trx) => {
+    await trx.raw(access === "read only" ? "SET TRANSACTION READ ONLY" : "SET TRANSACTION READ WRITE")
+    await trx.raw(`SET LOCAL lock_timeout = '${Math.max(1, Math.floor(timeouts.lockTimeoutMs))}ms'`)
+    await trx.raw(`SET LOCAL statement_timeout = '${Math.max(1, Math.floor(timeouts.statementTimeoutMs))}ms'`)
+    return work(trx)
+  })
+}
+
+/** The plan alone, read only, under the run's bounds. */
+function boundedPlan(
+  pg: Pg,
+  target: RekeyTarget,
+  keptByTable: KeptByTable,
+  timeouts: RekeyTimeouts
+): Promise<Plan> {
+  return bounded(pg, timeouts, "read only", (trx) => plan(trx, target, keptByTable))
+}
+
 async function rekeyTable(
   pg: Pg,
   target: RekeyTarget,
-  keptByTable: Map<string, Set<string>>,
+  keptByTable: KeptByTable,
   timeouts: RekeyTimeouts
 ): Promise<Plan> {
   const columns = await columnsOf(pg, target.table)
   if (!columns.has(target.column)) {
     // Nothing to lock: plan() reports it as missing.
-    return plan(pg, target, keptByTable)
+    return boundedPlan(pg, target, keptByTable, timeouts)
   }
-  return pg.transaction(async (trx) => {
-    // Bounded waits: without them the lock waits behind any open writer for
-    // as long as it stays open, and queues every later write to the table
-    // behind itself. A timeout fails this table's transaction, which rolls
-    // back; the caller reports it and goes on to the next table.
-    await trx.raw(`SET LOCAL lock_timeout = '${Math.max(1, Math.floor(timeouts.lockTimeoutMs))}ms'`)
-    await trx.raw(`SET LOCAL statement_timeout = '${Math.max(1, Math.floor(timeouts.statementTimeoutMs))}ms'`)
+  return bounded(pg, timeouts, "read write", async (trx) => {
     await trx.raw(`LOCK TABLE ${ident(target.table)} IN SHARE ROW EXCLUSIVE MODE`)
     const planned = await plan(trx, target, keptByTable)
     if (planned.report.status === "missing" || planned.rekeyCtids.length === 0) {
@@ -650,18 +709,25 @@ export async function rekeyMemberKeyedStoreData(
   const timeouts: RekeyTimeouts = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) }
   const pg = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as unknown as Pg
   const log: Log = options.log ?? (() => undefined)
-  const keptByTable = new Map<string, Set<string>>()
+  const keptByTable: KeptByTable = new Map()
   const targets: TargetReport[] = []
 
   for (const target of options.targets ?? REKEY_TARGETS) {
     let planned: Plan
+    let kept: Set<string> | typeof ALL_KEPT
     try {
-      planned = options.apply ? await rekeyTable(pg, target, keptByTable, timeouts) : await plan(pg, target, keptByTable)
+      planned = options.apply
+        ? await rekeyTable(pg, target, keptByTable, timeouts)
+        : await boundedPlan(pg, target, keptByTable, timeouts)
+      kept = planned.keptIds
     } catch (error) {
       // The table's transaction rolled back: every member-keyed row in it
-      // keeps its member id, and so do its children.
+      // keeps its member id, and so do its children. What it still holds is
+      // read again, under the same bounds; if even that fails, nothing of it
+      // is reported as rekeyed and its children keep every row that names a
+      // parent (ALL_KEPT).
       const message = error instanceof Error ? error.message : String(error)
-      const remaining = await plan(pg, target, keptByTable).catch(() => null)
+      const remaining = await boundedPlan(pg, target, keptByTable, timeouts).catch(() => null)
       const report: TargetReport = remaining
         ? { ...remaining.report, rekey: [], status: "failed", error: message }
         : {
@@ -679,11 +745,12 @@ export async function rekeyMemberKeyedStoreData(
             keptByRule: [],
             uncheckedIndexes: [],
             error: message,
+            unread: true,
           }
-      const kept = new Set<string>(remaining ? [...remaining.keptIds, ...remaining.report.rekey.map((r) => r.id)] : [])
-      planned = { report, rekeyCtids: [], keptIds: kept }
+      planned = { report, rekeyCtids: [], keptIds: new Set() }
+      kept = remaining ? new Set([...remaining.keptIds, ...remaining.report.rekey.map((r) => r.id)]) : ALL_KEPT
     }
-    keptByTable.set(target.table, planned.keptIds)
+    keptByTable.set(target.table, kept)
     targets.push(planned.report)
     printTarget(planned.report, options.apply, log)
   }
@@ -710,6 +777,13 @@ function printTarget(r: TargetReport, apply: boolean, log: Log): void {
   const name = `${r.table}.${r.column}`
   if (r.status === "missing") {
     log(`${name}: not in this database (skipped)`)
+    return
+  }
+  if (r.unread) {
+    log(
+      `${name} [${r.writtenBy}]: FAILED, and could not be read again within the timeouts, so its rows are not counted;` +
+        ` none was changed, and rows of other tables that hang off it keep their member ids: ${r.error ?? ""}`
+    )
     return
   }
   const verb = apply ? (r.status === "applied" ? "rekeyed" : "rekeyed 0, rolled back") : "would rekey"
