@@ -14,6 +14,7 @@ import { ORDER_CYCLE_MODULE } from "../../src/modules/order-cycle"
 import { ORDER_SUBCONTRACT_MODULE } from "../../src/modules/order-subcontract"
 import { SERVICE_PROGRAM_MODULE } from "../../src/modules/service-program"
 import { VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE } from "../../src/modules/vendor-hype-operations-prediction"
+import { addRawBigNumberColumnsSql, type RawCompanion } from "../../src/lib/raw-big-number-columns"
 import type OrderCycleModuleService from "../../src/modules/order-cycle/service"
 import type DemandPoolModuleService from "../../src/modules/demand-pool/service"
 
@@ -32,6 +33,11 @@ jest.setTimeout(240 * 1000)
  * a participant, a bounty and a supplier proposal); the rest through the
  * module's generated CRUD, which every write path of theirs goes through.
  * One case per module, so dropping one module's migration fails its own case.
+ *
+ * Those tables are empty here, as they are on any database built from the
+ * migrations (nothing could be inserted). What the migrations do to a table
+ * that already has rows is pinned on a table of its own, through the same
+ * SQL builder they use.
  *
  * `character_sheet` (progression) is not here: SD-50's branch adds its
  * columns with its own specs (module-schema-drift.spec.ts says why).
@@ -93,6 +99,74 @@ medusaIntegrationTestRunner({
       expect(rows.map((r: { name: string }) => r.name)).toEqual(SD63_MIGRATIONS)
     })
 
+    it("a table that already has rows: each companion is backfilled from its number as Medusa writes it, one already there is kept, and NOT NULL waits for the backfill", async () => {
+      const columns = async (table: string) =>
+        (
+          await pg().raw(
+            `SELECT column_name, is_nullable, column_default FROM information_schema.columns
+              WHERE table_name = ? AND column_name LIKE 'raw_%' ORDER BY column_name`,
+            [table]
+          )
+        ).rows
+      const run = async (list: RawCompanion[]) => {
+        for (const sql of addRawBigNumberColumnsSql(list)) await pg().raw(sql)
+      }
+      try {
+        // Rows written before the companions existed, and one companion that
+        // is already there (a schema built from the models) holding more
+        // precision than a backfill from its number would write.
+        await pg().raw(`
+          CREATE TABLE "zz_sd63_rows" (
+            "id" text PRIMARY KEY,
+            "amount" numeric NOT NULL,
+            "tip" numeric NOT NULL DEFAULT 0,
+            "price" numeric NULL,
+            "raw_tip" jsonb NULL
+          )`)
+        await pg().raw(`
+          INSERT INTO "zz_sd63_rows" ("id", "amount", "tip", "price", "raw_tip") VALUES
+            ('a', 12.50, 3, NULL, NULL),
+            ('b', 0, 7.250, 4.10, '{"value":"7.2500000000000000001","precision":20}')`)
+        const shape: RawCompanion[] = [
+          ["zz_sd63_rows", "amount", "required"],
+          ["zz_sd63_rows", "tip", { default: "0" }],
+          ["zz_sd63_rows", "price", "nullable"],
+        ]
+        const expected = {
+          rows: [
+            { id: "a", raw_amount: raw("12.5"), raw_tip: raw("3"), raw_price: null },
+            { id: "b", raw_amount: raw("0"), raw_tip: raw("7.2500000000000000001"), raw_price: raw("4.1") },
+          ],
+          columns: [
+            { column_name: "raw_amount", is_nullable: "NO", column_default: null },
+            { column_name: "raw_price", is_nullable: "YES", column_default: null },
+            { column_name: "raw_tip", is_nullable: "NO", column_default: `'{"value": "0", "precision": 20}'::jsonb` },
+          ],
+        }
+        // Twice: the second run meets a schema that already has every column.
+        for (const pass of [1, 2]) {
+          await run(shape)
+          const { rows } = await pg().raw(`SELECT "id", "raw_amount", "raw_tip", "raw_price" FROM "zz_sd63_rows" ORDER BY "id"`)
+          expect({ pass, rows, columns: await columns("zz_sd63_rows") }).toEqual({ pass, ...expected })
+        }
+
+        // A required field whose number is missing on some row: the column
+        // stays nullable rather than failing the migration.
+        await pg().raw(`CREATE TABLE "zz_sd63_gap" ("id" text PRIMARY KEY, "amount" numeric NULL)`)
+        await pg().raw(`INSERT INTO "zz_sd63_gap" ("id", "amount") VALUES ('a', NULL), ('b', 5)`)
+        await run([["zz_sd63_gap", "amount", "required"]])
+        const gap = await pg().raw(`SELECT "id", "raw_amount" FROM "zz_sd63_gap" ORDER BY "id"`)
+        expect(gap.rows).toEqual([
+          { id: "a", raw_amount: null },
+          { id: "b", raw_amount: raw("5") },
+        ])
+        expect(await columns("zz_sd63_gap")).toEqual([{ column_name: "raw_amount", is_nullable: "YES", column_default: null }])
+      } finally {
+        await pg().raw(`DROP TABLE IF EXISTS "zz_sd63_rows"`)
+        await pg().raw(`DROP TABLE IF EXISTS "zz_sd63_gap"`)
+      }
+    })
+
     it("order-cycle: a product added to a cycle, an enterprise fee, a share-box template and the box generated for the cycle", async () => {
       const cycles = getContainer().resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
       const coordinator = `sel_coord_${uid()}`
@@ -114,6 +188,11 @@ medusaIntegrationTestRunner({
         available_quantity: 10,
       })
       expect(await stored("order_cycle_product", product.id, ["override_price"])).toEqual({ override_price: n("450") })
+      // The misnamed leftover was renamed, not left beside a new column.
+      const companions = await pg().raw(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'order_cycle_product' AND column_name LIKE 'raw_%'`
+      )
+      expect(companions.rows).toEqual([{ column_name: "raw_override_price" }])
 
       const fee = await cycles.createFeeTemplate(coordinator, {
         name: "Packing",
