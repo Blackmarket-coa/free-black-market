@@ -204,6 +204,7 @@ type PlaybookRecipe = {
   member_model: 'solo' | 'flat' | 'sociocratic' | 'multi_stakeholder' | 'federation'
   default_features: Partial<VendorFeatures>
   allowed_listing_types: ListingTypeId[]
+  default_listing_type: ListingTypeId // what an untyped product takes; one of the allowed types
   storefront_blurb_default: string
 }
 ```
