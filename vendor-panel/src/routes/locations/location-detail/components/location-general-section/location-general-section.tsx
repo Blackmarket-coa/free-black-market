@@ -52,6 +52,7 @@ import {
   ShippingOptionPriceType,
 } from "../../../common/constants"
 import { VendorExtendedAdminStockLocation, VendorExtendedAdminFulfillmentSet, VendorExtendedAdminServiceZone } from "../../../../../types/stock-location"
+import { fulfillmentSetName } from "../../../../../lib/selling-setup"
 
 type LocationGeneralSectionProps = {
   location: VendorExtendedAdminStockLocation
@@ -460,9 +461,14 @@ function FulfillmentSet(props: FulfillmentSetProps) {
   const handleCreate = async () => {
     await createFulfillmentSet(
       {
-        name: `${locationName} ${
-          type === FulfillmentSetType.Pickup ? "pick up" : type
-        }`,
+        // With the location's id: these names are unique marketplace-wide,
+        // and `${locationName} shipping` was refused for the second store
+        // whose location had that name (lib/selling-setup.ts).
+        name: fulfillmentSetName(
+          locationName,
+          locationId,
+          type === FulfillmentSetType.Pickup ? "pickup" : "shipping"
+        ),
         type,
       },
       {

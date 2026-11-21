@@ -1,4 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { readFileSync } from "fs"
+import { join } from "path"
 import type { ReactElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import {
@@ -39,6 +41,7 @@ import {
 } from "../hooks/api/selling-setup"
 import { setAuthToken } from "./client"
 import {
+  fulfillmentSetName,
   readSellingSetup,
   recordStock,
   SELLING_LOCATION_FIELDS,
@@ -418,6 +421,31 @@ describe("setUpDelivery, for a store with nothing", () => {
     await setUpDelivery(both)
 
     expect((await readSellingSetup()).delivery.ready).toBe(true)
+  })
+
+  it("Settings, Locations names its fulfillment sets the same way", () => {
+    expect(fulfillmentSetName("Home", "sloc_1", "shipping")).toBe(
+      "Home shipping (sloc_1)"
+    )
+    expect(fulfillmentSetName("Home", "sloc_1", "pickup")).toBe(
+      "Home pick up (sloc_1)"
+    )
+    // Two stores whose locations share a name ask for different sets.
+    expect(fulfillmentSetName("Home", "sloc_1", "shipping")).not.toBe(
+      fulfillmentSetName("Home", "sloc_2", "shipping")
+    )
+
+    const screen = readFileSync(
+      join(
+        __dirname,
+        "../routes/locations/location-detail/components/location-general-section/location-general-section.tsx"
+      ),
+      "utf8"
+    )
+    const create = screen.slice(screen.indexOf("await createFulfillmentSet("))
+    expect(create.slice(0, create.indexOf("onSuccess"))).toContain(
+      "name: fulfillmentSetName("
+    )
   })
 
   it("creates a default shipping profile for a store that has none", async () => {

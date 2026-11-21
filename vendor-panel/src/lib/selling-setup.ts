@@ -365,6 +365,23 @@ export type DeliverySetupResult = {
   }>
 }
 
+/**
+ * The name of a stock location's fulfillment set. Medusa keeps these unique
+ * across the whole marketplace (`IDX_fulfillment_set_name_unique`), not per
+ * store, so the location's id is part of it: "Home shipping" could be made by
+ * one store only, and the next store with a location called Home was refused.
+ */
+export const fulfillmentSetName = (
+  locationName: string,
+  locationId: string,
+  kind: DeliveryKind
+) =>
+  `${locationName} ${kind === "pickup" ? "pick up" : "shipping"} (${locationId})`
+
+/** A service zone's name: unique marketplace-wide too, so it carries its set's id. */
+export const serviceZoneName = (countryCode: string, fulfillmentSetId: string) =>
+  `${countryCode.toUpperCase()} (${fulfillmentSetId})`
+
 const optionType = (kind: DeliveryKind) =>
   kind === "pickup"
     ? { label: "Pickup", description: "Pickup fulfillment", code: "pickup" }
@@ -546,9 +563,7 @@ export const setUpDelivery = async (
       if (!set) {
         const made = await step(`set up ${label}`, () =>
           post(`/vendor/stock-locations/${locationId}/fulfillment-sets`, {
-            name: `${location!.name} ${
-              want.kind === "pickup" ? "pick up" : "shipping"
-            } (${locationId})`,
+            name: fulfillmentSetName(location!.name, locationId, want.kind),
             type: want.kind,
           })
         )
@@ -571,7 +586,7 @@ export const setUpDelivery = async (
         )
       )
       if (!zone) {
-        const zoneName = `${country.toUpperCase()} (${setId})`
+        const zoneName = serviceZoneName(country, setId)
         const made = await step(`set up ${label}`, () =>
           post(`/vendor/fulfillment-sets/${setId}/service-zones`, {
             name: zoneName,
