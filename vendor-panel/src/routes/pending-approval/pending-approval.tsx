@@ -130,6 +130,13 @@ export const PendingApproval = () => {
                 </Text>
               </div>
             )}
+            <Text size="small" className="text-ui-fg-subtle text-center mt-4 max-w-[320px]">
+              You can apply again with the same email and password, for
+              example after changing what the note asks for.
+            </Text>
+            <Link to="/register" className="mt-4">
+              <Button>Apply again</Button>
+            </Link>
             <Text size="xsmall" className="text-ui-fg-muted text-center mt-4 max-w-[280px]">
               Please contact support if you believe this is an error or would like more information.
             </Text>
@@ -148,6 +155,9 @@ export const PendingApproval = () => {
             <Text size="small" className="text-ui-fg-subtle text-center mt-2 max-w-[320px]">
               Your seller registration has been cancelled. You may submit a new registration if you wish to join as a seller.
             </Text>
+            <Link to="/register" className="mt-4">
+              <Button>Apply again</Button>
+            </Link>
           </>
         )
 
