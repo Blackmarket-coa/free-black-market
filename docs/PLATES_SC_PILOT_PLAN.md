@@ -649,7 +649,7 @@ Not asked; the plan's defaults stand unless the owner objects:
 4. Buyers see the source and review date, not the reviewer's name.
 
 **2026-11-21, against the new direction documents.**
-- **Sequencing.** `docs/FBM_DECEMBER_LAUNCH_READINESS.md` does not list Plates among the December P0s. `docs/FBM_MOBILE_APP_PLAN.md` keeps "Plates / production" as an optional tool whose "existing seller ID/token issues and sourced eligibility work must be resolved". So the seller-id and token fixes (SD-145, SD-146) go first with the December P0s, and the phases below follow them unless the owner moves Plates up.
+- **Sequencing.** `docs/FBM_DECEMBER_LAUNCH_READINESS.md` does not list Plates among the December P0s. `docs/FBM_MOBILE_APP_PLAN.md` keeps "Plates / production" as an optional tool whose "existing seller ID/token issues and sourced eligibility work must be resolved". So the seller-id and token fixes (SD-145, SD-146) go first with the December P0s. **The owner moved Plates up the same day ("we need to get everything ready for the onboarding and for plates"):** the phases below now run alongside the onboarding work, starting with Phase 2 (the rule store, which depends on nothing in flight) and Phase 1 as soon as SD-145's branch is final.
 - **Phase 1 and the add-on.** `docs/FBM_MONETIZATION_PLAN.md` makes enhanced software a one-time purchase and calls the 30-day add-on packs legacy. Phase 1 still puts costing in every plan. It must not set or confirm a recurring price for what is left of the Grower Tools pack: leave that pack's price and term to the ownership migration the monetization plan requires, and say so in PL-1.
 
 ### Critical Files for Implementation
