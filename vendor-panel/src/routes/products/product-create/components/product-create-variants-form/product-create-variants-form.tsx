@@ -67,10 +67,15 @@ export const StockNote = ({
               {" "}
               {stockLocation.name} is not linked to your sales channel yet, so
               buyers cannot buy from it:{" "}
-              <Link to="/delivery-setup" className="text-ui-fg-interactive">
+              <Link
+                to="/delivery-setup"
+                target="_blank"
+                rel="noreferrer"
+                className="text-ui-fg-interactive"
+              >
                 finish pickup and shipping
-              </Link>
-              .
+              </Link>{" "}
+              (opens in a new tab, so this form is kept).
             </>
           )}
         </>
@@ -88,10 +93,16 @@ export const StockNote = ({
             You have no stock location yet, so no stock can be recorded.
           </span>{" "}
           A product that tracks stock and has none cannot be bought.{" "}
-          <Link to="/delivery-setup" className="text-ui-fg-interactive">
+          <Link
+            to="/delivery-setup"
+            target="_blank"
+            rel="noreferrer"
+            className="text-ui-fg-interactive"
+          >
             Set up pickup or shipping
           </Link>{" "}
-          first, or untick Track stock.
+          first (it opens in a new tab, so this form is kept), or untick Track
+          stock.
         </>
       )}
     </div>

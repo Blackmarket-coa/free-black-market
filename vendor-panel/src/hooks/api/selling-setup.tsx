@@ -58,6 +58,9 @@ export const useDeliverySetup = (options?: { enabled?: boolean }) =>
     enabled: Boolean(getAuthToken()) && (options?.enabled ?? true),
     staleTime: 0,
     refetchOnMount: "always",
+    // The product form sends a vendor with no stock location to set one up
+    // in another tab; coming back, the form must see it.
+    refetchOnWindowFocus: true,
     retry: false,
   })
 

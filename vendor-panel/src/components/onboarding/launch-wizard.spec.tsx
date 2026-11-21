@@ -393,6 +393,40 @@ describe("the delivery step", () => {
     expect(onContinue).toHaveBeenCalledTimes(1)
   })
 
+  it("records the stock once and continues once for a double click", async () => {
+    const id = await makeDraft()
+    await setUpDelivery({ location: barn, pickup: { name: "Pickup" }, shipping: null })
+    const release = backend.hold(
+      "POST",
+      "/vendor/inventory-items/location-levels/batch"
+    )
+    const onContinue = vi.fn()
+    const step = (
+      <DeliveryStep
+        sellingType="physical"
+        product={{ ...product, id }}
+        onStockRecorded={vi.fn()}
+        onContinue={onContinue}
+        onBack={vi.fn()}
+      />
+    )
+    await show(step)
+    const next = ui.button("Continue")
+
+    ui.press(next)
+    ui.press(next)
+    await vi.waitFor(() => expect(writes()).toHaveLength(1))
+    render(step)
+    expect(ui.button("Continue")).toMatchObject({ disabled: true, isLoading: true })
+
+    release()
+    await settled()
+    expect(writes()).toEqual([
+      "POST /vendor/inventory-items/location-levels/batch",
+    ])
+    expect(onContinue).toHaveBeenCalledTimes(1)
+  })
+
   it("does not continue when the stock could not be recorded", async () => {
     const id = await makeDraft()
     await setUpDelivery({ location: barn, pickup: { name: "Pickup" }, shipping: null })
@@ -684,9 +718,12 @@ describe("the wizard", () => {
     const html = await show(<LaunchWizard />)
     expect(html).toContain("Wildflower Honey is saved as a draft.")
 
-    ui.press(ui.button("Continue"))
+    const next = ui.button("Continue")
+    ui.press(next)
+    ui.press(next)
     await settled()
 
+    // Recorded once, however fast the button is pressed.
     expect(writes()).toEqual(["PATCH /vendor/onboarding"])
     expect(backend.sent.at(-1)?.body).toEqual({ step: "step_3" })
     expect(render(<LaunchWizard />)).toContain("Delivery")

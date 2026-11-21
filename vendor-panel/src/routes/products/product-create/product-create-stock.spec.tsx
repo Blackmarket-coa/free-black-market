@@ -238,7 +238,7 @@ describe("the product form's stock", () => {
       "You have no stock location yet, so no stock can be recorded."
     )
     expect(none).toContain('href="/delivery-setup"')
-    expect(none).toContain("untick Track stock")
+    expect(none).toMatch(/or untick Track\s+stock/)
 
     expect(
       renderToStaticMarkup(<StockNote stockLocation={null} stockLocationUnread />)

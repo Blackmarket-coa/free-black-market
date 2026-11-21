@@ -606,6 +606,7 @@ export function LaunchWizard() {
               await advance("step_3")
             }}
             onContinue={async () => {
+              if (isBusyNow()) return
               await advance("step_3")
             }}
             onStartOver={() => rememberProduct(null)}
@@ -714,7 +715,10 @@ export function LaunchWizard() {
           <PublishStep
             product={wizardProduct}
             onPublished={(published) => setState(published as OnboardingState)}
-            onMakeListing={() => void advance("step_2")}
+            onMakeListing={() => {
+              if (isBusyNow()) return
+              void advance("step_2")
+            }}
             onForget={() => rememberProduct(null)}
             onBack={back}
           />
