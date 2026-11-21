@@ -27,6 +27,13 @@ const ProductCreateVariantSchema = z.object({
   origin_country: z.string().optional(),
   sku: z.string().optional(),
   manage_inventory: z.boolean().optional(),
+  /**
+   * How many of this variant the vendor has, for one that tracks stock.
+   * Never sent with the product: it is written as the inventory level at the
+   * store's stock location once the product exists (utils.ts,
+   * `initialStockFrom`).
+   */
+  stock_quantity: optionalInt,
   allow_backorder: z.boolean().optional(),
   inventory_kit: z.boolean().optional(),
   options: z.record(z.string(), z.string()),

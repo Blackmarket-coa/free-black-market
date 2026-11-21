@@ -111,8 +111,138 @@ export const decorateVariantsWithDefaultValues = (
     ...variant,
     title: variant.title || "",
     sku: variant.sku || "",
-    manage_inventory: variant.manage_inventory || false,
+    // Stock is tracked unless the vendor unticks it: what the form sent for
+    // every variant before it asked.
+    manage_inventory: variant.manage_inventory ?? true,
+    stock_quantity: variant.stock_quantity ?? "",
     allow_backorder: variant.allow_backorder || false,
     inventory_kit: variant.inventory_kit || false,
   }))
 }
+
+type UploadedMedia = { url: string; isThumbnail: boolean }
+
+/**
+ * The product the create form sends to `POST /vendor/seller-products`.
+ *
+ * A variant tracks stock when the vendor left "Track stock" ticked. The form
+ * sent `manage_inventory: true` for every variant and asked for no quantity,
+ * so every product it made had an inventory item with no level anywhere and
+ * could not be added to a cart (SD-151 (4)). Prices go as typed, in major
+ * units.
+ */
+export const toCreateProductPayload = (
+  values: ProductCreateSchemaType,
+  {
+    status,
+    uploadedMedia,
+    regionsCurrencyMap,
+  }: {
+    status: "draft" | "published"
+    uploadedMedia: UploadedMedia[]
+    regionsCurrencyMap: Record<string, string>
+  }
+): HttpTypes.AdminCreateProduct => {
+  const payload = { ...values, media: undefined }
+
+  return {
+    ...payload,
+    status,
+    thumbnail: uploadedMedia.find((media) => media.isThumbnail)?.url,
+    images: uploadedMedia
+      .filter((media) => !media.isThumbnail)
+      .map((media) => ({ url: media.url })),
+    weight: parseInt(payload.weight || "") || undefined,
+    length: parseInt(payload.length || "") || undefined,
+    height: parseInt(payload.height || "") || undefined,
+    width: parseInt(payload.width || "") || undefined,
+    type_id: payload.type_id || undefined,
+    tags:
+      payload.tags?.map((tag) => ({
+        id: tag,
+      })) || [],
+    collection_id: payload.collection_id || undefined,
+    shipping_profile_id: undefined,
+    enable_variants: undefined,
+    // No listing type is named: the backend gives the product its seller's
+    // playbook's default, and refuses in its own words when it cannot.
+    additional_data: undefined,
+    categories: payload.categories.map((cat) => ({
+      id: cat,
+    })),
+    variants: payload.variants.map((variant) => {
+      const prices = Object.entries(variant.prices || {})
+        .map(([currencyOrRegion, value]) => {
+          if (value === "" || value === undefined) {
+            return undefined
+          }
+
+          const amount = castNumber(value)
+
+          if (currencyOrRegion.startsWith("reg_")) {
+            return {
+              rules: { region_id: currencyOrRegion },
+              currency_code: regionsCurrencyMap[currencyOrRegion],
+              amount,
+            }
+          }
+
+          return {
+            currency_code: currencyOrRegion,
+            amount,
+          }
+        })
+        .filter((price) => !!price)
+
+      return {
+        ...variant,
+        sku: variant.sku === "" ? undefined : variant.sku,
+        manage_inventory: variant.manage_inventory !== false,
+        allow_backorder: false,
+        should_create: undefined,
+        is_default: undefined,
+        inventory_kit: undefined,
+        inventory: undefined,
+        stock_quantity: undefined,
+        prices,
+      }
+    }),
+  } as unknown as HttpTypes.AdminCreateProduct
+}
+
+const hasQuantity = (variant: ProductCreateSchemaType["variants"][number]) =>
+  variant.stock_quantity !== "" && variant.stock_quantity !== undefined
+
+/**
+ * The stock the vendor entered, for the variants that track it: written as
+ * each one's inventory level once the product exists (`recordStock`).
+ */
+export const initialStockFrom = (
+  variants: ProductCreateSchemaType["variants"]
+): Array<{ variant_rank: number; quantity: number }> =>
+  variants
+    .filter((variant) => variant.manage_inventory !== false)
+    .filter(hasQuantity)
+    .map((variant) => ({
+      variant_rank: variant.variant_rank,
+      quantity: castNumber(variant.stock_quantity as string | number),
+    }))
+
+/**
+ * The variants (by index) the vendor has not answered for: shown in the grid,
+ * tracking stock, with no quantity. Asked only while the store has a stock
+ * location to hold it.
+ */
+export const variantsMissingStock = (
+  variants: ProductCreateSchemaType["variants"],
+  canHoldStock: boolean
+): number[] =>
+  canHoldStock
+    ? variants.flatMap((variant, index) =>
+        variant.should_create &&
+        variant.manage_inventory !== false &&
+        !hasQuantity(variant)
+          ? [index]
+          : []
+      )
+    : []

@@ -7,15 +7,18 @@ import {
 import { getAuthToken } from "../../lib/client"
 import {
   publishFirstListing,
+  readDeliverySetup,
   readSellingSetup,
   recordStock,
   setUpDelivery,
+  type DeliverySetup,
   type DeliverySetupInput,
   type DeliverySetupResult,
   type SellingSetup,
 } from "../../lib/selling-setup"
+import { HttpTypes } from "@medusajs/types"
 import { inventoryItemsQueryKeys } from "./inventory"
-import { productsQueryKeys } from "./products"
+import { productsQueryKeys, useCreateProduct } from "./products"
 import { shippingOptionsQueryKeys } from "./shipping-options"
 import { stockLocationsQueryKeys } from "./stock-locations"
 
@@ -23,6 +26,7 @@ export const sellingSetupQueryKey = ["selling-setup"] as const
 
 /** The keys the screens read to disable a button while its write is in flight. */
 export const sellingSetupMutationKeys = {
+  listing: ["selling-setup", "listing"] as const,
   delivery: ["selling-setup", "delivery"] as const,
   stock: ["selling-setup", "stock"] as const,
   publish: ["selling-setup", "publish"] as const,
@@ -37,6 +41,20 @@ export const useSellingSetup = (options?: { enabled?: boolean }) =>
   useQuery<SellingSetup>({
     queryKey: sellingSetupQueryKey,
     queryFn: readSellingSetup,
+    enabled: Boolean(getAuthToken()) && (options?.enabled ?? true),
+    staleTime: 0,
+    refetchOnMount: "always",
+    retry: false,
+  })
+
+/**
+ * The delivery half alone (where stock is held, what buyers can choose), for
+ * screens that do not need the listings looked into: the product form.
+ */
+export const useDeliverySetup = (options?: { enabled?: boolean }) =>
+  useQuery<DeliverySetup>({
+    queryKey: [...sellingSetupQueryKey, "delivery"],
+    queryFn: readDeliverySetup,
     enabled: Boolean(getAuthToken()) && (options?.enabled ?? true),
     staleTime: 0,
     refetchOnMount: "always",
@@ -97,6 +115,74 @@ export const usePublishFirstListing = () => {
       client.invalidateQueries({ queryKey: sellingSetupQueryKey })
       client.invalidateQueries({ queryKey: productsQueryKeys.all })
       client.invalidateQueries({ queryKey: ["onboarding"] })
+    },
+  })
+}
+
+export type CreateProductWithStockInput = {
+  payload: HttpTypes.AdminCreateProduct
+  /**
+   * The quantities the vendor entered for the variants that track stock, and
+   * the stock location that holds them. Left out when there is nothing to
+   * record: no tracked variant, or no stock location yet.
+   */
+  stock?: {
+    locationId: string
+    entries: Array<{ variant_rank: number; quantity: number }>
+  }
+}
+
+export type CreateProductWithStockResult = HttpTypes.AdminProductResponse & {
+  /**
+   * Set when the product was created and its stock was not recorded. The
+   * product exists either way, so this resolves rather than rejects: a
+   * rejection would invite a second attempt and a second product.
+   */
+  stockError?: Error
+}
+
+/**
+ * Create a product and record how many of it are in stock: what the product
+ * form and the launch wizard's listing step both do.
+ *
+ * It creates through `useCreateProduct` (`POST /vendor/seller-products`), then
+ * writes the levels with `recordStock`. It is one mutation, so its key covers
+ * the whole of it: a second press while either request is in flight is the
+ * same press.
+ */
+export const useCreateProductWithStock = () => {
+  const client = useQueryClient()
+  const createProduct = useCreateProduct()
+
+  return useMutation<
+    CreateProductWithStockResult,
+    Error,
+    CreateProductWithStockInput
+  >({
+    mutationKey: sellingSetupMutationKeys.listing,
+    mutationFn: async ({ payload, stock }) => {
+      const created = await createProduct.mutateAsync(payload)
+      if (!stock || stock.entries.length === 0) {
+        return created
+      }
+      try {
+        await recordStock({
+          productId: created.product.id,
+          locationId: stock.locationId,
+          stock: stock.entries,
+        })
+        return created
+      } catch (error) {
+        return {
+          ...created,
+          stockError:
+            error instanceof Error ? error : new Error("Unknown error"),
+        }
+      }
+    },
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: sellingSetupQueryKey })
+      client.invalidateQueries({ queryKey: inventoryItemsQueryKeys.all })
     },
   })
 }

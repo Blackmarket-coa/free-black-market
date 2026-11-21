@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { UseFormReturn, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
+import { Link } from "react-router-dom"
 import { HttpTypes } from "@medusajs/types"
 
 import {
@@ -20,6 +21,81 @@ type ProductCreateVariantsFormProps = {
   regions?: HttpTypes.AdminRegion[]
   store?: HttpTypes.AdminStore
   pricePreferences?: HttpTypes.AdminPricePreference[]
+  /** Where the quantities entered here are held, when the store has a place. */
+  stockLocation?: { id: string; name: string } | null
+  /** Whether that location is linked to the store's sales channel. */
+  stockLocationLinked?: boolean
+  stockLocationPending?: boolean
+  /** The store's locations could not be read. */
+  stockLocationUnread?: boolean
+}
+
+/**
+ * What the vendor is told about stock above the variants (SD-151 (4)): where
+ * it is held, or why none can be recorded. The form sent every variant as
+ * stock-tracked and asked for no quantity, so every product it made was out
+ * of stock everywhere.
+ */
+export const StockNote = ({
+  stockLocation,
+  stockLocationLinked,
+  stockLocationPending,
+  stockLocationUnread,
+}: Pick<
+  ProductCreateVariantsFormProps,
+  | "stockLocation"
+  | "stockLocationLinked"
+  | "stockLocationPending"
+  | "stockLocationUnread"
+>) => {
+  if (stockLocationPending) {
+    return null
+  }
+  const untrack =
+    "Untick Track stock for anything you never run out of: it can then always be bought."
+
+  return (
+    <div className="bg-ui-bg-subtle txt-compact-small text-ui-fg-subtle px-4 py-3">
+      {stockLocation ? (
+        <>
+          <span className="text-ui-fg-base">
+            Stock is held at {stockLocation.name}.
+          </span>{" "}
+          Enter how many of each you have under In stock. {untrack}
+          {stockLocationLinked ? null : (
+            <>
+              {" "}
+              {stockLocation.name} is not linked to your sales channel yet, so
+              buyers cannot buy from it:{" "}
+              <Link to="/delivery-setup" className="text-ui-fg-interactive">
+                finish pickup and shipping
+              </Link>
+              .
+            </>
+          )}
+        </>
+      ) : stockLocationUnread ? (
+        <>
+          <span className="text-ui-fg-base">
+            Your stock locations could not be read, so no stock will be
+            recorded with this product.
+          </span>{" "}
+          Enter it on the product's Stock page afterwards. {untrack}
+        </>
+      ) : (
+        <>
+          <span className="text-ui-fg-base">
+            You have no stock location yet, so no stock can be recorded.
+          </span>{" "}
+          A product that tracks stock and has none cannot be bought.{" "}
+          <Link to="/delivery-setup" className="text-ui-fg-interactive">
+            Set up pickup or shipping
+          </Link>{" "}
+          first, or untick Track stock.
+        </>
+      )}
+    </div>
+  )
 }
 
 type VariantWithIndex = ProductCreateVariantSchema & {
@@ -31,6 +107,10 @@ export const ProductCreateVariantsForm = ({
   regions,
   store,
   pricePreferences,
+  stockLocation,
+  stockLocationLinked,
+  stockLocationPending,
+  stockLocationUnread,
 }: ProductCreateVariantsFormProps) => {
   const { setCloseOnEscape } = useRouteModal()
 
@@ -59,6 +139,8 @@ export const ProductCreateVariantsForm = ({
     currencies: currencyCodes,
     regions,
     pricePreferences,
+    // A quantity is asked for only where there is a place to hold it.
+    canHoldStock: Boolean(stockLocation),
   })
 
   const variantData = useMemo(() => {
@@ -75,6 +157,12 @@ export const ProductCreateVariantsForm = ({
 
   return (
     <div className="flex size-full flex-col divide-y overflow-hidden">
+      <StockNote
+        stockLocation={stockLocation}
+        stockLocationLinked={stockLocationLinked}
+        stockLocationPending={stockLocationPending}
+        stockLocationUnread={stockLocationUnread}
+      />
       <DataGrid
         columns={columns}
         data={variantData}
@@ -95,11 +183,13 @@ const useColumns = ({
   currencies = [],
   regions = [],
   pricePreferences = [],
+  canHoldStock = false,
 }: {
   options: ProductCreateOptionSchema[]
   currencies?: string[]
   regions?: HttpTypes.AdminRegion[]
   pricePreferences?: HttpTypes.AdminPricePreference[]
+  canHoldStock?: boolean
 }) => {
   const { t } = useTranslation()
 
@@ -147,6 +237,40 @@ const useColumns = ({
           return <DataGrid.TextCell context={context} />
         },
       }),
+      // The vendor's choice: a variant that does not track stock can always
+      // be bought, one that does needs a quantity.
+      columnHelper.column({
+        id: "manage_inventory",
+        name: "Track stock",
+        header: "Track stock",
+        field: (context) =>
+          `variants.${context.row.original.originalIndex}.manage_inventory`,
+        type: "boolean",
+        cell: (context) => {
+          return <DataGrid.BooleanCell context={context} />
+        },
+      }),
+      ...(canHoldStock
+        ? [
+            columnHelper.column({
+              id: "stock_quantity",
+              name: "In stock",
+              header: "In stock",
+              field: (context) =>
+                `variants.${context.row.original.originalIndex}.stock_quantity`,
+              type: "number",
+              cell: (context) => {
+                return (
+                  <DataGrid.NumberCell
+                    min={0}
+                    placeholder="0"
+                    context={context}
+                  />
+                )
+              },
+            }),
+          ]
+        : []),
 
       ...createDataGridPriceColumns<VariantWithIndex, ProductCreateSchemaType>({
         currencies,
@@ -160,6 +284,6 @@ const useColumns = ({
         t,
       }),
     ],
-    [currencies, regions, options, pricePreferences, t]
+    [currencies, regions, options, pricePreferences, canHoldStock, t]
   )
 }

@@ -1,6 +1,6 @@
 import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
 import { HttpTypes } from "@medusajs/types"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import {
@@ -12,7 +12,13 @@ import {
   useDashboardExtension,
   useExtendableForm,
 } from "../../../../../extensions"
-import { useCreateProduct } from "../../../../../hooks/api/products"
+import {
+  sellingSetupMutationKeys,
+  useCreateProductWithStock,
+  useDeliverySetup,
+  useIsBusy,
+} from "../../../../../hooks/api/selling-setup"
+import { backendMessage } from "../../../../../lib/backend-message"
 import { uploadFilesQuery } from "../../../../../lib/client"
 import {
   PRODUCT_CREATE_FORM_DEFAULTS,
@@ -24,7 +30,11 @@ import { ProductCreateOrganizeForm } from "../product-create-organize-form"
 import { ProductCreateVariantsForm } from "../product-create-variants-form"
 import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
 import { useRegions } from "../../../../../hooks/api"
-import { castNumber } from "../../../../../lib/cast-number"
+import {
+  initialStockFrom,
+  toCreateProductPayload,
+  variantsMissingStock,
+} from "../../utils"
 
 enum Tab {
   DETAILS = "details",
@@ -102,7 +112,21 @@ export const ProductCreateForm = ({
     configs,
   })
 
-  const { mutateAsync, isPending } = useCreateProduct()
+  // Creates the product, then records the stock the vendor entered: one
+  // mutation, so `isPending` covers both requests.
+  const { mutateAsync } = useCreateProductWithStock()
+  const { pending, isBusyNow } = useIsBusy(sellingSetupMutationKeys.listing)
+  const submitting = useRef(false)
+  const isPending = pending || form.formState.isSubmitting
+
+  // Where stock is held: a location linked to the sales channel when there
+  // is one. With none, a quantity has nowhere to be recorded.
+  const {
+    data: delivery,
+    isPending: isDeliveryPending,
+    isError: isDeliveryUnread,
+  } = useDeliverySetup()
+  const stockLocation = delivery?.location ?? null
 
   const [showInventoryTab, setShowInventoryTab] = useState(() =>
     form
@@ -127,6 +151,12 @@ export const ProductCreateForm = ({
   }, [form])
 
   const handleSubmit = form.handleSubmit(async (values, e) => {
+    // One product per press: the upload, the create and the stock write are
+    // one submission, and the buttons are not disabled until it re-renders.
+    if (submitting.current || isBusyNow()) {
+      return
+    }
+
     let isDraftSubmission = false
 
     if (e?.nativeEvent instanceof SubmitEvent) {
@@ -134,123 +164,113 @@ export const ProductCreateForm = ({
       isDraftSubmission = submitter.dataset.name === SAVE_DRAFT_BUTTON
     }
 
-    const media = values.media || []
-    const payload = { ...values, media: undefined }
-
-    let uploadedMedia: (HttpTypes.AdminFile & {
-      isThumbnail: boolean
-    })[] = []
-    try {
-      if (media.length) {
-        const thumbnailReq = media.filter((m) => m.isThumbnail)
-        const otherMediaReq = media.filter((m) => !m.isThumbnail)
-
-        const fileReqs = []
-        if (thumbnailReq?.length) {
-          fileReqs.push(
-            uploadFilesQuery(thumbnailReq).then((r: any) =>
-              r.files.map((f: any) => ({
-                ...f,
-                isThumbnail: true,
-              }))
-            )
-          )
-        }
-        if (otherMediaReq?.length) {
-          fileReqs.push(
-            uploadFilesQuery(otherMediaReq).then((r: any) =>
-              r.files.map((f: any) => ({
-                ...f,
-                isThumbnail: false,
-              }))
-            )
-          )
-        }
-
-        uploadedMedia = (await Promise.all(fileReqs)).flat()
+    // A published product that tracks stock and has none cannot be added to a
+    // cart, so the vendor says how many there are or unticks "Track stock".
+    // A draft can wait.
+    const unanswered = isDraftSubmission
+      ? []
+      : variantsMissingStock(values.variants, Boolean(stockLocation))
+    if (unanswered.length) {
+      for (const index of unanswered) {
+        form.setError(`variants.${index}.stock_quantity`, {
+          type: "manual",
+          message: "Enter how many you have, or untick Track stock.",
+        })
       }
-    } catch (error) {
-      if (error instanceof Error) {
-        toast.error(error.message)
-      }
+      setTab(Tab.VARIANTS)
+      toast.error(
+        "Say how many of each you have in stock, or untick Track stock."
+      )
+      return
     }
 
-    await mutateAsync(
-      {
-        ...payload,
-        status: isDraftSubmission ? "draft" : "published",
-        thumbnail: uploadedMedia.find((media) => media.isThumbnail)?.url,
-        images: uploadedMedia
-          .filter((media) => !media.isThumbnail)
-          .map((media) => ({ url: media.url })),
-        weight: parseInt(payload.weight || "") || undefined,
-        length: parseInt(payload.length || "") || undefined,
-        height: parseInt(payload.height || "") || undefined,
-        width: parseInt(payload.width || "") || undefined,
-        type_id: payload.type_id || undefined,
-        tags:
-          payload.tags?.map((tag) => ({
-            id: tag,
-          })) || [],
-        collection_id: payload.collection_id || undefined,
-        shipping_profile_id: undefined,
-        enable_variants: undefined,
-        additional_data: undefined,
-        categories: payload.categories.map((cat) => ({
-          id: cat,
-        })),
-        variants: payload.variants.map((variant) => {
-          const prices = Object.entries(variant.prices || {})
-            .map(([currencyOrRegion, value]) => {
-              if (value === "" || value === undefined) {
-                return undefined
-              }
+    submitting.current = true
+    try {
+      const media = values.media || []
 
-              const amount = castNumber(value)
+      let uploadedMedia: (HttpTypes.AdminFile & {
+        isThumbnail: boolean
+      })[] = []
+      try {
+        if (media.length) {
+          const thumbnailReq = media.filter((m) => m.isThumbnail)
+          const otherMediaReq = media.filter((m) => !m.isThumbnail)
 
-              if (currencyOrRegion.startsWith("reg_")) {
-                return {
-                  rules: { region_id: currencyOrRegion },
-                  currency_code: regionsCurrencyMap[currencyOrRegion],
-                  amount,
-                }
-              }
-
-              return {
-                currency_code: currencyOrRegion,
-                amount,
-              }
-            })
-            .filter((price) => !!price)
-
-          return {
-            ...variant,
-            sku: variant.sku === "" ? undefined : variant.sku,
-            manage_inventory: true,
-            allow_backorder: false,
-            should_create: undefined,
-            is_default: undefined,
-            inventory_kit: undefined,
-            inventory: undefined,
-            prices,
+          const fileReqs = []
+          if (thumbnailReq?.length) {
+            fileReqs.push(
+              uploadFilesQuery(thumbnailReq).then((r: any) =>
+                r.files.map((f: any) => ({
+                  ...f,
+                  isThumbnail: true,
+                }))
+              )
+            )
           }
-        }),
-      },
-      {
-        onSuccess: (data) => {
-          toast.success(
-            t("products.create.successToast", {
-              title: data.product.title,
-            })
-          )
+          if (otherMediaReq?.length) {
+            fileReqs.push(
+              uploadFilesQuery(otherMediaReq).then((r: any) =>
+                r.files.map((f: any) => ({
+                  ...f,
+                  isThumbnail: false,
+                }))
+              )
+            )
+          }
 
-          handleSuccess(`../${data.product.id}`)
-        },
-        onError: (error) => {
+          uploadedMedia = (await Promise.all(fileReqs)).flat()
+        }
+      } catch (error) {
+        if (error instanceof Error) {
           toast.error(error.message)
-        },
+        }
       }
-    )
+
+      const entries = initialStockFrom(values.variants)
+      const tracksStock = values.variants.some(
+        (variant) => variant.should_create && variant.manage_inventory !== false
+      )
+
+      const data = await mutateAsync({
+        payload: toCreateProductPayload(values, {
+          status: isDraftSubmission ? "draft" : "published",
+          uploadedMedia,
+          regionsCurrencyMap,
+        }),
+        stock:
+          stockLocation && entries.length
+            ? { locationId: stockLocation.id, entries }
+            : undefined,
+      })
+
+      toast.success(
+        t("products.create.successToast", {
+          title: data.product.title,
+        })
+      )
+      // The product exists. Say so, and say what a buyer still cannot do.
+      if (data.stockError) {
+        toast.error("Its stock was not recorded", {
+          description: `${backendMessage(
+            data.stockError,
+            "Unknown error"
+          )} Set it on the product's Stock page.`,
+        })
+      } else if (tracksStock && !stockLocation) {
+        toast.warning("No stock is recorded for it", {
+          description:
+            "You have no stock location yet, so buyers cannot add it to a cart. Set up pickup or shipping, then enter its stock.",
+        })
+      }
+
+      handleSuccess(`../${data.product.id}`)
+    } catch (error) {
+      // The backend's own words: a listing type the seller's playbook does
+      // not allow is refused with the types it does.
+      toast.error(backendMessage(error, "The product could not be created."))
+    } finally {
+      submitting.current = false
+    }
   })
 
   const onNext = async (currentTab: Tab) => {
@@ -404,6 +424,10 @@ export const ProductCreateForm = ({
                 store={store}
                 regions={regions}
                 pricePreferences={pricePreferences}
+                stockLocation={stockLocation}
+                stockLocationLinked={Boolean(delivery?.locationLinked)}
+                stockLocationPending={isDeliveryPending}
+                stockLocationUnread={isDeliveryUnread}
               />
             </ProgressTabs.Content>
             {showInventoryTab && (
