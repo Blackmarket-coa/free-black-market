@@ -268,7 +268,10 @@ export async function POST(
     log.warn(`[farm/profile] producer ${producer.id} of store ${sellerId} is linked but could not be made public: ${(error as Error).message}`)
     return res.status(201).json({
       producer,
-      warning: "The farm profile was created but is not public yet; turn on its public profile in the farm settings.",
+      // The vendor panel has no control for this and does not read `warning`:
+      // it is for a caller of the API.
+      warning:
+        "The farm profile was created but is not public yet; PUT /vendor/farm/profile with public_profile_enabled: true publishes it.",
     })
   }
 

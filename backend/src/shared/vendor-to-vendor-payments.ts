@@ -19,7 +19,8 @@
  *     picks `payment_type` GOODS | SERVICES | LOAN | OTHER; nothing ties any of
  *     them to an order. Measured in review at c00d39b1: store A's member paid
  *     store B 5 as a LOAN, got 201, and A's earnings went 40 -> 35, B's
- *     0 -> 5.
+ *     0 -> 5 (the same again with this switch turned on, under
+ *     vendor-store-keying.spec.ts).
  *
  * Both call createVendorToVendorPayment (modules/hawala-ledger/service.ts),
  * which moves USD from the payer's SELLER_EARNINGS account to the payee's,
