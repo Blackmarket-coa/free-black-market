@@ -5,6 +5,8 @@ installable iOS and Android app.
 
 **Product plan (2026-11-20):** [FBM app plan](../docs/FBM_MOBILE_APP_PLAN.md) targets one customizable member portal for gameplay, commerce, Coalition discovery, sites, inventory and fulfillment. [Implementation inventory](../docs/FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) separates source, scaffolds and unverified runtime behavior. The sections below describe the current shell; they are not permanent limits on mobile seller tools.
 
+**Shared-game planning (2026-11-21):** [Coalition game and creator commerce](../docs/FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adds accepted original-companion/collection/cooperation planning and optional camera AR. Pokemon Walk, PraxisMapper and LocAR.js are evaluation candidates, not installed dependencies. Verify physical iOS/Android browser/Capacitor behavior, camera/location/orientation denial, saving/resume, drift/calibration, performance, signed pack delivery/application, purchase restoration/refunds and privacy before release. Map interaction and ordinary commerce remain usable without AR or travel.
+
 ## How it works
 
 The storefront is a server-rendered Next.js app (`output: "standalone"`),

@@ -1,6 +1,7 @@
 # FBM iOS and Android app plan
 
-**Updated:** 2026-11-20  
+**Updated:** 2026-11-21
+
 **Status:** Product requirements and proposed delivery plan. The full unified portal and virtual marketplace are not implemented at the reviewed source revision. This document changes no application code, billing, permissions, flags or deployment.
 
 ## Authority and scope
@@ -10,6 +11,8 @@ FBM will have a standalone iOS and Android app built around one customizable mem
 The [unified member portal plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) remains canonical for character creation, the shared member host and functional equipment. The [Resource Exchange Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) retains economic/privacy invariants. The [R1 implementation plan](UNIFIED_MEMBER_PORTAL_R1_PLAN.md) describes a deliberately smaller first delivery. This document extends the product to both mobile platforms; it does not mark R1 or later work complete.
 
 Use the [mobile implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) for the current source evidence, all local module/provider registrations, plugin catalogs, reuse opportunities and known partials. The older source observations in other plans retain their original dates; the inventory's November 20 evidence supersedes them for the specifically rechecked paths.
+
+**Accepted November 21 direction:** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adds original companions, collection, cooperative exploration, creator-made packs, and optional AR using shared Blackout/Coalition services. It records upstream evaluation candidates, consent, progression separation, commerce contracts, and phased acceptance. Implementation, code adoption, and native verification remain future work.
 
 ## Confirmed requirements
 
@@ -23,6 +26,8 @@ Use the [mobile implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md
 8. Members should be able to launch an FBM-hosted site or connect an existing site, manage inventory and orders, and fulfill shipments from the app as these workflows become ready.
 9. Preserve the flat 3% sales commission after processing-fee deduction. KARMA, equipment and paid enhancements do not change the rate. Existing legacy billing/fee code needs migration.
 10. Personal, seller and organization scopes keep correct server authorization and ownership even within one portal. Pending seller setup must not block ordinary shopping or personal records.
+11. Surface the shared Coalition game inside World/map/list, with collection in My Place/Toolkit and contextual creator tools. No extra global game tab. FBM's navigation remains its own design decision; Blackout's four-destination layout is not copied automatically.
+12. Sell supported original creator packs only after real authoring, payment, entitlement, signed delivery, compatible runtime application, restoration, refunds, and seller settlement are verified. AI personas remain excluded from sale; game purchases cannot buy rank or community authority.
 
 ## Current code versus target app
 
@@ -36,6 +41,7 @@ Use the [mobile implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md
 | Auctions | Goods-auction lifecycle is not implemented. Blackstar transport bidding is different. | Dedicated bid/close/winner/reservation/payment recovery work. |
 | Map updates | Coalition map/community code and FBM aid-board mirroring exist. Mirrored aid records omit coordinates. | Consented geographic projections, listing/stock update/removal events, reconnect and reconciliation. |
 | Enhancements | Six add-on packs currently grant 30-day access; recurring plans remain. Five of six plugin seeds have no attached distribution manifest. | Permanent/versioned ownership migration and verification of actual tool/plugin consumers. |
+| Shared collection game | November 21 Blackout planning defines the shared direction; this update adds no game runtime, adopted dependency, or executable pack format. | Verify one encounter/collection journey before cooperation, creator packs, real paid delivery, optional AR, and expansion. |
 
 Source presence, a mock test, a catalog seed or a reference manifest is not deployment or service availability. The inventory records substantive code separately from scaffolds and operating dependencies.
 
@@ -128,9 +134,13 @@ Separate physical-commerce payments from digital feature unlocks. Verify current
 
 ## Gameplay tied to useful outcomes
 
+The [November 21 shared game plan](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) is the detailed acceptance contract for original companions, location-based collection, cooperative quests, creator worldbuilding, and optional AR. Evaluate Pokemon Walk selectively, PraxisMapper only for demonstrated geospatial gaps, and LocAR.js as an optional renderer; none is adopted by this plan. Use original/licensed assets, with maintained dependencies and explicit rollback decisions.
+
 Use verified actions to grow the world and personal toolkit: first need met, first offering, completed exchange, fulfilled aid request, pooled order or project milestone. Reward useful non-spending participation as well as commerce. Choose supported equipment/digital rewards rather than showing undeliverable catalog promises.
 
 Possible loops include market days, seasonal harvests, production paths, resource-discovery tasks and cooperative quests. These remain proposals. Define impact measurements before showing savings or waste avoided. Game progress never grants financial/transport authority, changes commission, or gates essential services behind travel/streaks/spending. Progression-dependent delivery must first resolve the recorded schema defect SD-50.
+
+Keep collection/XP in a play ledger separate from verified contribution reputation, Coalition membership, governance, purchase records, and commercial stock. Preserve opt-in comparisons, no streaks/manufactured urgency/guilt notifications, and nonlocation contribution paths. Reuse geocaching consent/audience rules: code-at-the-spot default, explicitly chosen bounded GPS checks, no continuous tracking or public moving people markers. AR is optional and adds no consent to upload footage. Creator prompts must open real supported editors, bounties, or pack workflows; a listing or generic download template is not a working installation.
 
 ## Delivery sequence and acceptance
 
@@ -142,6 +152,8 @@ Possible loops include market days, seasonal harvests, production paths, resourc
 | 4. Social exchange | Listing negotiation-to-checkout and direct trade completion. | Agreement history, expiration, inventory exclusivity, cancellation and handoff confirmation. |
 | 5. Equipment/sites | Permanent tool ownership, restoration, launch/connect and actual named integrations. | Billing migration, refunds/revocation, installed consumers and verified external configuration. |
 | 6. Rich world/expansion | Functional world objects, quests and specialist builds; goods auctions on their own completed lifecycle. | Direct/accessible parity and every visible object linked to an available action. |
+
+For the shared game, apply its separate phase gates: reuse evaluation → one encounter/collection → cooperative activity → reviewed creator pack → verified sale/delivery/application/settlement → optional AR → expansion. This does not enlarge the R1 portal milestone. Close metadata-only listing payload, durable creator-draft resume, content-to-offer association, and actual delivery/settlement gaps for the paid path before offering game packs.
 
 For each capability record source evidence, applicable tests, flags/configuration, required identity/scope, operating dependency, mobile UI and last verified journey. Hide unavailable tools or explain recovery; do not use presence of a module as availability.
 

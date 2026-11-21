@@ -1,5 +1,7 @@
 # FBM unified farmers market: character creation, equipment, and portal plan
 
+> **2026-11-21 shared-game addendum:** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) accepts Blackout's original companion/collection/cooperative exploration direction for FBM's shared World experience. It defines optional AR, consent, separate play/reputation ledgers, original creator packs and purchase-to-runtime delivery gates. No new global game tab, duplicate game/map authority, imported dependency, paid AI persona, or implemented-game claim. Existing R1 scope and economic/privacy rules remain in force.
+
 > **2026-11-20 mobile addendum:** [FBM app plan](FBM_MOBILE_APP_PLAN.md) applies this experience to standalone iOS and Android apps, including sites, inventory and fulfillment. [Current implementation inventory](FBM_MOBILE_IMPLEMENTATION_INVENTORY.md) supersedes the November 12 evidence below for rechecked paths. Reuse the existing asset matcher, launch orchestration, channel jobs, aid lifecycle/allocation, booking/cart linkage, box scheduling, seller push and parcel tracking. The complete portal, world, general direct trades, goods auctions and permanent enhancement ownership remain implementation work. Candidate navigation/art direction is proposed, not selected.
 
 **Decision date:** November 12, 2026  
