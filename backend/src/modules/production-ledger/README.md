@@ -54,15 +54,20 @@ this order (`api/middlewares.ts`):
    plan carries, so it lets every seller through. It is kept so that emptying
    that list puts the paywall back without touching a route.
 
-Two things follow from the key being universal, whatever the flag says:
+Two side effects, one from the key and one from the flag:
 
-- The vendor panel lists "Production Ledger" for every vendor who sells
-  products (`vendor-panel/src/hooks/navigation/use-vendor-navigation.tsx`
-  shows it on the plan key and `hasProducts`, and does not read the flag).
-  With the flag off that page cannot load its batches.
-- With `FF_VENDOR_QUESTS_V1` on as well, the quest substrate reads a vendor's
-  batch summary (`modules/vendor-quest/substrate/build.ts`, `buildProduction`).
-  That read is behind this flag, not behind the plan key.
+- **From the key being universal, whatever the flag says.** The vendor panel
+  lists "Production Ledger" for every vendor who sells products
+  (`vendor-panel/src/hooks/navigation/use-vendor-navigation.tsx` shows it on
+  the plan key and `hasProducts`, and does not read the flag). With the flag
+  off that page cannot load its batches.
+- **From the flag being on.** With `FF_VENDOR_QUESTS_V1` on as well, the quest
+  substrate reads a vendor's batch summary
+  (`modules/vendor-quest/substrate/build.ts`, `buildProduction`) for any
+  seller the quest routes let in (`vendor.quests`: Scale and up, the quest
+  pack, or a tenancy tier). That read checks this flag and never checked the
+  plan key, so putting the key in every plan does not change who it reaches;
+  switching the flag on does.
 
 The costs of a batch live in the
 [`production-costing`](../production-costing/README.md) module, behind its own
