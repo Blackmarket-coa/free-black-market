@@ -720,7 +720,7 @@ medusaIntegrationTestRunner({
           .map((r: { id: string }) => r.id)
           .sort()
 
-      it("list the rows another store wrote, and not a store's own rows held under its members' ids", async () => {
+      it("the nursery query lists the rows another store wrote, and not a store's own rows held under its members' ids", async () => {
         const a = await team(`Ops A ${uid()}`)
         const b = await team(`Ops B ${uid()}`)
         const gone = await removedMemberOf(a.store)
@@ -728,25 +728,36 @@ medusaIntegrationTestRunner({
           const plant = await storeProduct(a.store.id)
           return (await nursery().createNurseryProductAttributes({ seller_id: sellerKey, product_id: plant.id, subtype: "seed_packet" })).id as string
         }
-        const ownNursery = [await nurseryRow(a.store.id), await nurseryRow(a.ownerMemberId), await nurseryRow(gone)]
-        const crossNursery = [await nurseryRow(b.store.id), await nurseryRow(b.memberId), await nurseryRow(`mem_${uid()}`)]
-        expect(await listedAmong(NURSERY, [...ownNursery, ...crossNursery])).toEqual([...crossNursery].sort())
+        const own = [await nurseryRow(a.store.id), await nurseryRow(a.ownerMemberId), await nurseryRow(gone)]
+        // Another store's id, another store's member, and a member id that matches no member.
+        const cross = [await nurseryRow(b.store.id), await nurseryRow(b.memberId), await nurseryRow(`mem_${uid()}`)]
+        expect(await listedAmong(NURSERY, [...own, ...cross])).toEqual([...cross].sort())
+      })
 
+      it("the cycle product query does the same", async () => {
+        const a = await team(`Ops C ${uid()}`)
+        const b = await team(`Ops D ${uid()}`)
+        const gone = await removedMemberOf(a.store)
         const aProduct = await storeProduct(a.store.id, 5)
         const cycleId = await cycleOf(a.member)
         const cycleRow = async (variant: string, sellerKey: string) =>
           (await cycles().createOrderCycleProducts({ order_cycle_id: cycleId, variant_id: variant, seller_id: sellerKey })).id as string
-        const ownCycle = [await cycleRow(aProduct.variants[0], a.store.id), await cycleRow(aProduct.variants[1], a.ownerMemberId), await cycleRow(aProduct.variants[2], gone)]
-        const crossCycle = [await cycleRow(aProduct.variants[3], b.store.id), await cycleRow(aProduct.variants[4], b.memberId)]
-        expect(await listedAmong(CYCLE, [...ownCycle, ...crossCycle])).toEqual([...crossCycle].sort())
+        const own = [await cycleRow(aProduct.variants[0], a.store.id), await cycleRow(aProduct.variants[1], a.ownerMemberId), await cycleRow(aProduct.variants[2], gone)]
+        const cross = [await cycleRow(aProduct.variants[3], b.store.id), await cycleRow(aProduct.variants[4], b.memberId)]
+        expect(await listedAmong(CYCLE, [...own, ...cross])).toEqual([...cross].sort())
+      })
 
+      it("the cycle fee query does the same", async () => {
+        const a = await team(`Ops E ${uid()}`)
+        const b = await team(`Ops F ${uid()}`)
+        const cycleId = await cycleOf(a.member)
         const template = async (sellerKey: string) =>
           (await cycles().createFeeTemplate(sellerKey, { name: `Fee ${uid()}`, fee_type: "packing", calculator_type: "flat_rate", amount: 10 })).id as string
         const fee = async (templateId: string) =>
           (await cycles().createOrderCycleFees({ order_cycle_id: cycleId, enterprise_fee_id: templateId, application_type: "coordinator" })).id as string
-        const ownFees = [await fee(await template(a.store.id)), await fee(await template(a.ownerMemberId))]
-        const crossFees = [await fee(await template(b.store.id)), await fee(await template(b.memberId))]
-        expect(await listedAmong(FEES, [...ownFees, ...crossFees])).toEqual([...crossFees].sort())
+        const own = [await fee(await template(a.store.id)), await fee(await template(a.ownerMemberId))]
+        const cross = [await fee(await template(b.store.id)), await fee(await template(b.memberId))]
+        expect(await listedAmong(FEES, [...own, ...cross])).toEqual([...cross].sort())
       })
     })
   },
