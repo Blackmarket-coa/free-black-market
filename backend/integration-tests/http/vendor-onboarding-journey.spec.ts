@@ -52,8 +52,9 @@ jest.setTimeout(600 * 1000)
  *   and a body naming another store's seller_id there, or in POST
  *   /vendor/products, made the product in that store. A body naming
  *   another store's shipping profile or inventory item, or an item no store
- *   holds, is now refused 403 on both routes, and a seller link that fails
- *   leaves no product (the routes used to log it and answer 200).
+ *   holds, is now refused 403 on both routes and on Mercur's variant
+ *   create, and a seller link that fails leaves no product (the routes used
+ *   to log it and answer 200).
  * - The admin panel's Accept (POST /admin/requests/:id) answered approval
  *   refusals 500.
  * - The assign route refused three of the thirteen resource keys the quiz
@@ -543,6 +544,16 @@ medusaIntegrationTestRunner({
         expect((await rowOf()).status).toBe("succeeded")
         const replayDelivered = await call(api.post(`/admin/blackstar/deliveries/${deliveryId}/replay`, {}, bearer(admin)))
         expect(replayDelivered.status).toBe(409)
+        // A row whose secret is cleared with no delivery behind it is not
+        // marked succeeded: it is dead, says why, and a replay cannot send it.
+        await pg().raw(`UPDATE marketplace_webhook_delivery SET status = 'pending', delivered_at = NULL, next_attempt_at = NOW() WHERE id = ?`, [deliveryId])
+        expect(await webhooks.attemptDelivery(deliveryId)).toBe(false)
+        expect(accepted()).toHaveLength(sentBeforeRetry)
+        expect(await rowOf()).toMatchObject({ status: "dead", delivered_at: null, response_body: expect.stringMatching(/^Not sent: the credential secret/) })
+        const replayCleared = await call(api.post(`/admin/blackstar/deliveries/${deliveryId}/replay`, {}, bearer(admin)))
+        expect(replayCleared.status).toBe(200)
+        expect(replayCleared.data).toMatchObject({ attempted: true, succeeded: false, delivery: { status: "dead" } })
+        expect(accepted()).toHaveLength(sentBeforeRetry)
 
         // ---- An opted-in applicant whose metadata write fails (a logistics
         // vendor type) and whose provisioning throws: the answer is recorded
@@ -837,6 +848,43 @@ medusaIntegrationTestRunner({
       expect(unlinkedLinks.data).toEqual([])
       const otherItemLinks = await query().graph({ entity: sellerInventoryItemLink.entryPoint, fields: ["seller_id"], filters: { inventory_item_id: otherItemId } })
       expect(otherItemLinks.data.map((row: { seller_id: string }) => row.seller_id)).toEqual([otherStore.id])
+      // Mercur's variant create on the caller's own product, which FBM does
+      // not override: an item no store holds, or another store's, is refused
+      // 403 before Mercur's hook can link the store to it.
+      const twoSizes = await call(
+        api.post(
+          "/vendor/seller-products",
+          {
+            ...(await panelProductPayload(token, "Two Size Honey")),
+            options: [{ title: "Size", values: ["Small", "Large"] }],
+            variants: [{ ...(await panelProductPayload(token, "x")).variants[0], title: "Small", options: { Size: "Small" } }],
+          },
+          bearer(token)
+        )
+      )
+      expect(twoSizes.status).toBe(200)
+      const twoSizesId = twoSizes.data.product.id as string
+      for (const itemId of [unlinkedItemId, otherItemId]) {
+        const added = await call(
+          api.post(
+            `/vendor/products/${twoSizesId}/variants`,
+            { title: "Large", options: { Size: "Large" }, prices: [{ currency_code: "usd", amount: 20 }], inventory_items: [{ inventory_item_id: itemId, required_quantity: 1 }] },
+            bearer(token)
+          )
+        )
+        expect({ itemId, status: added.status, type: added.data?.type }).toEqual({ itemId, status: 403, type: "not_allowed" })
+      }
+      const variantsAfter = await pg().raw(`SELECT count(*)::int AS n FROM product_variant WHERE product_id = ? AND deleted_at IS NULL`, [twoSizesId])
+      expect(variantsAfter.rows[0].n).toBe(1)
+      // A variant update takes no inventory_items (Mercur's schema is strict).
+      const smallId = (await productOf(twoSizesId)).variants[0].id as string
+      const updated = await call(
+        api.post(`/vendor/products/${twoSizesId}/variants/${smallId}`, { inventory_items: [{ inventory_item_id: unlinkedItemId, required_quantity: 1 }] }, bearer(token))
+      )
+      expect(updated.status).toBe(400)
+      const unlinkedAfterVariants = await query().graph({ entity: sellerInventoryItemLink.entryPoint, fields: ["seller_id"], filters: { inventory_item_id: unlinkedItemId } })
+      expect(unlinkedAfterVariants.data).toEqual([])
+
       // The caller's own profile is accepted and used.
       const ownProfile = await call(
         api.post("/vendor/seller-products", { ...(await panelProductPayload(token, "Own Profile Honey")), shipping_profile_id: profileId }, bearer(token))
