@@ -8,6 +8,7 @@ import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { sellerIdForVendorActor } from "../../../shared/seller-actor"
 import { resolveAllowedListingType } from "../../../shared/listing-type-guard"
 import { linkProductListingType } from "../../../shared/listing-type-link"
+import { refuseOtherStoresRecords } from "../../../shared/vendor-product-body"
 
 type VariantPrice = {
   amount?: number | string | null
@@ -106,6 +107,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
 
       productData.variants = variants
+    }
+
+    // Only the caller's own shipping profile and inventory items: the body
+    // goes to createProductsWorkflow as it is (shared/vendor-product-body.ts).
+    const refusal = await refuseOtherStoresRecords(req.scope, resolvedSellerId, productData)
+    if (refusal) {
+      return res.status(400).json({ message: refusal, type: "invalid_data" })
     }
 
     // The listing type the request names, or the seller's playbook's default

@@ -11,6 +11,7 @@ import {
   resolveSellerId,
 } from "../../../shared/listing-type-guard"
 import { linkProductListingType } from "../../../shared/listing-type-link"
+import { refuseOtherStoresRecords } from "../../../shared/vendor-product-body"
 
 export async function GET(
   req: MedusaRequest,
@@ -61,6 +62,13 @@ export async function POST(
 
   try {
     const { additional_data, ...productData } = req.body as { additional_data?: Record<string, unknown> } & Record<string, unknown>
+
+    // Only the caller's own shipping profile and inventory items: the body
+    // goes to createProductsWorkflow as it is (shared/vendor-product-body.ts).
+    const refusal = await refuseOtherStoresRecords(req.scope, resolvedSellerId, productData)
+    if (refusal) {
+      return res.status(400).json({ message: refusal, type: "invalid_data" })
+    }
 
     // As /vendor/seller-products: the request's type or the playbook's
     // default, linked below.
