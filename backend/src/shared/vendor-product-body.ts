@@ -24,8 +24,16 @@ import sellerShippingProfileLink from "@mercurjs/b2c-core/links/seller-shipping-
  * not. Everything else a create body can name (sales channels, categories,
  * collection, type, tags) is a marketplace-wide record, not a store's.
  *
- * One message per field for an id that names nothing and one of another
- * store, so the answer says nothing about other stores' records.
+ * The routes answer a refusal with `forbidden()` (403), the same for an id
+ * that names nothing and one of another store, so the answer says nothing
+ * about other stores' records; the messages below are what they log.
+ *
+ * Inventory items: Medusa only checks that a named item exists, so a variant
+ * could be made to require another store's item, and so move that store's
+ * stock (through POS, for one), or claim an item no store is linked to yet
+ * (ticket products make those) and lock its owner out (measured by the
+ * stock-guard review). Only items linked to the caller's store, by a live
+ * `seller_inventory_item` link, are accepted.
  */
 
 export const SHIPPING_PROFILE_NOT_YOURS =
