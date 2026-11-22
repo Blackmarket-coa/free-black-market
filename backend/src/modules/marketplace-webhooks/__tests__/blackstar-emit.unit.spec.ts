@@ -1,6 +1,7 @@
 import { createHmac } from "crypto"
 import MarketplaceWebhooksService, {
   BLACKSTAR_SUBSCRIPTION_ID,
+  CLEARED_UNDELIVERED_REASON,
   isBlackstarEmitConfigured,
 } from "../service"
 
@@ -287,6 +288,20 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
       expect(sent).toHaveLength(1)
       expect(rows[0].status).toBe("succeeded")
       expect(rows[0].next_attempt_at).toBeNull()
+    })
+
+    it("a pending row whose secret was cleared with no delivery behind it is dead, not succeeded, and is not sent", async () => {
+      // Measured by the re-review: such a row was marked succeeded, attempt 0,
+      // delivered_at null, though nothing had been sent.
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      rows[0].payload.payload.credential.secret = "[redacted]"
+      answer(true)
+
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(false)
+      expect(sent).toHaveLength(0)
+      expect(rows[0]).toMatchObject({ status: "dead", next_attempt_at: null, response_body: CLEARED_UNDELIVERED_REASON })
+      expect(rows[0].delivered_at ?? null).toBeNull()
     })
 
     it("a replay of a row that succeeds before its write lands is refused, and the row is left alone", async () => {

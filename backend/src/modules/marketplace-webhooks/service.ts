@@ -40,6 +40,10 @@ const redactedPayload = (payload: unknown): unknown =>
     ? payload
     : redactSecrets(JSON.parse(JSON.stringify(payload)))
 
+/** Why a delivery whose secret was cleared before it was delivered is dead. */
+export const CLEARED_UNDELIVERED_REASON =
+  "Not sent: the credential secret in this delivery was cleared before it was delivered, so it cannot be sent. Issue a new credential from Settings."
+
 /**
  * A delivery row as a caller may see it: the same row, with no secret in its
  * payload, nor in the response body stored beside it. Rows written before
@@ -720,15 +724,27 @@ class MarketplaceWebhooksService extends MedusaService({
       return true
     }
     if (hasClearedSecret(delivery.payload)) {
-      // Only a delivery that landed has its secret cleared, so this one did,
-      // whatever its status says now (a write that raced the success). Never
-      // send "[redacted]" as a credential; put the status back.
-      await (this as any).updateWebhookDeliveries({
-        id: delivery.id,
-        status: WebhookDeliveryStatus.SUCCEEDED,
+      // Never send "[redacted]" as a credential. A row that was delivered
+      // (`delivered_at` set) and had its secret cleared then, whatever its
+      // status says now, goes back to succeeded. One with no delivery behind
+      // it (cleared by hand, or by anything else) is not delivered and cannot
+      // be: it is dead, and says why.
+      if (delivery.delivered_at) {
+        await (this as any).updateWebhookDeliveries({
+          id: delivery.id,
+          status: WebhookDeliveryStatus.SUCCEEDED,
+          next_attempt_at: null,
+        })
+        return true
+      }
+      await this.setOutcomeUnlessSucceeded(delivery.id, {
+        attempt: delivery.attempt ?? 0,
+        status: WebhookDeliveryStatus.DEAD,
+        response_code: null,
+        response_body: CLEARED_UNDELIVERED_REASON,
         next_attempt_at: null,
       })
-      return true
+      return false
     }
     const cfg = blackstarEmitConfig()
     if (!cfg) {
