@@ -1,4 +1,4 @@
-import { REDACTED, redactSecrets, scrubSecretsFrom } from "../redact"
+import { REDACTED, hasClearedSecret, redactSecrets, scrubSecretsFrom } from "../redact"
 
 /**
  * Secrets in a stored delivery's payload. The `node.operator.approved`
@@ -87,6 +87,16 @@ describe("scrubSecretsFrom", () => {
     expect(scrubSecretsFrom("boom", payload)).toBe("boom")
     expect(scrubSecretsFrom(null, payload)).toBeNull()
     expect(scrubSecretsFrom("the secret is safe", { payload: {} })).toBe("the secret is safe")
+  })
+})
+
+describe("hasClearedSecret", () => {
+  it("is true only for a payload whose secret reads [redacted]", () => {
+    expect(hasClearedSecret({ payload: { credential: { key_id: "k", secret: REDACTED } } })).toBe(true)
+    expect(hasClearedSecret({ payload: { credential: { key_id: "k", secret: "a".repeat(64) } } })).toBe(false)
+    expect(hasClearedSecret({ note: REDACTED })).toBe(false)
+    expect(hasClearedSecret({ event_type: "order.created", payload: {} })).toBe(false)
+    expect(hasClearedSecret(null)).toBe(false)
   })
 })
 

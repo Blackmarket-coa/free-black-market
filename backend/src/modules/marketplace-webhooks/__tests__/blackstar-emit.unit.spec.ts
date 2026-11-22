@@ -268,6 +268,65 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
       expect(stored).toBe(echoed.replace(NODE_SECRET, "[redacted]").slice(0, 2000))
     })
 
+    it("a failure written after a concurrent success does not undo it, and a cleared payload is never sent", async () => {
+      // Two attempts of one row: the first lands and clears the secret; the
+      // second, which read the row before that, fails afterwards.
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      answer(true)
+      await svc.attemptDelivery(rows[0].id)
+      expect(rows[0].status).toBe("succeeded")
+
+      await (svc as any).scheduleRetryOrDie(rows[0].id, 2, 500, "late failure")
+      expect(rows[0].status).toBe("succeeded")
+      expect(rows[0].response_body).not.toBe("late failure")
+
+      // Had a write put it back anyway, the cleared payload is still not sent.
+      rows[0].status = "failed"
+      expect(await svc.attemptDelivery(rows[0].id)).toBe(true)
+      expect(sent).toHaveLength(1)
+      expect(rows[0].status).toBe("succeeded")
+      expect(rows[0].next_attempt_at).toBeNull()
+    })
+
+    it("a replay of a row that succeeds before its write lands is refused, and the row is left alone", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      answer(false)
+      await svc.attemptDelivery(rows[0].id)
+      expect(rows[0].status).toBe("failed")
+
+      // The replay reads "failed"; the drain's success lands before its write.
+      const list = (svc as any).listWebhookDeliveries
+      let reads = 0
+      ;(svc as any).listWebhookDeliveries = async (filters: Record<string, unknown>) => {
+        const found = await list(filters)
+        reads += 1
+        if (reads === 1) {
+          const stale = found.map((row: Record<string, unknown>) => ({ ...row }))
+          rows[0].status = "succeeded"
+          rows[0].payload = { ...rows[0].payload, payload: { ...rows[0].payload.payload, credential: { key_id: "bsk_abc", secret: "[redacted]" } } }
+          return stale
+        }
+        return found
+      }
+
+      await expect(svc.replayBlackstarDelivery(rows[0].id, { attemptNow: true })).rejects.toThrow(/already succeeded/)
+      expect(rows[0].status).toBe("succeeded")
+      expect(sent).toHaveLength(1)
+    })
+
+    it("scrubs an echoed secret from a stored response body on the way out, for rows written before it was scrubbed on the way in", async () => {
+      const { svc, rows } = makeService()
+      await emitNodeApproval(svc)
+      rows[0].status = "failed"
+      rows[0].response_body = `422 rejected ${NODE_SECRET}`
+
+      const [listed] = (await svc.listBlackstarDeliveries({})) as any[]
+      expect(listed.response_body).toBe("422 rejected [redacted]")
+      expect(rows[0].response_body).toContain(NODE_SECRET)
+    })
+
     it("leaves a delivery with no secret exactly as it was after it lands", async () => {
       const { svc, rows } = makeService()
       await svc.emitBlackstar("order.created", { source_order_ref: "ord_1" }, { eventId: "evt_order" })

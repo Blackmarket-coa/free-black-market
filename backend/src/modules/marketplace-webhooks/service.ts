@@ -9,7 +9,7 @@ import WebhookDelivery, {
   WebhookDeliveryStatus,
 } from "./models/webhook-delivery"
 import { isBlackoutEventType } from "./models/blackout-events"
-import { redactSecrets, scrubSecretsFrom } from "./redact"
+import { hasClearedSecret, redactSecrets, scrubSecretsFrom } from "./redact"
 import {
   BLACK_MASK_CLAIM_LEASE_MS,
   BLACK_MASK_FETCH_TIMEOUT_MS,
@@ -40,9 +40,21 @@ const redactedPayload = (payload: unknown): unknown =>
     ? payload
     : redactSecrets(JSON.parse(JSON.stringify(payload)))
 
-/** A delivery row as a caller may see it: the same row, no secret in its payload. */
-const withRedactedPayload = <T extends { payload?: unknown }>(delivery: T): T =>
-  ({ ...delivery, payload: redactedPayload(delivery.payload) }) as T
+/**
+ * A delivery row as a caller may see it: the same row, with no secret in its
+ * payload, nor in the response body stored beside it. Rows written before
+ * the response body was scrubbed at write time can hold an echo of the
+ * secret there; their payload still holds the secret, so it is found and
+ * scrubbed on the way out.
+ */
+const withRedactedPayload = <T extends { payload?: unknown; response_body?: unknown }>(delivery: T): T =>
+  ({
+    ...delivery,
+    payload: redactedPayload(delivery.payload),
+    ...(typeof delivery.response_body === "string"
+      ? { response_body: scrubSecretsFrom(delivery.response_body, delivery.payload) }
+      : {}),
+  }) as T
 
 /**
  * Sentinel subscription id for the global Blackout outbound channel (§1).
@@ -324,14 +336,18 @@ class MarketplaceWebhooksService extends MedusaService({
       throw new Error(`Delivery ${deliveryId} already succeeded; replaying it would duplicate it`)
     }
 
-    await (this as any).updateWebhookDeliveries({
-      id: delivery.id,
+    // Conditional, so a delivery that succeeds between the read above and
+    // this write (its secret already cleared) is not put back on the queue.
+    const reset = await this.setOutcomeUnlessSucceeded(delivery.id, {
       attempt: 0,
       status: WebhookDeliveryStatus.PENDING,
       next_attempt_at: new Date(),
       response_code: null,
       response_body: null,
     })
+    if (!reset) {
+      throw new Error(`Delivery ${deliveryId} already succeeded; replaying it would duplicate it`)
+    }
 
     let succeeded: boolean | null = null
     if (opts.attemptNow) {
@@ -703,6 +719,17 @@ class MarketplaceWebhooksService extends MedusaService({
       // landed: sending it again would send "[redacted]" as a credential.
       return true
     }
+    if (hasClearedSecret(delivery.payload)) {
+      // Only a delivery that landed has its secret cleared, so this one did,
+      // whatever its status says now (a write that raced the success). Never
+      // send "[redacted]" as a credential; put the status back.
+      await (this as any).updateWebhookDeliveries({
+        id: delivery.id,
+        status: WebhookDeliveryStatus.SUCCEEDED,
+        next_attempt_at: null,
+      })
+      return true
+    }
     const cfg = blackstarEmitConfig()
     if (!cfg) {
       // Config went away after enqueue — stay pending for a later drain.
@@ -923,10 +950,12 @@ class MarketplaceWebhooksService extends MedusaService({
     responseCode: number | null,
     responseBody: string | null
   ): Promise<void> {
+    // Conditional: a concurrent attempt of the same row may have succeeded
+    // (and cleared its secret) since this one read it. Marking that row
+    // failed or dead would queue "[redacted]" to be sent.
     const isFinalAttempt = attempt >= MAX_ATTEMPTS
     if (isFinalAttempt) {
-      await (this as any).updateWebhookDeliveries({
-        id: deliveryId,
+      await this.setOutcomeUnlessSucceeded(deliveryId, {
         attempt,
         status: WebhookDeliveryStatus.DEAD,
         response_code: responseCode,
@@ -937,14 +966,65 @@ class MarketplaceWebhooksService extends MedusaService({
     }
     const backoffMinutes = RETRY_BACKOFF_MINUTES[attempt - 1] ?? 30
     const next = new Date(Date.now() + backoffMinutes * 60_000)
-    await (this as any).updateWebhookDeliveries({
-      id: deliveryId,
+    await this.setOutcomeUnlessSucceeded(deliveryId, {
       attempt,
       status: WebhookDeliveryStatus.FAILED,
       response_code: responseCode,
       response_body: responseBody,
       next_attempt_at: next,
     })
+  }
+
+  /**
+   * Write a delivery's outcome unless it has succeeded, in one conditional
+   * statement (`... WHERE status <> 'succeeded'`), so it cannot land on top
+   * of a success written in between. Returns whether the row was written.
+   *
+   * Without a database connection to issue that statement on (the in-memory
+   * unit harnesses) it reads the status and then writes, which is the same
+   * rule without the atomicity; the Postgres path is pinned by
+   * integration-tests/http/vendor-onboarding-journey.spec.ts.
+   */
+  private async setOutcomeUnlessSucceeded(
+    deliveryId: string,
+    outcome: {
+      attempt: number
+      status: WebhookDeliveryStatus
+      response_code: number | null
+      response_body: string | null
+      next_attempt_at: Date | null
+    }
+  ): Promise<boolean> {
+    const pg = this.resolvePgConnection()
+    if (pg) {
+      const result = await pg.raw(
+        `UPDATE marketplace_webhook_delivery
+            SET attempt = ?,
+                status = ?,
+                response_code = ?,
+                response_body = ?,
+                next_attempt_at = ?,
+                updated_at = NOW()
+          WHERE id = ?
+            AND deleted_at IS NULL
+            AND status <> ?
+        RETURNING id`,
+        [
+          outcome.attempt,
+          outcome.status,
+          outcome.response_code,
+          outcome.response_body,
+          outcome.next_attempt_at,
+          deliveryId,
+          WebhookDeliveryStatus.SUCCEEDED,
+        ]
+      )
+      return Boolean(result?.rows?.length)
+    }
+    const [row] = await this.listWebhookDeliveries({ id: deliveryId })
+    if (!row || row.status === WebhookDeliveryStatus.SUCCEEDED) return false
+    await (this as any).updateWebhookDeliveries({ id: deliveryId, ...outcome })
+    return true
   }
 
   /**

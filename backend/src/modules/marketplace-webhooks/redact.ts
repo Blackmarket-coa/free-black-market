@@ -34,6 +34,24 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 }
 
 /**
+ * Whether `value` holds {@link REDACTED} under a key ending in "secret": a
+ * delivery payload whose secret was cleared, which happens only once it has
+ * been delivered. Such a payload is never sent.
+ */
+export function hasClearedSecret(value: unknown): boolean {
+  const walk = (inner: unknown, seen: Set<object>): boolean => {
+    if (!inner || typeof inner !== "object" || seen.has(inner)) return false
+    seen.add(inner)
+    if (Array.isArray(inner)) return inner.some((item) => walk(item, seen))
+    if (!isPlainObject(inner)) return false
+    return Object.entries(inner).some(
+      ([key, item]) => (isSecretKey(key) && item === REDACTED) || walk(item, seen)
+    )
+  }
+  return walk(asSent(value), new Set())
+}
+
+/**
  * A deep copy of `value` with every value under a key ending in "secret"
  * replaced by {@link REDACTED}. Everything else, key ids included, is kept,
  * so a redacted delivery still says which credential it carried.
