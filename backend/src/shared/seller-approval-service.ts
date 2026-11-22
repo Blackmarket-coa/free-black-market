@@ -21,6 +21,7 @@ import { VendorType } from "../modules/seller-extension/models/seller-metadata"
 import { SELLER_EXTENSION_MODULE } from "../modules/seller-extension"
 import type SellerExtensionService from "../modules/seller-extension/service"
 import {
+  createSellerMetadataRecord,
   listSellerMetadataRecords,
   updateSellerMetadataRecord,
 } from "../modules/seller-extension/metadata-service"
@@ -674,6 +675,43 @@ export class SellerApprovalService {
         log.warn(`[SellerApproval] Failed to send vendor acceptance notification: ${notificationError.message}`)
       }
 
+      // The deliveries answer, recorded on its own before provisioning, so
+      // nothing provisioning does or throws can lose it. Step 5 sets it when
+      // it creates the metadata row, but step 5 can fail (a `logistics`
+      // vendor type does: the Postgres enum has no such value), or find a row
+      // already there (seller_id is unique: an approval resumed onto its
+      // store, or a route that wrote one first, keeps its defaults). Without
+      // this the settings page would read back "off" for a seller who said
+      // yes. When there is no row it creates one, as the Settings route does.
+      // Not the sellerCreated subscriber, which this used to rely on: it
+      // listens for an event named "sellerCreated" that nothing emits
+      // (Mercur's createSellerWorkflow declares a workflow hook of that name,
+      // not an event), so it never runs.
+      const optedIn = data.node_operator_opt_in === true
+      if (optedIn) {
+        try {
+          const sellerExtension = this.container.resolve<SellerExtensionService>(
+            SELLER_EXTENSION_MODULE
+          )
+          const [meta] = await listSellerMetadataRecords(sellerExtension, {
+            seller_id: seller.id,
+          })
+          if (!meta) {
+            await createSellerMetadataRecord(sellerExtension, [
+              { seller_id: seller.id, node_operator_opt_in: true },
+            ])
+          } else if (!meta.node_operator_opt_in) {
+            await updateSellerMetadataRecord(sellerExtension, [
+              { id: meta.id, node_operator_opt_in: true },
+            ])
+          }
+        } catch (flagError: any) {
+          log.warn(
+            `[SellerApproval] Could not record node operator opt-in for ${seller.id}: ${flagError.message}`
+          )
+        }
+      }
+
       try {
         // An applicant who answered yes to carrying deliveries becomes a
         // Blackstar node operator. Only that answer decides it: not the
@@ -685,8 +723,8 @@ export class SellerApprovalService {
         // What happens to the credential's secret, which approval has no one
         // to show to (no response field, no mail):
         // - Blackstar's emit not configured: nothing is issued and nothing is
-        //   queued. The opt-in is recorded below, and the vendor issues the
-        //   credential from Settings (POST /vendor/node-operator), which
+        //   queued. The opt-in recorded above stands, and the vendor issues
+        //   the credential from Settings (POST /vendor/node-operator), which
         //   shows it once.
         // - configured: a credential is issued (stored encrypted, readable by
         //   no route) and its plaintext leaves in the `node.operator.approved`
@@ -694,7 +732,6 @@ export class SellerApprovalService {
         //   then clears it, and the admin deliveries routes redact it. The
         //   vendor still gets a secret of their own only from Settings, which
         //   re-issues.
-        const optedIn = data.node_operator_opt_in === true
         const provisioned = await provisionNodeOperator(this.container, {
           sellerId: seller.id,
           sellerName: seller.name,
@@ -707,36 +744,6 @@ export class SellerApprovalService {
           log.info(
             `[SellerApproval] ${seller.id} opted in to carry deliveries; no credential was issued (${provisioned.reason}). The opt-in is recorded and the vendor issues the credential from Settings.`
           )
-        }
-
-        // Record the answer on the metadata row whatever provisioning did.
-        // Step 5 sets it when it creates the row, but step 5 can fail, or find
-        // a row already there (seller_id is unique: an approval resumed onto
-        // its store, or a route that wrote one first, keeps its defaults).
-        // Either way the settings page would read back "off" for a seller who
-        // said yes, and may hold a credential. Not the sellerCreated
-        // subscriber, which this used to blame: it listens for an event named
-        // "sellerCreated" that nothing emits (Mercur's createSellerWorkflow
-        // declares a workflow hook of that name, not an event), so it never
-        // runs.
-        if (optedIn) {
-          try {
-            const sellerExtension = this.container.resolve<SellerExtensionService>(
-              SELLER_EXTENSION_MODULE
-            )
-            const [meta] = await listSellerMetadataRecords(sellerExtension, {
-              seller_id: seller.id,
-            })
-            if (meta && !meta.node_operator_opt_in) {
-              await updateSellerMetadataRecord(sellerExtension, [
-                { id: meta.id, node_operator_opt_in: true },
-              ])
-            }
-          } catch (flagError: any) {
-            log.warn(
-              `[SellerApproval] Could not record node operator opt-in for ${seller.id}: ${flagError.message}`
-            )
-          }
         }
       } catch (provisionError: any) {
         log.warn(

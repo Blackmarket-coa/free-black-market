@@ -134,20 +134,31 @@ export async function provisionNodeOperator(
     secret = minted.secret;
   }
 
-  const queued = await webhooks.emitBlackstar(
-    "node.operator.approved",
-    {
-      // `external_ref` is the idempotency key on Blackstar's side: a redelivery
-      // must not mint a second node for the same seller.
-      external_ref: input.sellerId,
-      seller_id: input.sellerId,
-      seller_name: input.sellerName,
-      member_email: input.memberEmail,
-      member_name: input.memberName,
-      credential: { key_id: keyId, secret },
-    },
-    { correlationId: input.correlationId },
-  );
+  let queued: Awaited<ReturnType<MarketplaceWebhooksService["emitBlackstar"]>>;
+  try {
+    queued = await webhooks.emitBlackstar(
+      "node.operator.approved",
+      {
+        // `external_ref` is the idempotency key on Blackstar's side: a redelivery
+        // must not mint a second node for the same seller.
+        external_ref: input.sellerId,
+        seller_id: input.sellerId,
+        seller_name: input.sellerName,
+        member_email: input.memberEmail,
+        member_name: input.memberName,
+        credential: { key_id: keyId, secret },
+      },
+      { correlationId: input.correlationId },
+    );
+  } catch (error) {
+    // Nothing was queued, so the credential just issued has no one to go to:
+    // take it back, and let the caller see the error (approval logs it and
+    // goes on; it has already recorded the opt-in).
+    if (blackstar) {
+      await blackstar.revokeNodeOperatorCredential(input.sellerId).catch(() => undefined);
+    }
+    throw error;
+  }
   if (!queued) {
     // The emit was configured a moment ago and is not now: nothing was
     // queued, so the credential just issued has no one to go to. Known gap,

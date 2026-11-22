@@ -190,4 +190,17 @@ describe("provisionNodeOperator", () => {
     expect(result).toEqual({ emitted: false, reason: "blackstar_not_configured" })
     expect(revoke).toHaveBeenCalledWith("sel_1")
   })
+
+  it("takes back the credential when queueing the event throws, and lets the error out", async () => {
+    const emit = jest.fn(async () => {
+      throw new Error("database is down")
+    })
+    const issue = jest.fn(async () => ({ key_id: "bsk_abc", secret: "s".repeat(64) }))
+    const revoke = jest.fn(async () => undefined)
+
+    await expect(
+      provisionNodeOperator(containerWith(emit, { issue, revoke }), { ...input, optedIn: true })
+    ).rejects.toThrow("database is down")
+    expect(revoke).toHaveBeenCalledWith("sel_1")
+  })
 })
