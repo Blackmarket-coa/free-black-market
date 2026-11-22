@@ -12,6 +12,14 @@ import { BountyObjective, BountyStatus, BountyVisibility } from "./models/demand
 import { ProposalStatus } from "./models/supplier-proposal"
 import { applyBuyerArchetypeDefaults } from "./buyer-archetype"
 
+/** A bounty on a pool in one of these cannot be claimed: not yet published, or over. */
+const POOL_STATUSES_CLOSED_TO_BOUNTY_CLAIMS: DemandPostStatus[] = [
+  DemandPostStatus.DRAFT,
+  DemandPostStatus.CANCELLED,
+  DemandPostStatus.EXPIRED,
+  DemandPostStatus.FULFILLED,
+]
+
 class DemandPoolModuleService extends MedusaService({
   DemandPost,
   DemandParticipant,
@@ -609,6 +617,14 @@ class DemandPoolModuleService extends MedusaService({
    * The claim is decided by a DB-atomic
    * `UPDATE ... SET assignee_id = :actor WHERE assignee_id IS NULL`, so
    * concurrent claimants cannot both win.
+   *
+   * Only an ACTIVE, PUBLIC bounty on a pool that is open for work can be
+   * claimed. Before, any unassigned bounty could: one cancelled with its pool
+   * (expiry, a failed launch), one on a pool that had expired, been cancelled
+   * or fulfilled, and a RESTRICTED one, which only its creator's
+   * `assignBounty` should hand out. The status and visibility are in the
+   * atomic UPDATE too, so a bounty cancelled between the read and the write
+   * is not claimed.
    */
   async claimBounty(
     bountyId: string,
@@ -630,6 +646,13 @@ class DemandPoolModuleService extends MedusaService({
     if (bounty.assignee_id) {
       throw new Error("Bounty already claimed")
     }
+    if (bounty.status !== BountyStatus.ACTIVE || bounty.visibility === BountyVisibility.RESTRICTED) {
+      throw new Error("Bounty is not open for claims")
+    }
+    const [post] = await this.listDemandPosts({ id: demandPostId })
+    if (!post || POOL_STATUSES_CLOSED_TO_BOUNTY_CLAIMS.includes(post.status as DemandPostStatus)) {
+      throw new Error("Bounty is not open for claims")
+    }
 
     // Atomic first-come claim. The read above only reports what was true a
     // moment ago, so the `assignee_id IS NULL` predicate is what actually
@@ -648,6 +671,8 @@ class DemandPoolModuleService extends MedusaService({
             AND demand_post_id = ?
             AND deleted_at IS NULL
             AND assignee_id IS NULL
+            AND status = 'ACTIVE'
+            AND visibility = 'PUBLIC'
         RETURNING id`,
         [actorId, actorType, bountyId, demandPostId]
       )

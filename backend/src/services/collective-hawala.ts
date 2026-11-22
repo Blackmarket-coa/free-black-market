@@ -475,9 +475,22 @@ export class CollectiveHawalaService {
   }
 
   /**
-   * Refund the un-paid remainder of a bounty's escrow back to its
-   * contributor (e.g. when the demand pool is cancelled or expires).
-   * No-op (returns null) if the bounty is already fully paid out.
+   * Refund the un-paid remainder of a bounty's own escrow back to its
+   * contributor (when the demand pool expires, or a launch fails).
+   *
+   * Only what this bounty put in comes back out. `escrowBountyFunds`,
+   * `escrowParticipantFunds` and every other bounty's escrow credit the SAME
+   * per-pool ESCROW account, so a refund sized by `amount` alone pays an
+   * unescrowed bounty out of the participants' purchase money: measured in
+   * the SD-63 re-review, a $60 bounty added with nothing escrowed beside a
+   * participant's $100 took $60 of it on expiry. The same guard as
+   * `completeAndPayMilestone`'s, on the way out:
+   *
+   * - a bounty that never escrowed gets nothing; it is cancelled, as every
+   *   bounty this is called for is (its pool is ending), and null is returned;
+   * - an escrowed bounty gets back at most what its escrow entry moved, less
+   *   what its milestones already paid out of it;
+   * - null when nothing is left.
    */
   async refundBountyEscrow(input: {
     demand_post_id: string
@@ -491,8 +504,39 @@ export class CollectiveHawalaService {
     }
     const bounty = bounties[0]
 
+    if (!bounty.escrowed) {
+      if (
+        bounty.status === BountyStatus.ACTIVE ||
+        bounty.status === BountyStatus.MILESTONE_PARTIAL
+      ) {
+        await this.demandPoolService.updateDemandBounties({
+          id: input.bounty_id,
+          status: BountyStatus.CANCELLED,
+        })
+      }
+      return null
+    }
+
+    // What this bounty's escrow entry moved into the pool. Without it (or with
+    // an entry that is not this bounty's escrow) there is no amount this
+    // bounty can be shown to own, so nothing moves.
+    const escrowEntryId = bounty.escrow_ledger_entry_id as string | null
+    const [escrowEntry] = escrowEntryId
+      ? await this.hawalaService.listLedgerEntries({ id: escrowEntryId })
+      : []
+    if (
+      !escrowEntry ||
+      escrowEntry.reference_type !== "DEMAND_BOUNTY" ||
+      escrowEntry.reference_id !== input.bounty_id
+    ) {
+      throw new Error(
+        `Bounty ${input.bounty_id} is marked escrowed but its escrow entry is missing; not refunding`
+      )
+    }
+
     const remainder =
-      Number(bounty.amount) - Number(bounty.amount_paid_out)
+      Math.min(Number(bounty.amount), Number(escrowEntry.amount)) -
+      Number(bounty.amount_paid_out)
     if (remainder <= 0) {
       return null
     }

@@ -88,6 +88,50 @@ describe("DemandPoolModuleService", () => {
   })
 
   describe("claimBounty", () => {
+    // Only an ACTIVE, PUBLIC bounty on a pool open for work can be claimed
+    // (SD-63 re-review): a bounty cancelled with its pool, one on a pool that
+    // is over, and a RESTRICTED one were all claimable.
+    it.each([
+      ["a cancelled bounty", { status: BountyStatus.CANCELLED }, "OPEN"],
+      ["a completed bounty", { status: BountyStatus.COMPLETED }, "OPEN"],
+      ["a RESTRICTED bounty", { visibility: "RESTRICTED" }, "OPEN"],
+      ["a bounty on an expired pool", {}, "EXPIRED"],
+      ["a bounty on a cancelled pool", {}, "CANCELLED"],
+      ["a bounty on a fulfilled pool", {}, "FULFILLED"],
+      ["a bounty on an unpublished pool", {}, "DRAFT"],
+    ])("refuses %s without writing", async (_label, fields, postStatus) => {
+      const updateDemandBounties = jest.fn()
+      const pgRaw = jest.fn()
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE, visibility: "PUBLIC", ...fields },
+        ]),
+        listDemandPosts: jest.fn(async () => [{ id: "dp_1", status: postStatus }]),
+        updateDemandBounties,
+        resolvePgConnection: () => ({ raw: pgRaw }),
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.claimBounty.call(ctx, "b_1", "user_1", "CUSTOMER", "dp_1")
+      ).rejects.toThrow("Bounty is not open for claims")
+      expect(pgRaw).not.toHaveBeenCalled()
+      expect(updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("keeps the status and visibility in the atomic claim, so a bounty cancelled after the read is not claimed", async () => {
+      const pgRaw = jest.fn(async () => ({ rows: [{ id: "b_1" }] }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [{ id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE, visibility: "PUBLIC" }]),
+        listDemandPosts: jest.fn(async () => [{ id: "dp_1", status: "THRESHOLD_MET" }]),
+        resolvePgConnection: () => ({ raw: pgRaw }),
+      }
+
+      await DemandPoolModuleService.prototype.claimBounty.call(ctx, "b_1", "user_1", "CUSTOMER", "dp_1")
+      const sql = (pgRaw.mock.calls[0] as unknown[])[0] as string
+      expect(sql).toContain("AND status = 'ACTIVE'")
+      expect(sql).toContain("AND visibility = 'PUBLIC'")
+    })
+
     it("rejects a second claim once assigned", async () => {
       const bounty: any = {
         id: "b_1",
@@ -100,6 +144,7 @@ describe("DemandPoolModuleService", () => {
           Object.assign(bounty, input)
           return bounty
         }),
+        listDemandPosts: jest.fn(async () => [{ id: "dp_1", status: "OPEN" }]),
         // No SQL connection — exercises the read-modify-write fallback.
         resolvePgConnection: () => undefined,
       }
@@ -135,6 +180,7 @@ describe("DemandPoolModuleService", () => {
             : []
         ),
         updateDemandBounties,
+        listDemandPosts: jest.fn(async () => [{ id: "dp_owner", status: "OPEN" }]),
         resolvePgConnection: () => undefined,
       }
 
@@ -161,6 +207,7 @@ describe("DemandPoolModuleService", () => {
           { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE },
         ]),
         updateDemandBounties: jest.fn(),
+        listDemandPosts: jest.fn(async () => [{ id: "dp_1", status: "OPEN" }]),
         resolvePgConnection: () => ({ raw }),
       }
 
@@ -188,6 +235,7 @@ describe("DemandPoolModuleService", () => {
           { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE },
         ]),
         updateDemandBounties: jest.fn(),
+        listDemandPosts: jest.fn(async () => [{ id: "dp_1", status: "OPEN" }]),
         resolvePgConnection: () => ({ raw }),
       }
 

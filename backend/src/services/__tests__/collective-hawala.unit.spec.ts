@@ -27,7 +27,19 @@ function makeFakeHawala() {
     }),
     createAccount: jest.fn(),
     getOrCreateSystemAccount: jest.fn(),
+    // No entries unless a test says what a bounty escrowed (withEscrowEntry).
+    listLedgerEntries: jest.fn(async (_filter: any): Promise<any[]> => []),
   }
+}
+
+/** A bounty's escrow entry, as escrowBountyFunds records it, on a fake ledger. */
+function withEscrowEntry<T extends ReturnType<typeof makeFakeHawala>>(
+  hawala: T,
+  entry: { id: string; amount: number; reference_id: string }
+): T {
+  const stored = { reference_type: "DEMAND_BOUNTY", ...entry }
+  hawala.listLedgerEntries = jest.fn(async (filter: any) => (filter?.id === entry.id ? [stored] : []))
+  return hawala
 }
 
 function makeFakeDemandPool(overrides: Partial<any> = {}) {
@@ -113,8 +125,8 @@ describe("CollectiveHawalaService", () => {
     expect(call.idempotency_key).toBe("bounty-payout-b_1-m1")
   })
 
-  it("refundBountyEscrow refunds the unpaid remainder", async () => {
-    const hawala = makeFakeHawala()
+  it("refundBountyEscrow refunds the unpaid remainder of what the bounty escrowed", async () => {
+    const hawala = withEscrowEntry(makeFakeHawala(), { id: "entry_esc_1", amount: 100, reference_id: "b_1" })
     const demandPool = makeFakeDemandPool({
       bounties: {
         b_1: {
@@ -123,6 +135,8 @@ describe("CollectiveHawalaService", () => {
           amount: 100,
           amount_paid_out: 40,
           status: "MILESTONE_PARTIAL",
+          escrowed: true,
+          escrow_ledger_entry_id: "entry_esc_1",
         },
       },
     })
@@ -145,7 +159,7 @@ describe("CollectiveHawalaService", () => {
   })
 
   it("refundBountyEscrow is a no-op when fully paid out", async () => {
-    const hawala = makeFakeHawala()
+    const hawala = withEscrowEntry(makeFakeHawala(), { id: "entry_esc_1", amount: 100, reference_id: "b_1" })
     const demandPool = makeFakeDemandPool({
       bounties: {
         b_1: {
@@ -154,6 +168,8 @@ describe("CollectiveHawalaService", () => {
           amount: 100,
           amount_paid_out: 100,
           status: "COMPLETED",
+          escrowed: true,
+          escrow_ledger_entry_id: "entry_esc_1",
         },
       },
     })
@@ -169,6 +185,62 @@ describe("CollectiveHawalaService", () => {
 
     expect(entry).toBeNull()
     expect(hawala.createTransfer).not.toHaveBeenCalled()
+  })
+
+  // The pool's ESCROW account holds every participant's and every bounty's
+  // money together (SD-63 re-review: a $60 bounty with nothing escrowed took
+  // $60 of a participant's $100 on expiry).
+  it("refundBountyEscrow moves nothing for a bounty that never escrowed, and cancels it", async () => {
+    const hawala = makeFakeHawala()
+    const demandPool = makeFakeDemandPool({
+      bounties: {
+        b_1: { id: "b_1", contributor_id: "cus_c", amount: 60, amount_paid_out: 0, status: "ACTIVE", escrowed: false },
+      },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    expect(await svc.refundBountyEscrow({ demand_post_id: "dp_1", bounty_id: "b_1" })).toBeNull()
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
+    expect(demandPool.bounties.b_1.status).toBe("CANCELLED")
+  })
+
+  it("refundBountyEscrow returns at most what the bounty's escrow entry moved", async () => {
+    const hawala = withEscrowEntry(makeFakeHawala(), { id: "entry_esc_1", amount: 30, reference_id: "b_1" })
+    const demandPool = makeFakeDemandPool({
+      bounties: {
+        b_1: {
+          id: "b_1",
+          contributor_id: "user_1",
+          amount: 50,
+          amount_paid_out: 10,
+          status: "MILESTONE_PARTIAL",
+          escrowed: true,
+          escrow_ledger_entry_id: "entry_esc_1",
+        },
+      },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await svc.refundBountyEscrow({ demand_post_id: "dp_1", bounty_id: "b_1" })
+    expect(hawala.createTransfer.mock.calls[0][0].amount).toBe(20)
+  })
+
+  it.each([
+    ["no escrow entry id", { escrow_ledger_entry_id: null }],
+    ["an entry that does not exist", { escrow_ledger_entry_id: "entry_gone" }],
+    ["another bounty's entry", { escrow_ledger_entry_id: "entry_other" }],
+  ])("refundBountyEscrow refuses an escrowed bounty with %s, moving nothing", async (_label, fields) => {
+    const hawala = withEscrowEntry(makeFakeHawala(), { id: "entry_other", amount: 100, reference_id: "b_other" })
+    const demandPool = makeFakeDemandPool({
+      bounties: {
+        b_1: { id: "b_1", contributor_id: "user_1", amount: 50, amount_paid_out: 0, status: "ACTIVE", escrowed: true, ...fields },
+      },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await expect(svc.refundBountyEscrow({ demand_post_id: "dp_1", bounty_id: "b_1" })).rejects.toThrow(/escrow entry is missing/)
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
+    expect(demandPool.bounties.b_1.status).toBe("ACTIVE")
   })
 })
 
