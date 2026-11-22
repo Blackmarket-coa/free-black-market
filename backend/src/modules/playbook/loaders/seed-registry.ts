@@ -24,9 +24,11 @@ export const PLAYBOOK_MODEL_SERVICE_KEY = "playbookService"
  * The assign workflow refuses a recipe the registry has no row for, and only
  * `scripts/seed-playbooks.ts` filled the table, which neither the start
  * script nor the seed runs. A module loader, not `src/loaders/`: Medusa 2.14
- * runs module loaders when it loads the module (at `medusa start`,
- * `develop` and `exec`, not in `db:migrate`), and nothing in Medusa 2.14
- * loads a project's `src/loaders` directory.
+ * runs module loaders whenever it loads the app: at `medusa start`, `develop`
+ * and `exec`, and at the end of `db:migrate`, whose migration-scripts step
+ * loads the app after migrating (its migration step loads modules without
+ * their loaders). Nothing in Medusa 2.14 loads a project's `src/loaders`
+ * directory.
  */
 export default async function seedPlaybookRegistry({
   container,

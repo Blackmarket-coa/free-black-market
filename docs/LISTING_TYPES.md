@@ -19,12 +19,12 @@ CHECK constraint, so seeded data is never rejected.
 A create request names its type in `additional_data.listing_type_id`. One
 that names none takes the seller's playbook's `default_listing_type`
 (`physical_product` on every playbook that allows it, `bookable` on Service);
-until 2026-11-17 it took `physical_product` whatever the playbook, and the
+before this it took `physical_product` whatever the playbook, and the
 vendor panel's product form names none, so a Service vendor could create
 nothing. Both create routes (`POST /vendor/seller-products`, the panel's,
 and `POST /vendor/products`, FBM's handler behind Mercur's validator) link
 the new product to that type's `listing_type` row, which nothing did before;
-products made before 2026-11-17, or by the other product-creating workflows
+products made before both routes linked it, or by the other product-creating workflows
 (digital, ticket, restaurant, launch, Blackout listing), are not linked, and
 an unlinked product reads as `physical_product`. The `listing_type` table is
 seeded on every boot by the module's loader (missing rows only).

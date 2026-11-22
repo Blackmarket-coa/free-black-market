@@ -213,12 +213,13 @@ The `playbook` table is seeded on every boot by the playbook module's loader
 (`backend/src/modules/playbook/loaders/seed-registry.ts`; the listing-type
 module seeds `listing_type` the same way). It inserts the recipes the table
 lacks, matched by `recipe_id` (a soft-deleted row counts as present), and never
-changes a row that is there, so an operator's edit survives restarts. Until
-2026-11-17 nothing ran the seed: the only writer was
+changes a row that is there, so an operator's edit survives restarts. Before
+this loader nothing ran the seed: the only writer was
 `backend/src/scripts/seed-playbooks.ts`, which neither the start script nor
 the seed calls, so a fresh database had no playbooks, approval silently
 dropped the applicant's playbook and `POST /vendor/playbook/assign` answered
-500. Medusa 2.14 runs module loaders, not the project's `src/loaders/`
+500. The loader also runs at the end of `db:migrate` (its migration-scripts
+step loads the app after migrating). Medusa 2.14 runs module loaders, not the project's `src/loaders/`
 directory, which is why this lives in the module.
 
 Check it: `SELECT count(*) FROM playbook WHERE deleted_at IS NULL;` should be
