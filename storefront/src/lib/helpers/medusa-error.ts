@@ -26,5 +26,15 @@ export default function medusaError(error: any): never {
   logger.error("[medusaError] Request failed", { status, message })
 
   const normalized = message.charAt(0).toUpperCase() + message.slice(1)
-  throw new Error(normalized.endsWith(".") ? normalized : `${normalized}.`)
+  const normalizedError: Error & { status?: number } = new Error(
+    normalized.endsWith(".") ? normalized : `${normalized}.`
+  )
+  // The HTTP status, when the backend answered at all: what tells a refusal
+  // it worded for the buyer from a request that never got there ("fetch
+  // failed"). A caller that shows the message to a buyer checks it
+  // (`tryAddToCart`, lib/data/cart.ts).
+  if (typeof status === "number") {
+    normalizedError.status = status
+  }
+  throw normalizedError
 }

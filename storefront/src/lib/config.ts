@@ -199,6 +199,10 @@ export async function fetchQuery(
             // apart from `message` so no existing caller starts surfacing it;
             // a caller that wants it opts in (lib/data/hawala.ts does).
             legacyError: typeof data?.error === "string" ? data.error : undefined,
+            // The main checkout's 409 `cart_already_completed` names the order
+            // the cart already became (backend SD-147); `placeOrder` sends the
+            // buyer there.
+            orderId: typeof data?.order_id === "string" ? data.order_id : undefined,
           },
       data: res.ok ? data : null,
     }

@@ -7,16 +7,13 @@ import {
   QuoteStateError,
   type QuoteLineInput,
 } from "../../../modules/quote/pricing"
+import { getSellerId } from "../quests/_helpers"
 
 const log = createLogger("api/vendor/quotes")
 
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
-
 /** GET /vendor/quotes — this vendor's quotes. */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<QuoteService>(QUOTE_MODULE)
@@ -48,7 +45,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * line pretends to negotiate FBM's own commission.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const body = (req.body ?? {}) as Record<string, unknown>

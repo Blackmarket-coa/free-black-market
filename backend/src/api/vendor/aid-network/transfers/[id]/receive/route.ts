@@ -20,7 +20,7 @@ export const POST = async (
   req: MedusaRequest<ReceiveBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as ReceiveBody)

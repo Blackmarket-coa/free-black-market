@@ -22,18 +22,24 @@ describe("farm + storefront provenance flow", () => {
         year: 2020,
         harvest_date: "2020-08-01",
       },
-      auth_context: { actor_id: "seller_1" },
+      // A request the vendor gate let through for store seller_1: the farm is
+      // the store's, and the storefront reads it by the product's seller.
+      auth_context: { actor_id: "mem_1" },
+      _seller_id: "seller_1",
+      _sellerContextResolved: true,
       scope: {
         resolve: (key: string) => {
           if (key === "query") {
             return {
               graph: async ({ entity }: { entity: string }) => {
-                if (entity === "producer_seller") return { data: [{ producer_id: "prod_1" }] }
                 if (entity === "producer") return { data: [{ id: "prod_1", year_established: 2022 }] }
                 return { data: [] }
               },
             }
           }
+          // The store's farm profile is the producer whose seller_id is the
+          // store (vendor/farm/_access.ts).
+          if (key === "producer") return { listProducers: async () => [{ id: "prod_1" }] }
           if (key === "agriculture") return { createHarvests: jest.fn() }
           if (key === "link") return { create: jest.fn() }
           return {}

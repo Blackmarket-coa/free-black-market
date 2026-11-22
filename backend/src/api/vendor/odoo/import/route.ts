@@ -1,10 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import type { IEventBusModuleService } from "@medusajs/framework/types"
-import type { VendorRequest } from "../../types"
 import { ODOO_IMPORT_MODULE } from "../../../../modules/odoo-import"
 import OdooImportModuleService from "../../../../modules/odoo-import/service"
 import { OdooImportStatus } from "../../../../modules/odoo-import/types"
+import { getSellerId } from "../../quests/_helpers"
 
 /** Event that triggers the background Odoo import (handled by a subscriber). */
 export const ODOO_IMPORT_REQUESTED_EVENT = "odoo.import.requested"
@@ -30,7 +30,7 @@ function isUniqueViolation(error: unknown): boolean {
  * store. Returns 202 with an import_log_id the panel polls via GET.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const { import_as_draft = true } = req.body as { import_as_draft?: boolean }
@@ -109,7 +109,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * GET /vendor/odoo/import — import history for the current vendor.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   try {

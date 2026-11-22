@@ -3,12 +3,9 @@ import { createLogger } from "../../../../shared/logger"
 import { VENDOR_RULES_MODULE } from "../../../../modules/vendor-rules"
 import type VendorRulesService from "../../../../modules/vendor-rules/service"
 import { parseTierInput } from "../route"
+import { getSellerId } from "../../quests/_helpers"
 
 const log = createLogger("api/vendor/customer-tiers/[id]")
-
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
 
 /**
  * Load a tier and prove it belongs to the calling vendor. Another vendor's
@@ -20,7 +17,7 @@ async function loadOwned(
   res: MedusaResponse,
   service: VendorRulesService
 ) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) {
     res.status(401).json({ message: "Unauthorized" })
     return null

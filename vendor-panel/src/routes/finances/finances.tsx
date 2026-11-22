@@ -445,7 +445,7 @@ const RecentTransactions = ({ transactions }: { transactions: Array<{
 }
 
 
-const InvoicingSection = () => {
+export const InvoicingSection = () => {
   const { data } = useInvoices()
   const { data: aging } = useInvoiceAging()
   const createInvoice = useCreateInvoice()
@@ -541,7 +541,17 @@ const InvoicingSection = () => {
                 <Button size="small" variant="secondary" onClick={() => act(updateInvoice.mutateAsync({ id: invoice.id, status: "issued" }), "Invoice issued")}>Issue</Button>
               )}
               {invoice.status === "issued" && invoice.outstanding > 0 && (
-                <Button size="small" variant="secondary" onClick={() => act(recordPayment.mutateAsync({ id: invoice.id, amount: invoice.outstanding }), "Payment recorded")}>Record Payment</Button>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  // One payment at a time, as Issue Invoice: a second click
+                  // while one is in flight would send a second request.
+                  disabled={recordPayment.isPending}
+                  isLoading={recordPayment.isPending && recordPayment.variables?.id === invoice.id}
+                  onClick={() => act(recordPayment.mutateAsync({ id: invoice.id, amount: invoice.outstanding }), "Payment recorded")}
+                >
+                  Record Payment
+                </Button>
               )}
               {invoice.status === "issued" && (
                 <Button size="small" variant="transparent" onClick={() => act(updateInvoice.mutateAsync({ id: invoice.id, status: "written_off" }), "Written off")}>Write Off</Button>

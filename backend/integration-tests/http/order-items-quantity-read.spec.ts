@@ -72,6 +72,15 @@ jest.setTimeout(240 * 1000)
 medusaIntegrationTestRunner({
   inApp: true,
   testSuite: ({ getContainer }) => {
+    /**
+     * What the vendor gate hands a route once it has resolved the caller's
+     * store: the actor is a member, the store is `_seller_id` (SD-145).
+     */
+    const gateResolved = (sellerId: string) => ({
+      auth_context: { actor_id: `mem_of_${sellerId}` },
+      _seller_id: sellerId,
+      _sellerContextResolved: true,
+    })
     const { container, uid, makeSeller } = cardOrderFixtures(getContainer)
     const link = () => container().resolve(ContainerRegistrationKeys.LINK)
     const query = () => container().resolve(ContainerRegistrationKeys.QUERY)
@@ -896,10 +905,11 @@ medusaIntegrationTestRunner({
         expect(await read({ ...NON_SALE_ORDER_FILTERS })).toEqual(sorted(o.pending, o.archivedSale))
       })
 
-      it("the grower dashboard's sales block counts units and cents when handed the seller id", async () => {
-        // The route keys by auth_context.actor_id, which is the member id in
-        // production (SD-49): it still finds no seller there. This proves the
-        // order read itself, which threw for every seller.
+      it("the grower dashboard's sales block counts units and cents for the seller the vendor gate resolved", async () => {
+        // The route keyed by auth_context.actor_id, which is the member id in
+        // production (SD-49), and found no seller there; it now reads the
+        // store the gate resolved (SD-145). This proves the order read
+        // itself, which threw for every seller.
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
@@ -927,7 +937,7 @@ medusaIntegrationTestRunner({
 
         let body: any
         const res = { json: (b: unknown) => ((body = b), res), status: () => res } as any
-        await growerDashboard({ auth_context: { actor_id: seller.id }, scope: container() } as any, res)
+        await growerDashboard({ ...gateResolved(seller.id), scope: container() } as any, res)
 
         expect(body.sales).toEqual({
           units_sold: 3,
@@ -940,16 +950,17 @@ medusaIntegrationTestRunner({
       it("the nursery payouts route's per-product gross and cut are in cents", async () => {
         // getSellerOrders' unit_price is Medusa's major units; the route summed
         // it as cents, so 3 x $12.50 read gross_cents 37.5 (SD-52 re-review).
-        // Keyed by the seller id here; production passes the member id (SD-49
-        // fault 1). What "your cut" means is F7's to decide (inventory §10.8):
-        // only the units are under test.
+        // Keyed by the store the vendor gate resolved (SD-145; production
+        // passed the member id until then, SD-49 fault 1). What "your cut"
+        // means is F7's to decide (inventory §10.8): only the units are under
+        // test.
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5, title: "Fern" }])
 
         let body: any
         const res = { json: (b: unknown) => ((body = b), res), status: () => res } as any
-        await nurseryPayouts({ auth_context: { actor_id: seller.id }, scope: container() } as any, res)
+        await nurseryPayouts({ ...gateResolved(seller.id), scope: container() } as any, res)
 
         const split = body.current_period.split_pct as number
         expect(body.split_breakdown).toEqual([

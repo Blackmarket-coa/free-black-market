@@ -417,15 +417,21 @@ Sizes: S is about 1 day, M is 2 to 4 days, L is 5 or more. Add about 40% for thi
 
 The identity spec runs after B2. Rollout waits for P0, the seed fix and the owner's answers.
 
-## 10. Open questions for the owner
+## 10. Owner's answers
 
-1. **Vendor-only logins.** May an existing vendor login add a shopper profile to the same login, password-confirmed and behind the flag, so it can enter `/user`? This partly reverses SD-126's refusal. Without it, pilot suppliers stay in the vendor panel during R1.
-2. **The real task.** Confirm "Open your stall" as R1's real task, with admin approval while SD-140 is open. Buyer builds get a market link; "save a private need" comes next.
-3. **Game view.** Can R1 ship in the compact view, with the scene in the next package? Or must R1 include a minimal scene? Plan line 490 puts the first slice in game view.
-4. **SD-58.** Approve the fix (forward the visitor's address in a header signed with a shared secret) before the cohort grows, or accept the shared 20-per-minute limit for the pilot?
-5. **Sessions.** Customer token refresh inside `/user` with a 7-day absolute cap (the same cap for the seller keeper). Portal sign-out also signing out a same-login seller session on that device, which changes how the in-app vendor surface behaves.
+Asked on 2026-11-17 (recorded in `docs/AUDIT_DEBT.md` SD-154):
 
-Defaults that need no decision unless the owner objects: two-login linking is deferred, the survey doesn't ask about delivery opt-in, R1 shows no XP, and the survey requires sign-in.
+1. **Vendor-only logins: allowed.** An existing vendor login may add a shopper profile to the same login, with the password confirmed and behind the portal flag, so it can enter `/user`. This deliberately relaxes SD-126's refusal for that one explicit action.
+2. **Game view: compact first.** R1 ships in the compact view; the scene comes in the next package. The product contract still makes game view standard (see the 2026-11-20 context note above).
+
+Not asked; the plan's defaults stand unless the owner objects:
+
+3. **The real task** is "Open your stall", with admin approval while SD-140 is open. Buyer builds get a market link; "save a private need" comes next.
+4. **SD-58:** fix the shared sign-in limit (forward the visitor's address in a header signed with a shared secret) before the cohort grows.
+5. **Sessions:** customer token refresh inside `/user` with a 7-day absolute cap (the same cap for the seller keeper); portal sign-out also signs out a same-login seller session on that device.
+6. Two-login linking is deferred, the survey doesn't ask about delivery opt-in, R1 shows no XP, and the survey requires sign-in.
+
+**2026-11-21, against the December launch backlog.** `docs/FBM_DECEMBER_LAUNCH_READINESS.md` section 4 lists this release as a P0 ("Reuse role recommendations/feature union for a saved starter portal, then a real first action") and names its acceptance evidence: member and organization scope, preview, apply and rebuild, free and owned tools, and full private draft persistence; a wizard milestone save does not count as a created or saved product. Phases B1 to B3 and S1 to S5 must meet that wording. The ten-versus-thirteen resource-key drift that B1 was to fix is being fixed first, in the onboarding unit (SD-151), because the same document lists it as its own P0.
 
 ### Critical files for implementation
 - `storefront/src/lib/data/vendor-auth.ts` (with `storefront/src/lib/data/cookies.ts`)

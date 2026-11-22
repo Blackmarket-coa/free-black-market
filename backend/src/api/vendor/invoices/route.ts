@@ -8,6 +8,7 @@ import type AccountsReceivableService from "../../../modules/accounts-receivable
 import { InvoiceStateError } from "../../../modules/accounts-receivable/service"
 import { InvoiceStatus } from "../../../modules/accounts-receivable/terms"
 import { loadTiersForSeller } from "../../../shared/ar-tiers"
+import { getSellerId } from "../quests/_helpers"
 
 const log = createLogger("api/vendor/invoices")
 
@@ -57,10 +58,6 @@ const normalizeStatus = (value: unknown): string | null => {
   return Object.values(InvoiceStatus).includes(v as InvoiceStatus) ? v : null
 }
 
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
-
 /**
  * GET /vendor/invoices — this vendor's invoices.
  *
@@ -68,7 +65,7 @@ const getSellerId = (req: MedusaRequest) =>
  * caller never has to recompute "is this overdue" and get it subtly wrong.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const ar = req.scope.resolve<AccountsReceivableService>(
@@ -99,7 +96,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * Pass `issue: false` to leave it in draft.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const body = (req.body ?? {}) as Record<string, unknown>

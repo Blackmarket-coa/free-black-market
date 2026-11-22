@@ -44,3 +44,31 @@ export const isStripe = (providerId?: string | null): boolean => {
 export const isManual = (providerId?: string | null) => {
   return providerId?.startsWith(MANUAL_PROVIDER_ID)
 }
+
+/**
+ * Whether the checkout offers a provider to buyers.
+ *
+ * Medusa's manual provider takes no money. An order placed on it is recorded
+ * as paid, and captured, and nobody is ever charged. The backend's seed
+ * scripts list it on the regions they create (`backend/src/scripts/seed.ts`),
+ * and the checkout offered every listed provider, so a production storefront
+ * on such a region showed "Manual Payment" to every buyer; only the badge
+ * marking it as a test was limited to development. Now only a development
+ * build (`next dev`) offers it.
+ *
+ * `nodeEnv` is `process.env.NODE_ENV` as the caller's bundle has it.
+ * `next build` writes "production" into every bundle, server and client,
+ * whatever NODE_ENV the build ran with, unless `experimental.
+ * allowDevelopmentBuild` is set (`next/dist/build/define-env.js`); this
+ * storefront does not set it, and its Docker build runs `next build` under
+ * `ENV NODE_ENV=production`. So a production image cannot offer it, and
+ * neither the image's runtime NODE_ENV nor docker-compose's
+ * `NODE_ENV: development` changes that. All three are pinned in
+ * `src/lib/__tests__/checkout-payment-providers.test.ts`.
+ */
+export const offeredAtCheckout = (
+  providerId: string | null | undefined,
+  nodeEnv: string | undefined
+): boolean => {
+  return !!providerId && (!isManual(providerId) || nodeEnv === "development")
+}

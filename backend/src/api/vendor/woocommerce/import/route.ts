@@ -1,10 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import type { IEventBusModuleService } from "@medusajs/framework/types"
-import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { ImportStatus } from "../../../../modules/woocommerce-import/types"
+import { getSellerId } from "../../quests/_helpers"
 
 /** Event that triggers the background Woo import (handled by a subscriber). */
 export const WOO_IMPORT_REQUESTED_EVENT = "woocommerce.import.requested"
@@ -18,7 +18,7 @@ export const WOO_IMPORT_REQUESTED_EVENT = "woocommerce.import.requested"
  * polls via GET /vendor/woocommerce/import.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -157,7 +157,7 @@ function isUniqueViolation(error: unknown): boolean {
  * Get import history for the current vendor.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

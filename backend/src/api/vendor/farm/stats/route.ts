@@ -1,4 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { getSellerId } from "../../quests/_helpers"
+import { farmFailure, storeProducerId } from "../_access"
 
 /**
  * GET /vendor/farm/stats
@@ -11,23 +13,18 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
   }
 
   try {
-    // Get producer ID for this seller
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
+    // The store's farm profile (`_access.ts`; the `producer_seller` alias
+    // this read does not exist, so the route answered 500).
+    const producerId = await storeProducerId(req, sellerId)
 
-    if (!producerLinks || producerLinks.length === 0) {
+    if (!producerId) {
       return res.json({
         stats: {
           active_harvests: 0,
@@ -37,8 +34,6 @@ export async function GET(
         }
       })
     }
-
-    const producerId = producerLinks[0].producer_id
 
     // Get harvest counts first (needed for lot query)
     const { data: harvests } = await query.graph({
@@ -122,9 +117,6 @@ export async function GET(
       }
     })
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch farm stats",
-      error: error.message
-    })
+    farmFailure(req, res, "Failed to fetch farm stats", error)
   }
 }

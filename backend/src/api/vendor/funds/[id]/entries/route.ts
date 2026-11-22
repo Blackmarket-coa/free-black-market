@@ -11,7 +11,7 @@ const ENTRY_TYPES = new Set<string>(Object.values(FundEntryType))
 
 /** GET /vendor/funds/:id/entries — movements against one fund. */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<FundAccountingModuleService>(
@@ -44,7 +44,7 @@ export const POST = async (
   req: MedusaRequest<CreateEntryBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as CreateEntryBody)

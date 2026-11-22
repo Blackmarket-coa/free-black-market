@@ -59,6 +59,8 @@ vi.mock("@/lib/data/attribution", () => ({
 }))
 
 import {
+  addPromotionCode,
+  addToCart,
   applyPromotions,
   deleteLineItem,
   deletePromotionCode,
@@ -70,14 +72,18 @@ import {
   retrieveCart,
   setCartTier,
   setShippingMethod,
+  tryAddToCart,
   updateCart,
   updateLineItem,
 } from "@/lib/data/cart"
+import { ALREADY_PLACED_GUEST_MESSAGE } from "@/lib/helpers/cart-completion"
 
 const authed = { Authorization: "Bearer t" }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  // Reset, not clear: a test that makes a mock reject (the cookie write a page
+  // render refuses) must not leave it rejecting for the tests after it.
+  vi.resetAllMocks()
   h.getAuthHeaders.mockResolvedValue(authed)
   h.getCacheTag.mockResolvedValue("tag")
   h.getCacheOptions.mockResolvedValue({})
@@ -99,6 +105,128 @@ describe("retrieveCart", () => {
   it("returns null when the fetch throws", async () => {
     h.medusaFetch.mockRejectedValue(new Error("boom"))
     await expect(retrieveCart("cart_x")).resolves.toBeNull()
+  })
+})
+
+/**
+ * A completed cart left in the cookie. Measured on Postgres by the checkout
+ * scout: after the order, `GET /store/carts/:id` still answers 200 with the
+ * lines, and adding a line answers 400 "Cart … is already completed." The
+ * storefront went on showing that cart, and every add to cart failed, for
+ * the cookie's seven days.
+ */
+describe("a completed cart in the cookie", () => {
+  const completed = {
+    id: "cart_1",
+    region_id: "reg_us",
+    completed_at: "2026-11-17T12:00:00.000Z",
+    items: [{ id: "li_1", variant_id: "variant_1", quantity: 1 }],
+  }
+
+  it("is no cart: retrieveCart answers null and drops the cookie that holds it", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: completed })
+
+    await expect(retrieveCart()).resolves.toBeNull()
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+  })
+
+  it("leaves the cookie alone when it holds another cart", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: { ...completed, id: "cart_old" } })
+
+    await expect(retrieveCart("cart_old")).resolves.toBeNull()
+    expect(h.removeCartId).not.toHaveBeenCalled()
+  })
+
+  it("still reads as no cart while a page renders, where Next.js refuses to write cookies", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: completed })
+    h.removeCartId.mockRejectedValue(
+      new Error("Cookies can only be modified in a Server Action or Route Handler.")
+    )
+
+    await expect(retrieveCart()).resolves.toBeNull()
+  })
+
+  it("is replaced by a new cart when the buyer adds to cart, and the new line goes on the new cart", async () => {
+    h.getRegion.mockResolvedValue({ id: "reg_us" })
+    h.medusaFetch.mockResolvedValue({ cart: completed })
+    h.cartCreate.mockResolvedValue({ cart: { id: "cart_new", region_id: "reg_us", items: [] } })
+    h.cartCreateLineItem.mockResolvedValue({ cart: { id: "cart_new" } })
+
+    await addToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+
+    expect(h.cartCreate).toHaveBeenCalledWith({ region_id: "reg_us" }, {}, authed)
+    expect(h.setCartId).toHaveBeenCalledWith("cart_new")
+    // A new line on the new cart, not a quantity bump on the completed one.
+    expect(h.cartUpdateLineItem).not.toHaveBeenCalled()
+    expect(h.cartCreateLineItem).toHaveBeenCalledWith(
+      "cart_new",
+      { variant_id: "variant_1", quantity: 1 },
+      {},
+      authed
+    )
+  })
+})
+
+describe("tryAddToCart (the product page's add to cart)", () => {
+  beforeEach(() => {
+    h.getRegion.mockResolvedValue({ id: "reg_us" })
+    h.medusaFetch.mockResolvedValue({ cart: { id: "cart_1", region_id: "reg_us", items: [] } })
+  })
+
+  it("answers ok when the line is added", async () => {
+    h.cartCreateLineItem.mockResolvedValue({ cart: { id: "cart_1" } })
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: true })
+  })
+
+  it("hands back the backend's message instead of throwing it, so a production page can show it", async () => {
+    h.cartCreateLineItem.mockRejectedValue({
+      status: 400,
+      response: { data: { message: "Variants with IDs variant_1 do not have a price" } },
+    })
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: "Variants with IDs variant_1 do not have a price." })
+  })
+
+  it("hands back a refusal of the cart's creation in the backend's words too (the SDK's own error)", async () => {
+    h.medusaFetch.mockResolvedValue({ cart: null })
+    h.cartCreate.mockRejectedValue(Object.assign(new Error("Region reg_us is not available in this sales channel"), { status: 400 }))
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: "Region reg_us is not available in this sales channel" })
+  })
+
+  // Not the backend's words for a buyer: the request never got there, or the
+  // failure is the storefront's own, or the backend failed without saying.
+  const GENERIC = "This item could not be added to your cart. Please try again."
+
+  it("does not show a buyer \"fetch failed\" when the request never reached the backend", async () => {
+    h.cartCreateLineItem.mockRejectedValue(new TypeError("fetch failed"))
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: GENERIC })
+  })
+
+  it("does not show a buyer the storefront's own errors (a region it cannot resolve)", async () => {
+    h.getRegion.mockResolvedValue(null)
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "xx" })
+    ).resolves.toEqual({ ok: false, error: GENERIC })
+  })
+
+  it("does not show a buyer a server error's message", async () => {
+    h.cartCreateLineItem.mockRejectedValue({ status: 500, response: { data: { message: "An unknown error occurred." } } })
+
+    await expect(
+      tryAddToCart({ variantId: "variant_1", quantity: 1, countryCode: "us" })
+    ).resolves.toEqual({ ok: false, error: GENERIC })
   })
 })
 
@@ -239,6 +367,61 @@ describe("shipping & promotions", () => {
     await expect(applyPromotions(["X"])).rejects.toThrow("No existing cart found")
   })
 
+  /**
+   * `POST /store/carts/:id { promo_codes }` replaces the cart's codes with
+   * the list sent (Medusa's `updateCartPromotionsWorkflow`, REPLACE). The
+   * field sent the new code alone, so a second code removed the first.
+   */
+  describe("addPromotionCode (the cart page's promotion field)", () => {
+    const cartWithCodes = (...promotions: Array<{ code: string; is_automatic?: boolean }>) => ({
+      cart: { id: "cart_1", promotions },
+    })
+
+    it("sends the codes the cart already has with the new one, read from the cart itself", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }, { code: "WELCOME", is_automatic: true }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "TEN" }, { code: "FIVE" }, { code: "WELCOME" }] } })
+
+      await expect(addPromotionCode(" FIVE ")).resolves.toEqual({ applied: true, kept: ["TEN"], removed: [] })
+
+      // The earlier code and the new one; not the automatic promotion,
+      // which Medusa applies whatever the list says.
+      expect(h.cartUpdate).toHaveBeenCalledWith("cart_1", { promo_codes: ["TEN", "FIVE"] }, {}, authed)
+      expect(h.revalidateTag).toHaveBeenCalledWith("tag")
+    })
+
+    it("says the new code is not on the cart when Medusa did not keep it, with the earlier code still there", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "TEN" }] } })
+
+      await expect(addPromotionCode("FREESHIP")).resolves.toEqual({ applied: false, kept: ["TEN"], removed: [] })
+    })
+
+    it("says which earlier code Medusa removed in the same update", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "FIVE" }] } })
+
+      await expect(addPromotionCode("FIVE")).resolves.toEqual({ applied: true, kept: [], removed: ["TEN"] })
+    })
+
+    it("sends a code the cart already has once", async () => {
+      h.medusaFetch.mockResolvedValue(cartWithCodes({ code: "TEN" }))
+      h.cartUpdate.mockResolvedValue({ cart: { promotions: [{ code: "TEN" }] } })
+
+      await expect(addPromotionCode("TEN")).resolves.toEqual({ applied: true, kept: [], removed: [] })
+      expect(h.cartUpdate).toHaveBeenCalledWith("cart_1", { promo_codes: ["TEN"] }, {}, authed)
+    })
+
+    it("throws without an open cart, and when the backend refuses the code", async () => {
+      h.medusaFetch.mockResolvedValue({ cart: null })
+      await expect(addPromotionCode("FIVE")).rejects.toThrow("No existing cart found")
+      expect(h.cartUpdate).not.toHaveBeenCalled()
+
+      h.medusaFetch.mockResolvedValue(cartWithCodes())
+      h.cartUpdate.mockRejectedValue({ status: 400, response: { data: { message: "The promotion code NOPE is invalid" } } })
+      await expect(addPromotionCode("NOPE")).rejects.toThrow("The promotion code NOPE is invalid.")
+    })
+  })
+
   it("removeShippingMethod deletes via medusaFetch", async () => {
     h.medusaFetch.mockResolvedValue({})
     await removeShippingMethod("sm_1")
@@ -333,6 +516,114 @@ describe("placeOrder", () => {
     await placeOrder("cart_1")
     expect(h.removeCartId).toHaveBeenCalled()
     expect(h.redirect).toHaveBeenCalledWith("/order/order_1/confirmed")
+  })
+
+  it("drops the cookie before it redirects: a redirect throws, so nothing after it runs", async () => {
+    const order: string[] = []
+    h.removeCartId.mockImplementation(async () => {
+      order.push("forget")
+    })
+    h.redirect.mockImplementation(() => {
+      order.push("redirect")
+    })
+    h.fetchQuery.mockResolvedValue({ data: { order_set: { orders: [{ id: "order_1" }] } } })
+
+    await placeOrder("cart_1")
+
+    expect(order).toEqual(["forget", "redirect"])
+  })
+})
+
+/**
+ * The main checkout's 409s (backend SD-147). Their bodies as
+ * `backend/src/api/middlewares/cart-completion-guards.ts` and
+ * `backend/src/lib/cart-completion.ts` write them, as fetchQuery hands them on.
+ */
+describe("placeOrder on the main checkout's 409s", () => {
+  const ALREADY_PLACED_MESSAGE =
+    "Your order for this cart has already been placed. You can find it under Orders in your account, or in your order confirmation email."
+  const INCOMPLETE_MESSAGE =
+    "Your order could not be completed, and no payment was taken. If your card shows a pending authorization, it will be released. Please try again, or contact support if it happens again."
+  const CHECK_FAILED_MESSAGE =
+    "Your order was not placed, because we could not check your cart just now. Please try again in a moment."
+  const NOTHING_TO_PAY_MESSAGE =
+    "Your order was not placed: orders with nothing to pay can't be placed yet. You have not been charged."
+
+  const refusal = (error: Record<string, unknown>) => ({
+    ok: false,
+    status: 409,
+    requestId: null,
+    data: null,
+    error: { type: error.code, requestId: null, ...error },
+  })
+
+  it("sends the buyer to the order a cart already became, and forgets the cart", async () => {
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE, orderId: "order_9" })
+    )
+
+    await placeOrder()
+
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+    expect(h.redirect).toHaveBeenCalledWith("/order/order_9/confirmed")
+    expect(h.revalidatePath).toHaveBeenCalledWith("/user/orders")
+  })
+
+  it("sends a signed-in buyer to the confirmation page too: the account's order page is keyed by order set, which that order has none of", async () => {
+    h.getAuthHeaders.mockResolvedValue(authed)
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE, orderId: "order_9" })
+    )
+
+    await placeOrder()
+
+    expect(h.redirect).toHaveBeenCalledWith("/order/order_9/confirmed")
+  })
+
+  it("tells a guest where the order is without pointing at an account they do not have, when no order is named", async () => {
+    h.getAuthHeaders.mockResolvedValue(null)
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE })
+    )
+
+    const res = await placeOrder()
+
+    expect(h.redirect).not.toHaveBeenCalled()
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+    expect(res?.error?.message).toBe(ALREADY_PLACED_GUEST_MESSAGE)
+    expect(res?.error?.message).not.toMatch(/account/i)
+    expect(res?.error?.code).toBe("cart_already_completed")
+  })
+
+  it("keeps the backend's wording for a signed-in buyer when no order is named", async () => {
+    h.fetchQuery.mockResolvedValue(
+      refusal({ code: "cart_already_completed", message: ALREADY_PLACED_MESSAGE })
+    )
+
+    const res = await placeOrder()
+
+    expect(res?.error?.message).toBe(ALREADY_PLACED_MESSAGE)
+    expect(h.removeCartId).toHaveBeenCalledTimes(1)
+  })
+
+  // `cart_nothing_to_pay`: the backend's answer to a $0 cart at the main
+  // checkout. The storefront says the same on the payment and review steps
+  // and offers no button for it (lib/helpers/nothing-to-pay.ts); a page
+  // rendered before the total dropped can still send it, and then this
+  // message is what the buyer reads.
+  it.each([
+    ["cart_completion_incomplete", INCOMPLETE_MESSAGE],
+    ["cart_completion_check_failed", CHECK_FAILED_MESSAGE],
+    ["cart_nothing_to_pay", NOTHING_TO_PAY_MESSAGE],
+  ])("on %s shows the message and keeps the cart, so the buyer can try again", async (code, message) => {
+    const answer = refusal({ code, message })
+    h.fetchQuery.mockResolvedValue(answer)
+
+    const res = await placeOrder()
+
+    expect(res).toEqual(answer)
+    expect(h.removeCartId).not.toHaveBeenCalled()
+    expect(h.redirect).not.toHaveBeenCalled()
   })
 })
 

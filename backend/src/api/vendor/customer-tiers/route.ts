@@ -7,12 +7,9 @@ import {
   MAX_TERMS_DAYS,
   InvalidTermsError,
 } from "../../../modules/accounts-receivable/terms"
+import { getSellerId } from "../quests/_helpers"
 
 const log = createLogger("api/vendor/customer-tiers")
-
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
 
 /**
  * The fields a vendor may set on a tier, validated once for POST and PATCH.
@@ -118,7 +115,7 @@ export function parseTierInput(
 
 /** GET /vendor/customer-tiers — this vendor's tiers. */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorRulesService>(VENDOR_RULES_MODULE)
@@ -128,7 +125,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 /** POST /vendor/customer-tiers — create a tier. */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const parsed = parseTierInput((req.body ?? {}) as Record<string, unknown>, {

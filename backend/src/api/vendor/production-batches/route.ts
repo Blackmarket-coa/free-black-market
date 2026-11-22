@@ -6,7 +6,7 @@ import { getSellerId } from "../quests/_helpers"
 
 /** GET /vendor/production-batches — a vendor's production ledger (opt-in). */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<ProductionLedgerModuleService>(PRODUCTION_LEDGER_MODULE)
@@ -32,7 +32,7 @@ export const POST = async (
   req: MedusaRequest<CreateBatchBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as CreateBatchBody)

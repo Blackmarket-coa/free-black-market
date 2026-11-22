@@ -36,7 +36,7 @@ export const paymentInfoMap: Record<
 // Which provider ids the checkout can pay with lives in a file with no
 // imports, so the backend's spec can hold it against what the backend
 // registers (see that file's header).
-export { isManual, isStripe } from "./constants/payment-providers"
+export { isManual, isStripe, offeredAtCheckout } from "./constants/payment-providers"
 
 export const isPaypal = (providerId?: string) => {
   return providerId?.startsWith("pp_paypal")

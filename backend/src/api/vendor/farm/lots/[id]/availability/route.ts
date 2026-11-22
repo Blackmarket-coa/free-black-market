@@ -1,4 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { forbidden } from "../../../../../../shared/community-read-access"
+import { farmFailure, farmId, farmIds, optionalFarmId, ownedLot } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -19,44 +22,23 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
-  const lotId = req.params.id
-
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
+  // One id, or none, before any check (`farmId` in `_access.ts`).
+  const ids = farmIds(res, req.body, { product_id: optionalFarmId })
+  if (!ids) return
+  const { product_id } = ids
 
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    // Verify lot exists
-    const { data: lots } = await query.graph({
-      entity: "lot",
-      fields: ["id", "harvest_id"],
-      filters: {
-        id: lotId,
-      },
-    })
-
-    if (!lots || lots.length === 0) {
-      return res.status(404).json({ message: "Lot not found" })
-    }
+    // The lot must be the caller's own, through its harvest: this checked only
+    // that the lot existed and the caller had some farm profile, so a window
+    // could be opened on another store's lot. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     const {
-      product_id,
       available_from,
       available_until,
       sales_channel,
@@ -79,6 +61,20 @@ export async function POST(
       featured,
       is_active,
     } = req.body as Record<string, unknown>
+
+    // A product named here must be the store's own, as link-product requires:
+    // this took any store's product (SD-145 review, measured 201).
+    if (product_id) {
+      const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+      const { data: sellerProducts } = await query.graph({
+        entity: "seller_product",
+        fields: ["product_id"],
+        filters: { seller_id: owned.caller.sellerId, product_id },
+      })
+      if (!sellerProducts?.length) {
+        return forbidden(res)
+      }
+    }
 
     // Create the availability window
     const availabilityWindow = await agricultureService.createAvailabilityWindows({
@@ -110,10 +106,7 @@ export async function POST(
 
     res.status(201).json({ availability_window: availabilityWindow })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to create availability window", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to create availability window", error)
   }
 }
 
@@ -126,26 +119,15 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
-  const lotId = req.params.id
-
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const lotId = params.id
 
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
+    // The lot must be the caller's own: this listed any lot's windows for a
+    // caller with some farm profile. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId)
+    if (!owned) return
 
     // Get availability windows for this lot
     const { data: windows } = await query.graph({
@@ -188,9 +170,6 @@ export async function GET(
 
     res.json({ availability_windows: windows || [] })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to fetch availability windows", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to fetch availability windows", error)
   }
 }

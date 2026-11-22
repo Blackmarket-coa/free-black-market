@@ -1,5 +1,7 @@
 "use client"
 import { logger } from "@/lib/logger"
+import { checkDeliveryAt } from "@/lib/data/delivery"
+import { isFailedDeliveryCheck } from "@/lib/helpers/delivery-eligibility"
 
 import { useState, useEffect, useCallback } from "react"
 
@@ -70,24 +72,12 @@ export function DeliveryCheck({
     setError(null)
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/delivery-zones/check`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            latitude,
-            longitude,
-            producer_id: producerId,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error("Failed to check delivery availability")
+      // From the server, with the publishable key every /store route needs
+      // (lib/data/delivery.ts); the browser's own call was refused without it.
+      const data = await checkDeliveryAt({ latitude, longitude, producer_id: producerId })
+      if (isFailedDeliveryCheck(data)) {
+        throw new Error(data.reason || "Failed to check delivery availability")
       }
-
-      const data: DeliveryCheckResult = await response.json()
       setResult(data)
       onAvailabilityChange?.(data)
     } catch (err) {

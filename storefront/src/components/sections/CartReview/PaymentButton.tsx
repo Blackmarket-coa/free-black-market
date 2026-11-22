@@ -1,7 +1,7 @@
 "use client"
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
-import { isManual, isStripe } from "../../../lib/constants"
+import { isManual, isStripe, offeredAtCheckout } from "../../../lib/constants"
 import {
   placeOrder,
   placeTicketOrder,
@@ -14,6 +14,18 @@ import { Button } from "@/components/atoms"
 import { StripeContext } from "../../organisms/PaymentContainer/StripeWrapper"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
 import { cardChargeMatchesCartTotal } from "@/lib/helpers/card-charge"
+import {
+  canPlaceWithoutPayment,
+  cartOwesNothing,
+  cartTicketMode,
+  NOTHING_TO_PAY_NO_METHOD_NEEDED,
+  NOTHING_TO_PAY_NOT_PLACEABLE,
+} from "@/lib/helpers/nothing-to-pay"
+import {
+  listNames,
+  type OfferedOption,
+  shippingCoverage,
+} from "@/lib/helpers/seller-shipping"
 import { toast } from "@/lib/helpers/toast"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 import { completeSubscriptionCheckout } from "@/lib/data/subscriptions"
@@ -26,21 +38,16 @@ import {
 type PaymentButtonProps = {
   cart: HttpTypes.StoreCart
   "data-testid": string
+  /**
+   * The shipping options Mercur lists for the cart (the checkout page's
+   * `listCartShippingMethods`), for naming the sellers still without a
+   * method. Without them the button still counts methods against sellers.
+   */
+  shippingOptions?: ReadonlyArray<OfferedOption> | null
 }
 
-// Ticket line items carry seat metadata (stamped by the ticket purchase
-// panel). A cart completes via the ticket-aware endpoint ONLY when it is
-// entirely tickets — a mixed cart routed through /complete-tickets would send
-// the non-ticket (and other-seller) items through the stock completion flow,
-// bypassing the marketplace split. Mixed carts are blocked at checkout.
-const cartTicketMode = (
-  cart?: HttpTypes.StoreCart | null
-): "none" | "all-tickets" | "mixed" => {
-  const items = cart?.items ?? []
-  const ticketCount = items.filter((item) => !!item.metadata?.show_date).length
-  if (ticketCount === 0) return "none"
-  return ticketCount === items.length ? "all-tickets" : "mixed"
-}
+// Which carts complete through the ticket checkout: `cartTicketMode`,
+// lib/helpers/nothing-to-pay.ts (shared with the payment step).
 
 /**
  * A subscription cart (NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 only) completes
@@ -73,9 +80,36 @@ const SubscriptionCheckoutNote = ({ cart }: { cart: HttpTypes.StoreCart }) => {
   )
 }
 
+/**
+ * Said beside Place order while a seller in the cart has no shipping method.
+ * Mercur's checkout refuses such a cart with "Seller shipping method not
+ * found!", and only after it has authorized the card, so the button waits.
+ */
+const ShippingIncompleteNote = ({
+  cart,
+  shippingOptions,
+}: {
+  cart: HttpTypes.StoreCart
+  shippingOptions?: ReadonlyArray<OfferedOption> | null
+}) => {
+  const coverage = shippingCoverage(cart, shippingOptions)
+  if (coverage.complete) return null
+  const names = coverage.toChoose.map((seller) => seller.name).filter(Boolean)
+  return (
+    <p className="mb-2 text-sm text-secondary" data-testid="shipping-incomplete-note">
+      {names.length
+        ? `Choose a delivery option for ${listNames(names)} before placing your order.`
+        : coverage.noOptions.length
+          ? "A seller in your cart has no delivery option for this address. Go back to Delivery to see which, and remove their items to place your order."
+          : "Choose a delivery option for every seller in your cart before placing your order."}
+    </p>
+  )
+}
+
 const PaymentButton: React.FC<PaymentButtonProps> = (props) => (
   <>
     <SubscriptionCheckoutNote cart={props.cart} />
+    <ShippingIncompleteNote cart={props.cart} shippingOptions={props.shippingOptions} />
     <PaymentButtonForProvider {...props} />
   </>
 )
@@ -83,13 +117,15 @@ const PaymentButton: React.FC<PaymentButtonProps> = (props) => (
 const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   cart,
   "data-testid": dataTestId,
+  shippingOptions,
 }) => {
+  // One shipping method per seller, not one in all (see ShippingIncompleteNote).
   const notReady =
     !cart ||
     !cart.shipping_address ||
     !cart.billing_address ||
     !cart.email ||
-    (cart.shipping_methods?.length ?? 0) < 1
+    !shippingCoverage(cart, shippingOptions).complete
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
 
@@ -101,6 +137,26 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   // session.
   const stripeReady = useContext(StripeContext)
 
+  // A cart that owes nothing takes no payment session, whatever session an
+  // earlier total left on it (lib/helpers/nothing-to-pay.ts): the ticket
+  // checkout places it with none; the main checkout refuses it (409
+  // `cart_nothing_to_pay`), so that is said here, not after a click.
+  if (cartOwesNothing(cart)) {
+    return canPlaceWithoutPayment(cart) ? (
+      <NothingToPayButton notReady={notReady} data-testid={dataTestId} />
+    ) : (
+      <>
+        <Button disabled className="w-full">
+          Place order
+        </Button>
+        <ErrorMessage
+          error={NOTHING_TO_PAY_NOT_PLACEABLE}
+          data-testid="nothing-to-pay-not-placeable"
+        />
+      </>
+    )
+  }
+
   switch (true) {
     case isStripe(paymentSession?.provider_id) && stripeReady:
       return (
@@ -110,7 +166,12 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
           data-testid={dataTestId}
         />
       )
-    case isManual(paymentSession?.provider_id):
+    // A manual session places an order nobody pays for. The payment step lists
+    // the provider only in a development build; a session on it that reaches
+    // a production page anyway (opened through the API, or before this
+    // change) gets the disabled button below.
+    case isManual(paymentSession?.provider_id) &&
+      offeredAtCheckout(paymentSession?.provider_id, process.env.NODE_ENV):
       return (
         <ManualTestPaymentButton
           notReady={notReady}
@@ -278,7 +339,14 @@ const StripePaymentButton = ({
             (pi && pi.status === "requires_capture") ||
             (pi && pi.status === "succeeded")
           ) {
-            onPaymentCompleted()
+            // The card was confirmed already (an earlier click whose order
+            // was refused or lost): Stripe's error is about the second
+            // confirmation, not the payment, so the order goes ahead and the
+            // error is not shown. Returned, so that `submitting` stays set,
+            // and the button disabled, until the order is placed or refused;
+            // unreturned, the `finally` below re-enabled it at once, and a
+            // second click sent a second completion of the same cart.
+            return onPaymentCompleted()
           }
 
           setErrorMessage(error.message || null)
@@ -350,6 +418,63 @@ const StripePaymentButton = ({
   )
 }
 
+/**
+ * Place order for an all-ticket cart that owes nothing: the ticket checkout,
+ * with no payment session and nothing asked of Stripe.
+ */
+const NothingToPayButton = ({
+  notReady,
+  "data-testid": dataTestId,
+}: {
+  notReady: boolean
+  "data-testid"?: string
+}) => {
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const handlePlaceOrder = async () => {
+    setSubmitting(true)
+    try {
+      const res = await placeTicketOrder()
+      if (!res.ok && res.error) {
+        setErrorMessage(orderErrorFormatter(res.error))
+      }
+    } catch (error: any) {
+      if (error?.message !== "NEXT_REDIRECT") {
+        setErrorMessage(
+          orderErrorFormatter({
+            ...error,
+            message: error?.message?.replace("Error setting up the request: ", ""),
+          })
+        )
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <p className="mb-2 text-sm text-secondary" data-testid="nothing-to-pay-note">
+        {NOTHING_TO_PAY_NO_METHOD_NEEDED}
+      </p>
+      <Button
+        disabled={notReady}
+        onClick={handlePlaceOrder}
+        loading={submitting}
+        className="w-full"
+        data-testid={dataTestId}
+      >
+        Place order
+      </Button>
+      <ErrorMessage
+        error={errorMessage}
+        data-testid="nothing-to-pay-error-message"
+      />
+    </>
+  )
+}
+
 const ManualTestPaymentButton = ({
   notReady,
   cart,
@@ -390,7 +515,8 @@ const ManualTestPaymentButton = ({
   }
 
   const handlePayment = () => {
-    onPaymentCompleted()
+    setSubmitting(true)
+    return onPaymentCompleted()
   }
 
   return (

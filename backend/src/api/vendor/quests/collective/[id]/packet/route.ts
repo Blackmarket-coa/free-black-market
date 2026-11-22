@@ -11,7 +11,7 @@ import { evaluateCollectiveFromConsent } from "../../_helpers"
  * Succeeds only once the collective's final stage gate is open.
  */
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)

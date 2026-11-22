@@ -1,16 +1,32 @@
 "use client"
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
+import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { setShippingMethod } from "@/lib/data/cart"
+import { checkDeliveryForPostalCode, type DeliveryEligibility } from "@/lib/data/delivery"
 import { calculatePriceForShippingOption } from "@/lib/data/fulfillment"
+import {
+  type DeliveryNudge,
+  deliveryNudgeFor,
+  NO_DELIVERY_NUDGE,
+} from "@/lib/helpers/delivery-eligibility"
 import { convertToLocale } from "@/lib/helpers/money"
+import {
+  type FulfillmentType,
+  isReturnOption,
+  listNames,
+  shippingCoverage,
+  shownFulfillmentType,
+} from "@/lib/helpers/seller-shipping"
 import { CheckCircleSolid, ChevronUpDown, Loader } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
 import { clx, Heading, Text } from "@medusajs/ui"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Fragment, useEffect, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/atoms"
 import { CartShippingMethodRow } from "./CartShippingMethodRow"
+import { DeliveryEligibilityNotice } from "./DeliveryEligibilityNotice"
+import { UnpricedOptionsNotice } from "./UnpricedOptionsNotice"
 import { Listbox, Transition, RadioGroup, Radio } from "@headlessui/react"
 import clsx from "clsx"
 
@@ -19,9 +35,13 @@ const FULFILLMENT_TYPE = {
   DELIVERY: "delivery",
   PICKUP: "pickup",
   SHIPPING: "shipping",
-} as const
+} as const satisfies Record<string, FulfillmentType>
 
-type FulfillmentType = typeof FULFILLMENT_TYPE[keyof typeof FULFILLMENT_TYPE]
+const FULFILLMENT_TYPE_LABEL: Record<FulfillmentType, string> = {
+  delivery: "Delivery",
+  pickup: "Pickup",
+  shipping: "Shipping",
+}
 
 // Extended cart item product type to include seller
 type ExtendedStoreProduct = HttpTypes.StoreProduct & {
@@ -36,6 +56,22 @@ type CartItem = {
   product?: ExtendedStoreProduct
   // Include other cart item properties as needed
 }
+
+const isDeliveryMethod = (sm: AvailableShippingMethod) =>
+  sm.service_zone?.fulfillment_set?.type === "delivery" ||
+  !!sm.name?.toLowerCase().includes("delivery") ||
+  !!sm.name?.toLowerCase().includes("internal")
+
+const isPickupMethod = (sm: AvailableShippingMethod) =>
+  sm.service_zone?.fulfillment_set?.type === "pickup" ||
+  !!sm.name?.toLowerCase().includes("pickup")
+
+const isShippingMethod = (sm: AvailableShippingMethod) =>
+  sm.service_zone?.fulfillment_set?.type !== "delivery" &&
+  sm.service_zone?.fulfillment_set?.type !== "pickup" &&
+  !sm.name?.toLowerCase().includes("delivery") &&
+  !sm.name?.toLowerCase().includes("pickup") &&
+  !sm.name?.toLowerCase().includes("internal")
 
 export type StoreCardShippingMethod = HttpTypes.StoreCartShippingOption & {
   seller_id?: string
@@ -54,15 +90,6 @@ export type StoreCardShippingMethod = HttpTypes.StoreCartShippingOption & {
       }
     }
   }
-}
-
-type DeliveryEligibilityResult = {
-  available: boolean
-  code?: string
-  reason?: string
-  suggestion?: string
-  message?: string
-  next_action?: string
 }
 
 type ShippingMethodRule = { attribute: string; value: string }
@@ -118,14 +145,22 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   const [calculatedPricesMap, setCalculatedPricesMap] = useState<
     Record<string, number>
   >({})
+  // Whether the calculated options' price requests have all come back: until
+  // then a seller with only such options is loading, after it they failed.
+  const [calculatedPricesSettled, setCalculatedPricesSettled] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [missingModal, setMissingModal] = useState(false)
-  const [missingShippingSellers, setMissingShippingSellers] = useState<
-    string[]
-  >([])
-  const [selectedFulfillmentType, setSelectedFulfillmentType] = useState<FulfillmentType | undefined>(undefined)
-  const [deliveryEligibility, setDeliveryEligibility] = useState<DeliveryEligibilityResult | null>(null)
+  // The type the buyer picked. What is shown is derived from it on every
+  // render (`shownFulfillmentType`), never reset behind the buyer's back.
+  const [pickedFulfillmentType, setPickedFulfillmentType] = useState<FulfillmentType | undefined>(undefined)
+  // option id -> seller id of options the buyer chose here. Mercur stops
+  // listing a seller's options once the seller has a method, and the cart
+  // read cannot say whose a method is (lib/helpers/seller-shipping.ts), so
+  // this is how a chosen method stays paired with its seller on this page.
+  const [chosenOptionSellers, setChosenOptionSellers] = useState<Record<string, string>>({})
+  const [deliveryEligibility, setDeliveryEligibility] = useState<DeliveryEligibility | null>(null)
   const [isCheckingEligibility, setIsCheckingEligibility] = useState(false)
+  // The answer the step last acted on, and where it moved the selection.
+  const [deliveryNudge, setDeliveryNudge] = useState<DeliveryNudge>(NO_DELIVERY_NUDGE)
 
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -133,91 +168,59 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
 
   const isOpen = searchParams.get("step") === "delivery"
 
-  // Filter out return methods
-  const _allMethods = availableShippingMethods?.filter(
-    (sm) =>
-      sm.rules?.find((rule) => rule.attribute === "is_return")?.value !==
-      "true"
+  // The option lists, rebuilt only when the options change. They were
+  // rebuilt on every render, and each effect that listed them as a
+  // dependency ran on every render too.
+  const _allMethods = useMemo(
+    () => (availableShippingMethods ?? []).filter((sm) => !isReturnOption(sm)),
+    [availableShippingMethods]
   )
+  const _deliveryMethods = useMemo(() => _allMethods.filter(isDeliveryMethod), [_allMethods])
+  const _pickupMethods = useMemo(() => _allMethods.filter(isPickupMethod), [_allMethods])
+  const _shippingMethods = useMemo(() => _allMethods.filter(isShippingMethod), [_allMethods])
 
-  // Categorize methods by fulfillment type
-  const _deliveryMethods = _allMethods?.filter(
-    (sm) => sm.service_zone?.fulfillment_set?.type === "delivery" ||
-            sm.name?.toLowerCase().includes("delivery") ||
-            sm.name?.toLowerCase().includes("internal")
+  const hasDeliveryOptions = _deliveryMethods.length > 0
+  const hasPickupOptions = _pickupMethods.length > 0
+  const hasShippingOptions = _shippingMethods.length > 0
+
+  const selectedFulfillmentType = shownFulfillmentType(pickedFulfillmentType, {
+    delivery: hasDeliveryOptions,
+    pickup: hasPickupOptions,
+    shipping: hasShippingOptions,
+  })
+
+  // Which sellers still need a method: Mercur refuses the order, after
+  // authorizing the card, unless every seller in the cart has one. When the
+  // options could not be fetched (null), nothing is known about who has
+  // options, so the rule only counts and names no one.
+  const coverage = useMemo(
+    () => shippingCoverage(cart, availableShippingMethods ? _allMethods : null, chosenOptionSellers),
+    [cart, availableShippingMethods, _allMethods, chosenOptionSellers]
   )
+  const sellerNames = (sellers: { name: string }[]) =>
+    sellers.map((seller) => seller.name || "a seller in your cart")
 
-  const _pickupMethods = _allMethods?.filter(
-    (sm) => sm.service_zone?.fulfillment_set?.type === "pickup" ||
-            sm.name?.toLowerCase().includes("pickup")
-  )
-
-  const _shippingMethods = _allMethods?.filter(
-    (sm) => 
-      sm.service_zone?.fulfillment_set?.type !== "delivery" &&
-      sm.service_zone?.fulfillment_set?.type !== "pickup" &&
-      !sm.name?.toLowerCase().includes("delivery") &&
-      !sm.name?.toLowerCase().includes("pickup") &&
-      !sm.name?.toLowerCase().includes("internal")
-  )
-
-  const hasDeliveryOptions = !!_deliveryMethods?.length
-  const hasPickupOptions = !!_pickupMethods?.length
-  const hasShippingOptions = !!_shippingMethods?.length
-
-  // Determine current selection type based on selected method
   useEffect(() => {
-    const currentMethodId = cart.shipping_methods?.[0]?.shipping_option_id
-    if (currentMethodId) {
-      if (_deliveryMethods?.find(m => m.id === currentMethodId)) {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.DELIVERY)
-      } else if (_pickupMethods?.find(m => m.id === currentMethodId)) {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.PICKUP)
-      } else {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.SHIPPING)
-      }
+    const promises = _allMethods
+      .filter((sm) => sm.price_type === "calculated")
+      .map((sm) => calculatePriceForShippingOption(sm.id, cart.id))
+
+    if (!promises.length) {
+      setCalculatedPricesSettled(true)
+      return
     }
-  }, [cart.shipping_methods, _deliveryMethods, _pickupMethods])
 
-  useEffect(() => {
-    const set = new Set<string>()
-    cart.items?.forEach((item) => {
-      if (item?.product?.seller?.id) {
-        set.add(item.product.seller.id)
-      }
+    setCalculatedPricesSettled(false)
+    Promise.allSettled(promises).then((res) => {
+      const pricesMap: Record<string, number> = {}
+      res
+        .filter((r) => r.status === "fulfilled")
+        .forEach((p) => (pricesMap[p.value?.id || ""] = p.value?.amount!))
+
+      setCalculatedPricesMap(pricesMap)
+      setIsLoadingPrices(false)
+      setCalculatedPricesSettled(true)
     })
-
-    const sellerMethods = _allMethods?.map(({ seller_id }) => seller_id)
-
-    const missingSellerIds = [...set].filter(
-      (sellerId) => !sellerMethods?.includes(sellerId)
-    )
-
-    setMissingShippingSellers(Array.from(missingSellerIds))
-
-    if (missingSellerIds.length > 0 && !cart.shipping_methods?.length) {
-      setMissingModal(true)
-    }
-  }, [cart, _allMethods])
-
-  useEffect(() => {
-    if (_allMethods?.length) {
-      const promises = _allMethods
-        .filter((sm) => sm.price_type === "calculated")
-        .map((sm) => calculatePriceForShippingOption(sm.id, cart.id))
-
-      if (promises.length) {
-        Promise.allSettled(promises).then((res) => {
-          const pricesMap: Record<string, number> = {}
-          res
-            .filter((r) => r.status === "fulfilled")
-            .forEach((p) => (pricesMap[p.value?.id || ""] = p.value?.amount!))
-
-          setCalculatedPricesMap(pricesMap)
-          setIsLoadingPrices(false)
-        })
-      }
-    }
   }, [_allMethods, cart.id])
 
   const handleSubmit = () => {
@@ -239,6 +242,10 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
       if (!res.ok) {
         return setError(res.error?.message)
       }
+      const sellerId = _allMethods.find((method) => method.id === id)?.seller_id
+      if (sellerId) {
+        setChosenOptionSellers((pairs) => ({ ...pairs, [id]: sellerId }))
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : ""
       setError(
@@ -254,65 +261,53 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
     setError(null)
   }, [isOpen])
 
+  const postalCode = cart.shipping_address?.postal_code
 
+  // FBM's delivery-zone check, from the server (lib/data/delivery.ts): the
+  // browser's own call carried no publishable key and was refused every
+  // time. What each answer does is lib/helpers/delivery-eligibility.ts: a
+  // check that could not be made is reported and moves nothing (it used to
+  // switch the buyer to Pickup or Shipping, and the notice that said why
+  // went with it); "outside every delivery zone" is a nudge, below.
   useEffect(() => {
-    const postalCode = cart.shipping_address?.postal_code
-
-    if (!postalCode || !_deliveryMethods?.length) {
+    if (!postalCode || !hasDeliveryOptions) {
       setDeliveryEligibility(null)
       return
     }
 
-    const checkEligibility = async () => {
-      try {
-        setIsCheckingEligibility(true)
-        const geoRes = await fetch(`/api/geocode?zip=${postalCode}`)
-        if (!geoRes.ok) {
-          setDeliveryEligibility({
-            available: false,
-            code: "DELIVERY_COORDINATES_UNAVAILABLE",
-            reason: "We couldn't validate your delivery address yet.",
-            suggestion: "You can still choose pickup or continue after updating your postal code.",
-          })
-          return
-        }
-
-        const geo = await geoRes.json()
-        const checkRes = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/delivery-zones/check`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ latitude: geo.latitude, longitude: geo.longitude }),
-        })
-
-        if (!checkRes.ok) {
-          throw new Error("Delivery eligibility check failed")
-        }
-
-        setDeliveryEligibility(await checkRes.json())
-      } catch (_error) {
-        setDeliveryEligibility({
-          available: false,
-          code: "DELIVERY_CHECK_FAILED",
-          reason: "We couldn't verify delivery eligibility right now.",
-          suggestion: "Try again, or choose pickup if available.",
-        })
-      } finally {
-        setIsCheckingEligibility(false)
-      }
+    let current = true
+    setIsCheckingEligibility(true)
+    checkDeliveryForPostalCode(postalCode)
+      .then((answer) => {
+        if (current) setDeliveryEligibility(answer)
+      })
+      .catch(() => {
+        if (current) setDeliveryEligibility(null)
+      })
+      .finally(() => {
+        if (current) setIsCheckingEligibility(false)
+      })
+    return () => {
+      current = false
     }
+  }, [postalCode, hasDeliveryOptions])
 
-    checkEligibility()
-  }, [cart.shipping_address?.postal_code, _deliveryMethods?.length])
-
+  // The nudge: an address outside every delivery zone pre-selects Pickup,
+  // else Shipping, once per answer, when the cart's sellers offer either.
+  // Nothing enforces the zones after this step, and the check is approximate
+  // (a postal code's centroid), so the buyer can switch back to Delivery and
+  // is not moved again.
   useEffect(() => {
-    if (selectedFulfillmentType === FULFILLMENT_TYPE.DELIVERY && deliveryEligibility && !deliveryEligibility.available) {
-      if (hasPickupOptions) {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.PICKUP)
-      } else if (hasShippingOptions) {
-        setSelectedFulfillmentType(FULFILLMENT_TYPE.SHIPPING)
-      }
-    }
-  }, [deliveryEligibility, selectedFulfillmentType, hasPickupOptions, hasShippingOptions])
+    const next = deliveryNudgeFor(
+      deliveryNudge,
+      deliveryEligibility,
+      { pickup: hasPickupOptions, shipping: hasShippingOptions },
+      pickedFulfillmentType
+    )
+    if (next === deliveryNudge) return
+    setDeliveryNudge(next)
+    if (next.to) setPickedFulfillmentType(next.to)
+  }, [deliveryNudge, deliveryEligibility, hasPickupOptions, hasShippingOptions, pickedFulfillmentType])
 
   // Get methods based on selected fulfillment type
   const getMethodsForType = (type: FulfillmentType | undefined) => {
@@ -355,43 +350,16 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
     router.replace(pathname + "?step=delivery")
   }
 
-  const missingSellers = cart.items
-    ?.filter((item) =>
-      missingShippingSellers.includes(item.product?.seller?.id!)
-    )
-    .map((item) => item.product?.seller?.name)
-
   const isEditEnabled = !isOpen && !!cart?.shipping_methods?.length
+
+  const otherTypesWithOptions = (["delivery", "pickup", "shipping"] as const).filter(
+    (type) =>
+      type !== selectedFulfillmentType &&
+      { delivery: hasDeliveryOptions, pickup: hasPickupOptions, shipping: hasShippingOptions }[type]
+  )
 
   return (
     <div className="border p-4 rounded-sm bg-ui-bg-interactive">
-      {/* {missingModal && (
-        <Modal
-          heading="Missing seller shipping option"
-          onClose={() => router.push(`/${pathname.split("/")[1]}/cart`)}
-        >
-          <div className="p-4">
-            <h2 className="heading-sm">
-              Some of the sellers in your cart do not have shipping options.
-            </h2>
-
-            <p className="text-md mt-3">
-              Please remove the{" "}
-              <span className="font-bold">
-                {missingSellers?.map(
-                  (seller, index) =>
-                    `${seller}${
-                      index === missingSellers.length - 1 ? " " : ", "
-                    }`
-                )}
-              </span>{" "}
-              items or contact{" "}
-              {missingSellers && missingSellers?.length > 1 ? "them" : "him"} to
-              get the shipping options.
-            </p>
-          </div>
-        </Modal>
-      )} */}
       <div className="flex flex-row items-center justify-between mb-6">
         <Heading
           level="h2"
@@ -414,21 +382,38 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
         <>
           <div className="grid">
 
-          {selectedFulfillmentType === FULFILLMENT_TYPE.DELIVERY && (
-            <div className={clsx("mb-4 rounded-md border p-3 text-sm",
-              isCheckingEligibility ? "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle" :
-              deliveryEligibility?.available ? "border-green-200 bg-green-50 text-green-800" : "border-orange-200 bg-orange-50 text-orange-800"
-            )}>
-              {isCheckingEligibility
-                ? "Checking delivery eligibility for your postal code..."
-                : deliveryEligibility?.available
-                  ? deliveryEligibility.message || "Delivery is available for your address."
-                  : deliveryEligibility?.reason || "Delivery may not be available for this address."}
-              {!isCheckingEligibility && !deliveryEligibility?.available && deliveryEligibility?.suggestion ? (
-                <div className="mt-1">{deliveryEligibility.suggestion}</div>
-              ) : null}
+          {coverage.noOptions.length > 0 && (
+            <div
+              className="mb-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800"
+              role="alert"
+              data-testid="sellers-without-delivery-options"
+            >
+              <p className="font-medium">
+                {coverage.noOptionsExact
+                  ? `${listNames(sellerNames(coverage.noOptions))} ${
+                      coverage.noOptions.length === 1 ? "has" : "have"
+                    } no delivery options for this address.`
+                  : `${coverage.noOptionsCount === 1 ? "One seller" : `${coverage.noOptionsCount} sellers`} in your cart (${listNames(
+                      sellerNames(coverage.noOptions),
+                      "or"
+                    )}) ${coverage.noOptionsCount === 1 ? "has" : "have"} no delivery options for this address.`}
+              </p>
+              <p className="mt-1">
+                To check out, remove {coverage.noOptionsCount === 1 ? "that seller's" : "their"} items from{" "}
+                <LocalizedClientLink href="/cart" className="underline">
+                  your cart
+                </LocalizedClientLink>{" "}
+                or use a different address.
+              </p>
             </div>
           )}
+
+          <DeliveryEligibilityNotice
+            answer={deliveryEligibility}
+            checking={isCheckingEligibility}
+            selected={selectedFulfillmentType}
+            nudgedTo={deliveryNudge.answer === deliveryEligibility ? deliveryNudge.to : undefined}
+          />
             {/* Fulfillment Type Selector */}
             {(hasDeliveryOptions || hasPickupOptions || hasShippingOptions) && (
               <div className="mb-6">
@@ -436,8 +421,8 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                   How would you like to receive your order?
                 </Heading>
                 <RadioGroup
-                  value={selectedFulfillmentType}
-                  onChange={(type: FulfillmentType) => setSelectedFulfillmentType(type)}
+                  value={selectedFulfillmentType ?? null}
+                  onChange={(type: FulfillmentType | null) => setPickedFulfillmentType(type ?? undefined)}
                   className="flex flex-col gap-3"
                 >
                   {hasDeliveryOptions && (
@@ -498,7 +483,20 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                 <div className="pb-8 md:pt-0 pt-2">
                   {Object.keys(groupedBySellerId).map((key) => {
                     const methods = groupedBySellerId[key]
-                    const sellerName = methods[0]?.seller_name
+                    // From every option of the seller: a seller whose
+                    // options have no price yet has none in `methods`.
+                    const sellerName = currentMethods.find((method) => method.seller_id === key)?.seller_name
+
+                    if (methods.length === 0) {
+                      return (
+                        <div key={key} className="mb-4">
+                          <Heading level="h3" className="mb-2">
+                            {sellerName}
+                          </Heading>
+                          <UnpricedOptionsNotice sellerName={sellerName} settled={calculatedPricesSettled} />
+                        </div>
+                      )
+                    }
 
                     return (
                       <div key={key} className="mb-4">
@@ -607,20 +605,6 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                       </div>
                     )
                   })}
-                  {cart && (cart.shipping_methods?.length ?? 0) > 0 && (
-                    <div className="flex flex-col mt-4">
-                      <Heading level="h3" className="mb-2 text-sm font-medium text-ui-fg-subtle">
-                        Selected Options:
-                      </Heading>
-                      {cart.shipping_methods?.map((method) => (
-                        <CartShippingMethodRow
-                          key={method.id}
-                          method={method}
-                          currency_code={cart.currency_code}
-                        />
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -629,20 +613,44 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
             {selectedFulfillmentType && (!groupedBySellerId || Object.keys(groupedBySellerId).length === 0) && (
               <div className="p-4 bg-ui-bg-subtle rounded-lg text-center">
                 <Text className="text-ui-fg-subtle">
-                  No {selectedFulfillmentType} options available for your location. 
-                  {hasShippingOptions && selectedFulfillmentType !== FULFILLMENT_TYPE.SHIPPING && (
-                    <> Try selecting <button 
-                      onClick={() => setSelectedFulfillmentType(FULFILLMENT_TYPE.SHIPPING)}
-                      className="text-ui-fg-interactive underline"
-                    >
-                      Shipping
-                    </button> instead.</>
-                  )}
+                  No {selectedFulfillmentType} options available for your location.
+                  {otherTypesWithOptions.map((type, index) => (
+                    <Fragment key={type}>
+                      {index === 0 ? " Try " : " or "}
+                      <button
+                        onClick={() => setPickedFulfillmentType(type)}
+                        className="text-ui-fg-interactive underline"
+                      >
+                        {FULFILLMENT_TYPE_LABEL[type]}
+                      </button>
+                      {index === otherTypesWithOptions.length - 1 ? " instead." : ""}
+                    </Fragment>
+                  ))}
                 </Text>
+              </div>
+            )}
+
+            {cart && (cart.shipping_methods?.length ?? 0) > 0 && (
+              <div className="flex flex-col mt-4" data-testid="selected-delivery-options">
+                <Heading level="h3" className="mb-2 text-sm font-medium text-ui-fg-subtle">
+                  Selected Options:
+                </Heading>
+                {cart.shipping_methods?.map((method) => (
+                  <CartShippingMethodRow
+                    key={method.id}
+                    method={method}
+                    currency_code={cart.currency_code}
+                  />
+                ))}
               </div>
             )}
           </div>
           <div>
+            {coverage.toChoose.length > 0 && (
+              <p className="mb-2 text-sm text-ui-fg-subtle" data-testid="sellers-to-choose-for">
+                Choose a delivery option for {listNames(sellerNames(coverage.toChoose))} to continue.
+              </p>
+            )}
             <ErrorMessage
               error={error}
               data-testid="delivery-option-error-message"
@@ -650,7 +658,7 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
             <Button
               onClick={handleSubmit}
               variant="tonal"
-              disabled={!cart.shipping_methods?.[0]}
+              disabled={!coverage.complete}
               loading={isLoadingPrices}
             >
               Continue to payment

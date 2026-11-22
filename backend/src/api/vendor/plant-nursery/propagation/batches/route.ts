@@ -13,7 +13,7 @@ import { getSellerId } from "../../../quests/_helpers"
  * match the nursery-portal `usePropagation` hook contract.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(
@@ -42,7 +42,7 @@ export const POST = async (
   req: MedusaRequest<CreateBatchBody>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? {}

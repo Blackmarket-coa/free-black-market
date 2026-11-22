@@ -5,8 +5,10 @@ import { ORDER_CYCLE_MODULE } from "../../../../modules/order-cycle"
  * `GET /vendor/order-cycles` filtered on status alone until 2026-09-06, so
  * any authenticated seller read every coordinator's draft and closed cycles
  * (`docs/CDFI_COOP_ROADMAP.md` §1a). The list must be scoped to the cycles
- * the caller coordinates or takes part in, matching both id spellings the
- * vendor middleware produces (`mem_*` actor, `sel_*` seller).
+ * the caller's store coordinates or takes part in, by the store id alone.
+ * It matched the caller's member id too, because the writers stored the
+ * actor, a member id behind the vendor gate; a cycle then belonged to the
+ * member who made it (SD-145).
  */
 
 // api/vendor/** is inside the TS-3 de-`any`'d ratchet; typed doubles, no `any`.
@@ -64,7 +66,17 @@ describe("GET /vendor/order-cycles — seller scoping", () => {
     expect(service.listOrderCycles).not.toHaveBeenCalled()
   })
 
-  it("scopes to cycles the caller coordinates or takes part in, under both id spellings", async () => {
+  it("never lists by a raw actor the gate did not resolve to a store", async () => {
+    const service = makeService([])
+    const res = createRes()
+
+    await invoke(makeReq(service, { actorId: "sel_1" }), res)
+
+    expect(res.statusCode).toBe(401)
+    expect(service.listOrderCycles).not.toHaveBeenCalled()
+  })
+
+  it("scopes to cycles the caller's store coordinates or takes part in, never by the member id", async () => {
     const service = makeService([{ order_cycle_id: "oc_part" }])
     const res = createRes()
 
@@ -75,13 +87,13 @@ describe("GET /vendor/order-cycles — seller scoping", () => {
 
     expect(res.statusCode).toBe(200)
     expect(service.listOrderCycleSellers).toHaveBeenCalledWith({
-      seller_id: ["mem_9", "sel_1"],
+      seller_id: ["sel_1"],
       is_active: true,
     })
 
     const [filters] = service.listOrderCycles.mock.calls[0]
     expect(filters).toEqual({
-      $or: [{ coordinator_seller_id: ["mem_9", "sel_1"] }, { id: ["oc_part"] }],
+      $or: [{ coordinator_seller_id: ["sel_1"] }, { id: ["oc_part"] }],
       status: ["open"],
     })
     // The count query carries the same scope.
@@ -92,7 +104,7 @@ describe("GET /vendor/order-cycles — seller scoping", () => {
     const service = makeService([])
     const res = createRes()
 
-    await invoke(makeReq(service, { actorId: "sel_1", sellerId: "sel_1" }), res)
+    await invoke(makeReq(service, { actorId: "mem_1", sellerId: "sel_1" }), res)
 
     const [filters] = service.listOrderCycles.mock.calls[0]
     expect(filters).toEqual({ coordinator_seller_id: ["sel_1"] })

@@ -9,7 +9,7 @@ import { getSellerId } from "../../../quests/_helpers"
  * every way the fund's history breaks its donor's intent.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<FundAccountingModuleService>(

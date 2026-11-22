@@ -18,11 +18,40 @@ import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
 import { applyAttributionToCart } from "./attribution"
 import { applyBookingToCart } from "./booking"
 import { CART_FIELDS } from "./cart-query"
+import {
+  ALREADY_PLACED_GUEST_MESSAGE,
+  CART_ALREADY_COMPLETED,
+  orderConfirmationPath,
+} from "@/lib/helpers/cart-completion"
+
+/**
+ * Drops the cart cookie when it still names `cartId`, so the next add to cart
+ * starts a new cart instead of writing to this one.
+ *
+ * Best effort by design: Next.js lets only a Server Action or a Route Handler
+ * write cookies, and `retrieveCart` also runs while a page renders, where the
+ * write throws. There the completed cart is simply treated as no cart, and
+ * the next Server Action that reads it (an add to cart) replaces the cookie.
+ */
+async function forgetCart(cartId: string) {
+  try {
+    if ((await getCartId()) === cartId) {
+      await removeCartId()
+    }
+  } catch {
+    // A page render: cookies are read-only there. See above.
+  }
+}
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
+ *
+ * A cart with `completed_at` is no cart: it is already an order, the backend
+ * refuses every change to it ("Cart … is already completed."), and the cookie
+ * holding it would otherwise last its full seven days. It is answered as null,
+ * and the cookie is dropped where Next.js allows it (`forgetCart`).
  * @param cartId - optional - The ID of the cart to retrieve.
- * @returns The cart object if found, or null if not found.
+ * @returns The cart object if found and still open, or null.
  */
 export async function retrieveCart(cartId?: string) {
   const id = cartId || (await getCartId())
@@ -35,7 +64,7 @@ export async function retrieveCart(cartId?: string) {
     ...(await getAuthHeaders()),
   }
 
-  return await medusaFetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
+  const cart = await medusaFetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
     method: "GET",
     query: {
       fields: CART_FIELDS,
@@ -45,8 +74,20 @@ export async function retrieveCart(cartId?: string) {
   })
     .then(({ cart }) => cart)
     .catch(() => null)
+
+  if (cart?.completed_at) {
+    await forgetCart(id)
+    return null
+  }
+
+  return cart
 }
 
+/**
+ * The visitor's open cart, created when there is none. A completed cart in
+ * the cookie reads as none (`retrieveCart`), so it is replaced here with a new
+ * one rather than written to.
+ */
 export async function getOrSetCart(countryCode: string) {
   const region = await getRegion(countryCode)
 
@@ -240,6 +281,43 @@ export async function addToCart({
   }
 }
 
+/** What `tryAddToCart` hands a page. */
+export type AddToCartResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * `addToCart` for a page that tells the buyer why adding failed: the outcome
+ * as data, with the backend's message ("Some variant does not have the
+ * required inventory.", a price missing in the region, ...).
+ *
+ * Returned, not thrown, because an error a Server Action throws reaches a
+ * production page without its message: React replaces it with "An error
+ * occurred in the Server Components render…", so a page that catches it can
+ * only guess. `addToCart` itself still throws, for the server-side callers
+ * that pass the failure on (the subscription and order-cycle flows).
+ *
+ * Only a refusal the backend made is handed on in its words: an HTTP 4xx,
+ * which the error carries as `status` (the SDK's, or `medusaError`'s). Any
+ * other failure is this side's ("fetch failed", "Region not found for country
+ * code: xx", a 500's "An unknown error occurred") and tells a buyer nothing
+ * they can act on, so it gets the plain sentence.
+ */
+export async function tryAddToCart(
+  input: Parameters<typeof addToCart>[0]
+): Promise<AddToCartResult> {
+  try {
+    await addToCart(input)
+    return { ok: true }
+  } catch (error) {
+    const status = (error as { status?: unknown } | null)?.status
+    const refused = typeof status === "number" && status >= 400 && status < 500
+    const message = refused && error instanceof Error ? error.message.trim() : ""
+    return {
+      ok: false,
+      error: message || "This item could not be added to your cart. Please try again.",
+    }
+  }
+}
+
 export async function updateLineItem({
   lineId,
   quantity,
@@ -418,6 +496,66 @@ export async function applyPromotions(codes: string[]) {
     .catch(medusaError)
 }
 
+/** What `addPromotionCode` hands the cart page. */
+export type AddPromotionCodeResult = {
+  /** The new code is on the cart. */
+  applied: boolean
+  /** Codes the cart had before and still has. */
+  kept: string[]
+  /** Codes the cart had before and no longer has: they took nothing off the cart as it is now. */
+  removed: string[]
+}
+
+/**
+ * Adds one promotion code to the cart, keeping the codes it already has.
+ *
+ * `POST /store/carts/:id` with `promo_codes` replaces the cart's codes with
+ * the list sent (Medusa's `updateCartPromotionsWorkflow`, REPLACE), and the
+ * promotion field used to send the new code alone, so entering a second code
+ * silently removed the first. The codes the buyer entered before are now sent
+ * with it. They are read from the cart here, not taken from the page, so a
+ * page drawn before another code was added cannot drop that code. Automatic
+ * promotions are not sent: Medusa applies them whatever the list says.
+ *
+ * Medusa keeps a code only when it takes something off the cart as it is, so
+ * the new code may not be on the cart afterwards (`applied`), and an earlier
+ * one may be gone too (`removed`). A code the backend does not know is
+ * refused, and this throws.
+ */
+export async function addPromotionCode(code: string): Promise<AddPromotionCodeResult> {
+  const cart = await retrieveCart()
+
+  if (!cart) {
+    throw new Error("No existing cart found")
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const entered = code.trim()
+  const existing = (cart.promotions ?? [])
+    .filter((promotion) => !!promotion.code && !promotion.is_automatic)
+    .map((promotion) => promotion.code as string)
+  const codes = [...new Set([...existing, entered])]
+
+  return sdk.store.cart
+    .update(cart.id, { promo_codes: codes }, {}, headers)
+    .then(async ({ cart: updated }) => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+      const now = new Set(
+        (updated.promotions ?? []).map((promotion: HttpTypes.StoreCartPromotion) => promotion.code)
+      )
+      return {
+        applied: now.has(entered),
+        kept: existing.filter((kept) => kept !== entered && now.has(kept)),
+        removed: existing.filter((kept) => kept !== entered && !now.has(kept)),
+      }
+    })
+    .catch(medusaError)
+}
+
 export async function removeShippingMethod(shippingMethodId: string) {
   const cartId = await getCartId()
 
@@ -545,8 +683,20 @@ export async function setAddresses(
 
 /**
  * Places an order for a cart. If no cart ID is provided, it will use the cart ID from the cookies.
+ *
+ * What the main checkout answers (lib/helpers/cart-completion.ts):
+ * - an order set: the order is placed. The cart is forgotten and the buyer
+ *   is sent to the confirmation page.
+ * - 409 `cart_already_completed`: the cart was already an order, placed on
+ *   another path. It is forgotten too, and the buyer is sent to that order
+ *   when the answer names it (`order_id`); otherwise the message is returned,
+ *   in guest wording for a buyer who is not signed in.
+ * - anything else (409 `cart_completion_incomplete`,
+ *   `cart_completion_check_failed`, a guard's 400): nothing was placed. The
+ *   response is returned for the button to show its message, and the cart is
+ *   kept so that the buyer can try again.
  * @param cartId - optional - The ID of the cart to place an order for.
- * @returns The cart object if the order was successful, or null if not.
+ * @returns The completion response when the buyer is not sent anywhere.
  */
 export async function placeOrder(cartId?: string) {
   const id = cartId || (await getCartId())
@@ -570,8 +720,19 @@ export async function placeOrder(cartId?: string) {
   if (res?.data?.order_set) {
     revalidatePath("/user/reviews")
     revalidatePath("/user/orders")
-    removeCartId()
-    redirect(`/order/${res?.data?.order_set.orders[0].id}/confirmed`)
+    await forgetCart(id)
+    return redirect(orderConfirmationPath(res.data.order_set.orders[0].id))
+  }
+
+  if (res?.error?.code === CART_ALREADY_COMPLETED) {
+    revalidatePath("/user/orders")
+    await forgetCart(id)
+    if (res.error.orderId) {
+      return redirect(orderConfirmationPath(res.error.orderId))
+    }
+    if (!("Authorization" in headers)) {
+      return { ...res, error: { ...res.error, message: ALREADY_PLACED_GUEST_MESSAGE } }
+    }
   }
 
   return res
@@ -608,8 +769,8 @@ export async function placeTicketOrder(cartId?: string) {
   if (res?.data?.order?.id) {
     revalidatePath("/user/reviews")
     revalidatePath("/user/orders")
-    removeCartId()
-    redirect(`/order/${res.data.order.id}/confirmed`)
+    await forgetCart(id)
+    return redirect(orderConfirmationPath(res.data.order.id))
   }
 
   return res

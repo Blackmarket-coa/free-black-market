@@ -5,7 +5,7 @@ import { getSellerId } from "../../quests/_helpers"
 
 /** GET /vendor/nursery/products — this vendor's nursery listing attributes. */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)
@@ -27,7 +27,7 @@ interface UpsertBody {
 
 /** POST /vendor/nursery/products — create/update nursery attributes for a product. */
 export const POST = async (req: MedusaRequest<UpsertBody>, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const b = req.body ?? ({} as UpsertBody)

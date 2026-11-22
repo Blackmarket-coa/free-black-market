@@ -1,15 +1,15 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
-import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import";
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service";
 import { syncWooInventoryWorkflow } from "../../../../workflows/woocommerce-import/sync-woo-inventory";
+import { getSellerId } from "../../quests/_helpers";
 
 /**
  * POST /vendor/woocommerce/sync
  * Manually trigger an inventory sync from WooCommerce.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id;
+  const sellerId = await getSellerId(req);
 
   if (!sellerId) {
     return res.status(401).json({ code: "INVENTORY_SYNC_UNAUTHORIZED", message: "Unauthorized" });
@@ -61,7 +61,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * Get the latest sync report.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id;
+  const sellerId = await getSellerId(req);
 
   if (!sellerId) {
     return res.status(401).json({ code: "INVENTORY_SYNC_UNAUTHORIZED", message: "Unauthorized" });

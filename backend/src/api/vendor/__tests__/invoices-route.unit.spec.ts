@@ -145,7 +145,11 @@ const makeReq = (fake: ReturnType<typeof makeFakeAr>, opts: any = {}) => ({
   body: opts.body ?? {},
   query: opts.query ?? {},
   params: opts.params ?? {},
-  auth_context: { actor_id: opts.sellerId ?? "seller_123" },
+  // A request the vendor gate let through: the actor is a member, and the
+  // store is what the gate resolved (SD-145: invoices are keyed by the store).
+  auth_context: { actor_id: "mem_123" },
+  _seller_id: opts.sellerId ?? "seller_123",
+  _sellerContextResolved: true,
   scope: {
     resolve: (key: string) => {
       if (key === ACCOUNTS_RECEIVABLE_MODULE) return fake.service

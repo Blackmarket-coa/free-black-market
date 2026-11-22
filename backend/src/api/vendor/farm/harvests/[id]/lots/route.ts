@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { farmFailure, farmId, farmIds, ownedHarvest } from "../../../_access"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -19,44 +20,15 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const query = req.scope.resolve("query")
   const agricultureService = req.scope.resolve("agriculture") as AgricultureServiceType
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } }).auth_context?.actor_id
-  const harvestId = req.params.id
-
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" })
-  }
+  const params = farmIds(res, req.params, { id: farmId })
+  if (!params) return
+  const harvestId = params.id
 
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId
-      },
-    })
-
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" })
-    }
-
-    const producerId = producerLinks[0].producer_id
-
-    // Verify harvest belongs to this producer
-    const { data: existingHarvests } = await query.graph({
-      entity: "harvest",
-      fields: ["id"],
-      filters: {
-        id: harvestId,
-        producer_id: producerId,
-      },
-    })
-
-    if (!existingHarvests || existingHarvests.length === 0) {
-      return res.status(404).json({ message: "Harvest not found" })
-    }
+    // A harvest of the caller's farm, or 403 (`_access.ts`).
+    const owned = await ownedHarvest(req, res, harvestId)
+    if (!owned) return
 
     const {
       lot_number,
@@ -106,9 +78,6 @@ export async function POST(
 
     res.status(201).json({ lot })
   } catch (error) {
-    res.status(500).json({ 
-      message: "Failed to create lot", 
-      error: error.message 
-    })
+    farmFailure(req, res, "Failed to create lot", error)
   }
 }

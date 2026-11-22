@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../../types"
+import { getSellerId } from "../../../quests/_helpers"
 import { SERVICE_PROGRAM_MODULE } from "../../../../../modules/service-program"
 import type ServiceProgramService from "../../../../../modules/service-program/service"
 import { validateReviewSubmission } from "../../../../../modules/service-program/review-rules"
@@ -55,8 +55,11 @@ function toServiceReviewShape(row: {
  * module (`subject_type: service_contract`). Response shape unchanged.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const reviewerId =
-    (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
+  // The reviewing store: a contract's client is a store (`vendor_id`, which
+  // the v1 seller routes write with the resolved store id). This took
+  // `_seller_id || actor_id`, the member id for a member-id login, so a
+  // member's review was refused as not the contract's client (SD-145).
+  const reviewerId = await getSellerId(req)
   if (!reviewerId) {
     return res.status(401).json({ message: "Authentication required" })
   }

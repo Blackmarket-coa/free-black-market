@@ -164,7 +164,7 @@ async function CheckoutPageContent({}) {
           </div>
 
           <div className="lg:col-span-5">
-            <CartReview cart={cart} beneficiaries={beneficiaries} donationSettings={donationSettings} storefronts={storefronts} donationFeatureGates={donationFeatureGates} />
+            <CartReview cart={cart} shippingOptions={shippingMethods} beneficiaries={beneficiaries} donationSettings={donationSettings} storefronts={storefronts} donationFeatureGates={donationFeatureGates} />
           </div>
         </div>
       </main>

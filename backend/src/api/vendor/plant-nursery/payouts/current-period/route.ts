@@ -33,7 +33,7 @@ function describeReason(reason: string): string {
  * A vendor with no sales/karma history gets the honest seedling baseline.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const karmaService = new GrowerKarmaService(req.scope)

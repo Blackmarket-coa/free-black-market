@@ -2,12 +2,9 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createLogger } from "../../../../shared/logger"
 import { ACCOUNTS_RECEIVABLE_MODULE } from "../../../../modules/accounts-receivable"
 import type AccountsReceivableService from "../../../../modules/accounts-receivable/service"
+import { getSellerId } from "../../quests/_helpers"
 
 const log = createLogger("api/vendor/invoices/aging")
-
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
 
 /**
  * GET /vendor/invoices/aging — standard AR aging for this vendor.
@@ -22,7 +19,7 @@ const getSellerId = (req: MedusaRequest) =>
  * would hide a collections problem from the vendors most exposed to one.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const ar = req.scope.resolve<AccountsReceivableService>(

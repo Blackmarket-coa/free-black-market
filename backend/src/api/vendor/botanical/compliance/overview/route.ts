@@ -24,7 +24,7 @@ const NO_FRAMEWORK = new Set(["craft_supply", "self_regulated"])
  * behavior correct — an undeclared cap must never render as a cap of zero.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-  const makerId = getSellerId(req)
+  const makerId = await getSellerId(req)
   if (!makerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<BotanicalModuleService>(BOTANICAL_MODULE)

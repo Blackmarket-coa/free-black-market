@@ -1,16 +1,16 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../types"
 import { ODOO_IMPORT_MODULE } from "../../../../modules/odoo-import"
 import OdooImportModuleService from "../../../../modules/odoo-import/service"
 import { connectOdooWorkflow } from "../../../../workflows/odoo-import/connect-odoo"
 import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
 import { assertPublicHttpUrl, BlockedUrlError } from "../../../../shared/safe-fetch"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * GET /vendor/odoo/connection — current vendor's Odoo connection status.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   try {
@@ -41,7 +41,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * POST /vendor/odoo/connection — connect an Odoo instance (validate + save).
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const { url, db_name, username, api_key } = req.body as {
@@ -90,7 +90,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * DELETE /vendor/odoo/connection — remove the vendor's Odoo connection.
  */
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   try {

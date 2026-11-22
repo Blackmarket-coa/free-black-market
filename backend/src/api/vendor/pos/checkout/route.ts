@@ -2,8 +2,22 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { VendorRequest } from "../../types"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
+import {
+  VENDOR_TO_VENDOR_PAYMENTS_DECIDED,
+  VENDOR_TO_VENDOR_PAYMENTS_REFUSAL,
+} from "../../../../shared/vendor-to-vendor-payments"
 
+/**
+ * POST /vendor/pos/checkout: a vendor-to-vendor payment from the caller's
+ * earnings. Refused with 403 until an operator and counsel decide; the switch
+ * and the facts they decide on are in shared/vendor-to-vendor-payments.ts.
+ * The code after the refusal is kept as it was.
+ */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  if (!VENDOR_TO_VENDOR_PAYMENTS_DECIDED) {
+    return res.status(403).json(VENDOR_TO_VENDOR_PAYMENTS_REFUSAL)
+  }
+
   const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 

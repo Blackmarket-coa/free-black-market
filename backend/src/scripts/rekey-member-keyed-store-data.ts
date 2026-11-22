@@ -1,0 +1,860 @@
+import type { ExecArgs, MedusaContainer } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
+
+/**
+ * Move store records written under a member id onto that member's store
+ * (SD-145).
+ *
+ *     npx medusa exec ./src/scripts/rekey-member-keyed-store-data.ts
+ *     npx medusa exec ./src/scripts/rekey-member-keyed-store-data.ts apply
+ *
+ * The first is a dry run: it reads, writes nothing, and reports per table and
+ * column how many rows hold a member id (`mem_`), how many it would rekey, a
+ * sample, and the rows it leaves alone. Writing needs the bare word `apply`
+ * (`medusa exec` refuses `--apply` before the script loads; see
+ * shared/exec-args.ts). Any other word is refused before anything is read.
+ *
+ * Behind the vendor gate `auth_context.actor_id` is a member id for every
+ * vendor, and some ninety vendor routes used it as the store id until SD-145.
+ * They wrote the member id into the store column of every row below, so a
+ * store's records belonged to whichever member made them. Those routes now
+ * write the store id; this moves what they wrote before.
+ *
+ * Each row holding a `mem_` id in a listed column is mapped to that member's
+ * `seller_id`, soft-deleted (removed) members included, whatever the row's own
+ * `deleted_at`. Left alone, and listed:
+ *
+ *   - rows whose member id matches no member row at all;
+ *   - rows a unique index would refuse once rekeyed: two members of one store
+ *     who each made `INV-00001`, two farm profiles, a fund code used twice.
+ *     All rows of such a clash are kept, for a person to resolve;
+ *   - rows that hang off a parent row that keeps its member id (an invoice's
+ *     payments, a fund's movements, a node's stock and transfers, a cottage
+ *     food profile's sales entries), so a child is never moved away from its
+ *     parent;
+ *   - rows a target's own rule keeps: a supplier proposal that a held pool
+ *     selected keeps that pool's member id (see `keepWhen`, and its comment
+ *     on what the hold leaves the store unable to do).
+ *
+ * `apply` rewrites one table per transaction, in the order of the list. Each
+ * table is locked against writes (SHARE ROW EXCLUSIVE; reads continue) for the
+ * length of its own transaction, the plan is made again under the lock, and
+ * every changed row is printed. The lock waits at most `lock_timeout` (5 s)
+ * and each statement runs at most `statement_timeout` (2 min), so the run
+ * never queues writers behind a long wait; a table that times out, or fails
+ * any other way, rolls back alone, is reported, and the run goes on to the
+ * next. The dry run's reads, and the read that reports a failed table, run
+ * under the same two bounds, read only; a failed table that cannot be read
+ * again either is reported as not counted, and the rows that hang off it
+ * keep their member ids. A second run finds nothing left to rekey.
+ *
+ * Posture A (docs/POSTURE_A_COMPLIANCE.md): no hawala ledger table, no ledger
+ * account, and nothing that moves or re-homes Coalition Credits is ever
+ * rewritten here. The columns in {@link HELD_FOR_DECISION} hold member ids
+ * that decide where money goes; they are counted read-only, member-owned
+ * SELLER_EARNINGS accounts are listed with their balances
+ * ({@link MEMBER_OWNED_SELLER_EARNINGS_SQL}), and all of it is left for an
+ * operator and counsel to decide.
+ *
+ * **Run `apply` in the same window as the SD-145 deploy.** From the deploy on,
+ * the routes read and write by the store id, and every hour in between makes
+ * records that clash with, or duplicate, the ones still under member ids:
+ * a store's new invoice is numbered INV-00001 again and strands the member's
+ * INV-00001 as a clash (measured in review); a WooCommerce re-import looks for
+ * the store's earlier products by the store id, misses the ones linked to a
+ * member, and imports them again; a quest enrolment looks for the store's by
+ * the store id and enrols it a second time (both by reading). Run the dry run
+ * before the deploy, and `apply` immediately after it, in a quiet window.
+ */
+
+export type RekeyTarget = {
+  table: string
+  column: string
+  /** The routes that wrote the member id here. */
+  writtenBy: string
+  /**
+   * A row whose foreign key (`via`) names a row of `table` that keeps its
+   * member id keeps its own: the child follows its parent.
+   */
+  keepWithParent?: { table: string; via: readonly string[] }
+  /**
+   * A row this SQL predicate holds for keeps its member id. It is evaluated
+   * against the target table aliased `t`, on rows whose column holds a member
+   * id. `reason` is printed with each row kept.
+   */
+  keepWhen?: { sql: string; reason: string }
+}
+
+/**
+ * Every store column the SD-145 routes wrote the actor's member id into,
+ * derived by reading each route and the service method it calls. Parents come
+ * before their children.
+ */
+export const REKEY_TARGETS: readonly RekeyTarget[] = [
+  // POST /vendor/customer-tiers (vendor-rules createVendorCustomerTiers), and
+  // POST /vendor/nursery/channels, which creates a tier per sales channel.
+  { table: "vendor_customer_tier", column: "seller_id", writtenBy: "customer-tiers, nursery/channels" },
+  // POST /vendor/enterprise-fees (order-cycle createEnterpriseFees).
+  { table: "enterprise_fee", column: "seller_id", writtenBy: "enterprise-fees" },
+  // POST /vendor/invoices (accounts-receivable createDraft); unique per store
+  // on invoice_number, so members' INV-00001s clash and are kept.
+  { table: "ar_invoice", column: "seller_id", writtenBy: "invoices" },
+  // POST /vendor/invoices/:id/payments: recordPayment copies the invoice's
+  // seller_id onto each payment.
+  {
+    table: "ar_invoice_payment",
+    column: "seller_id",
+    writtenBy: "invoices/:id/payments",
+    keepWithParent: { table: "ar_invoice", via: ["invoice_id"] },
+  },
+  // POST /vendor/quotes (quote createDraft); unique per store on quote_number.
+  { table: "quote", column: "seller_id", writtenBy: "quotes" },
+  // No farm table: POST /vendor/farm/profile never wrote one. It created the
+  // producer without its required `seller_id` (refused by the database, so
+  // nothing was written) and then linked it with a shape Medusa's Link throws
+  // on (`{ producer_seller: ... }`), both measured on Postgres; nothing else
+  // writes the seller-producer link, and `producer.seller_id` is written only
+  // with a store id (the v1 launch flow, the growth-loop seed). Harvests, lots
+  // and windows hang off the producer, not the store.
+  // POST /vendor/woocommerce/connection (connectWooCommerceWorkflow); one per store.
+  { table: "woocommerce_connection", column: "seller_id", writtenBy: "woocommerce/connection" },
+  // POST /vendor/odoo/connection (connectOdooWorkflow); one per store.
+  { table: "odoo_connection", column: "seller_id", writtenBy: "odoo/connection" },
+  // Product links: POST /vendor/woocommerce/import and /vendor/odoo/import put
+  // the actor on the import event, and the background import links each
+  // product to it; POST /vendor/printful/import links them itself.
+  {
+    table: "seller_seller_product_product",
+    column: "seller_id",
+    writtenBy: "woocommerce/import, odoo/import, printful/import",
+  },
+  // POST /vendor/order-cycles.
+  { table: "order_cycle", column: "coordinator_seller_id", writtenBy: "order-cycles" },
+  // POST /vendor/order-cycles/:id/exchanges (seller_id defaults to the caller).
+  { table: "order_cycle_exchange", column: "seller_id", writtenBy: "order-cycles/:id/exchanges" },
+  // POST /vendor/order-cycles/:id/products, and
+  // POST /vendor/order-cycles/:id/exchanges/:exchangeId/products.
+  {
+    table: "order_cycle_product",
+    column: "seller_id",
+    writtenBy: "order-cycles/:id/products, order-cycles/:id/exchanges/:exchangeId/products",
+  },
+  // POST /vendor/share-box-templates.
+  { table: "share_box_template", column: "coordinator_seller_id", writtenBy: "share-box-templates" },
+  // POST /vendor/quests/collective (formCollective).
+  { table: "quest_collective", column: "owner_seller_id", writtenBy: "quests/collective" },
+  // POST /vendor/quests/enrollments, /quests/collective, /quests/collective/:id/join.
+  {
+    table: "quest_enrollment",
+    column: "seller_id",
+    writtenBy: "quests/enrollments, quests/collective, quests/collective/:id/join",
+  },
+  // GET /vendor/quests/enrollments(/:id): syncProgress records a stage event
+  // under the enrollment's seller_id.
+  { table: "quest_stage_event", column: "seller_id", writtenBy: "quests/enrollments, quests/enrollments/:id" },
+  // GET /vendor/quests/enrollments/:id/packet and /quests/collective/:id/packet.
+  { table: "quest_packet", column: "seller_id", writtenBy: "quests/enrollments/:id/packet, quests/collective/:id/packet" },
+  // POST /vendor/quests/collective/:id/consent (recordConsent).
+  { table: "quest_member_consent", column: "seller_id", writtenBy: "quests/collective/:id/consent" },
+  // POST /vendor/aid-network/nodes; unique per store on slug.
+  { table: "network_node", column: "seller_id", writtenBy: "aid-network/nodes" },
+  // POST /vendor/aid-network/intake (recordIntake).
+  {
+    table: "intake_receipt",
+    column: "seller_id",
+    writtenBy: "aid-network/intake",
+    keepWithParent: { table: "network_node", via: ["node_id"] },
+  },
+  // POST /vendor/aid-network/intake and /aid-network/transfers/:id/receive.
+  {
+    table: "node_stock",
+    column: "seller_id",
+    writtenBy: "aid-network/intake, aid-network/transfers/:id/receive",
+    keepWithParent: { table: "network_node", via: ["node_id"] },
+  },
+  // POST /vendor/aid-network/transfers.
+  {
+    table: "node_transfer",
+    column: "seller_id",
+    writtenBy: "aid-network/transfers",
+    keepWithParent: { table: "network_node", via: ["from_node_id", "to_node_id"] },
+  },
+  // POST /vendor/funds (fund-accounting). Grant bookkeeping in cents: no
+  // hawala table, no ledger account, no Coalition Credits balance (expenditures
+  // cite hawala entries by id, and those are not touched). Unique per store on
+  // code.
+  { table: "fund", column: "seller_id", writtenBy: "funds" },
+  // POST /vendor/funds/:id/entries (recordEntry).
+  {
+    table: "fund_transaction",
+    column: "seller_id",
+    writtenBy: "funds/:id/entries",
+    keepWithParent: { table: "fund", via: ["fund_id"] },
+  },
+  // POST /vendor/vault.
+  { table: "vault_document", column: "seller_id", writtenBy: "vault" },
+  // POST /vendor/botanical/pathways (activatePathwayFromTemplate). The other
+  // botanical tables have no writer.
+  { table: "botanical_pathway", column: "maker_id", writtenBy: "botanical/pathways" },
+  // PUT /vendor/cottage-food/profile and /cottage-food/onboarding
+  // (upsertProfileForSeller); one per store.
+  { table: "cottage_food_profile", column: "seller_id", writtenBy: "cottage-food/profile, cottage-food/onboarding" },
+  // POST /vendor/cottage-food/labels (createLabelForSeller).
+  { table: "cottage_food_label", column: "seller_id", writtenBy: "cottage-food/labels" },
+  // POST /vendor/cottage-food/sales (recordSale). An entry names its profile
+  // (`profile_id`); profiles are unique per store, so when two members' clash
+  // and are kept, their entries are kept with them.
+  {
+    table: "cottage_food_sales_entry",
+    column: "seller_id",
+    writtenBy: "cottage-food/sales",
+    keepWithParent: { table: "cottage_food_profile", via: ["profile_id"] },
+  },
+  // POST /vendor/nursery/products (upsertForProduct).
+  { table: "nursery_product_attribute", column: "seller_id", writtenBy: "nursery/products" },
+  // POST /vendor/plant-nursery/propagation/batches (startBatch).
+  { table: "propagation_batch", column: "seller_id", writtenBy: "plant-nursery/propagation/batches" },
+  // POST /vendor/production-batches.
+  { table: "production_batch", column: "seller_id", writtenBy: "production-batches" },
+  // POST /vendor/production-costs (recordCost).
+  { table: "production_cost_entry", column: "seller_id", writtenBy: "production-costs" },
+  // POST /vendor/collective/demand-pools/:id/proposals. A proposal names its
+  // supplier, and the pool's selection copies it into
+  // `demand_post.selected_supplier_id` (held below). A proposal that a pool
+  // has selected under a member id keeps that member id, so the pool and the
+  // proposal it accepted name the same supplier until the decision on the
+  // pool. Keeping it does not make it usable, and neither would rekeying it
+  // alone; both of these follow from the hold on the pool (measured in
+  // review, and pinned in vendor-store-keying.spec.ts):
+  //   - the store is refused when it links the pool to an order cycle it
+  //     coordinates, "Only the selected supplier can link an order cycle":
+  //     linkOrderCycle compares the pool's member id with the store id the
+  //     route now passes;
+  //   - the kept proposal is not among the store's own proposals for the
+  //     pool: GET .../proposals lists by the store id.
+  // Proposals no pool has selected are rekeyed. A pool that selects one later
+  // copies the store id, so its escrow is paid to the store's own
+  // SELLER_EARNINGS account (processGroupPurchase), as for every proposal
+  // made since SD-145.
+  {
+    table: "supplier_proposal",
+    column: "supplier_id",
+    writtenBy: "collective/demand-pools/:id/proposals",
+    keepWhen: {
+      reason: "a held pool selected it",
+      sql: `EXISTS (SELECT 1 FROM "demand_post" d WHERE d.id = t."demand_post_id" AND d.selected_supplier_id = t."supplier_id")`,
+    },
+  },
+  // The same route, with bargaining_group_id (submitGroupProposal).
+  { table: "bargaining_proposal", column: "proposer_id", writtenBy: "collective/demand-pools/:id/proposals" },
+]
+
+export type HeldColumn = {
+  table: string
+  column: string
+  writtenBy: string
+  reason: string
+  /** Further columns shown in the sample. */
+  detail?: readonly string[]
+}
+
+/**
+ * Member ids that decide where money goes. Counted and sampled, never
+ * rewritten: an operator and counsel decide (Posture A).
+ */
+export const HELD_FOR_DECISION: readonly HeldColumn[] = [
+  {
+    table: "hawala_vendor_payment",
+    column: "payer_vendor_id",
+    writtenBy:
+      "pos/checkout (the actor, a member id) and POST /vendor/hawala/payments (the store, through resolveVendorSellerId, at this tree); both now refuse every call until the decision (shared/vendor-to-vendor-payments.ts)",
+    reason:
+      "hawala ledger table: the payer of a vendor-to-vendor payment; the payment debited the SELLER_EARNINGS account owned by this id, member-owned ones included",
+    detail: ["payer_ledger_account_id", "payee_vendor_id", "amount", "currency_code", "status"],
+  },
+  {
+    table: "demand_post",
+    column: "selected_supplier_id",
+    writtenBy:
+      "copied from a proposal of collective/demand-pools/:id/proposals when its pool selects it (a member id for proposals made before SD-145, the store since)",
+    reason:
+      "the payee of the pool's escrow: the admin approval releases it to the SELLER_EARNINGS account owned by this id (processGroupPurchase), a member-owned account when this is a member id",
+    detail: ["status", "final_total_price", "escrow_account_id"],
+  },
+  {
+    table: "hawala_ledger_account",
+    column: "owner_id",
+    writtenBy:
+      "GET /vendor/farm/grower-dashboard before SD-145 (getGrowerPayoutHistory: getOrCreateSellerEarnings with the actor's member id, minted on the member's first read), and the hawala earnings route before resolveVendorSellerId",
+    reason:
+      "ledger accounts owned by a member id. They can be credited (processGroupPurchase, when a pool's selected supplier was a member id), and pos/checkout, keyed by the member, would have moved USD out of them to any payee (POST /vendor/hawala/payments pays from the store's own account instead; both now refuse); every member-owned SELLER_EARNINGS account and its balance is listed below",
+    detail: ["owner_type", "account_type", "currency_code", "balance", "available_balance"],
+  },
+]
+
+/**
+ * Read-only: every SELLER_EARNINGS account owned by a member id, with its
+ * balances, the member's store, and whether the member was removed. For the
+ * operator and counsel deciding what happens to them (Posture A); nothing here
+ * changes them. Run it directly against the database, or read it in the
+ * script's output.
+ */
+export const MEMBER_OWNED_SELLER_EARNINGS_SQL = `SELECT a.id AS ledger_account_id,
+       a.owner_id AS member_id,
+       m.seller_id AS store_id,
+       (m.id IS NULL) AS no_such_member,
+       COALESCE(m.deleted_at IS NOT NULL, false) AS member_removed,
+       a.currency_code,
+       a.balance::text AS balance,
+       a.pending_balance::text AS pending_balance,
+       a.available_balance::text AS available_balance,
+       a.status,
+       a.created_at
+  FROM hawala_ledger_account a
+  LEFT JOIN member m ON m.id = a.owner_id
+ WHERE a.deleted_at IS NULL
+   AND a.owner_type = 'SELLER'
+   AND a.account_type = 'SELLER_EARNINGS'
+   AND left(a.owner_id, 4) = 'mem_'
+ ORDER BY a.available_balance DESC, a.created_at ASC, a.id ASC`
+
+/** Rows printed per table in a sample. */
+const SAMPLE = 5
+
+type Pg = {
+  raw: <T = Record<string, unknown>>(sql: string, bindings?: readonly unknown[]) => Promise<{ rows: T[] }>
+  transaction: <R>(run: (trx: Pg) => Promise<R>) => Promise<R>
+}
+
+type Log = (line: string) => void
+
+export type RowRef = { id: string; member_id: string; store_id: string | null }
+
+export type TargetReport = {
+  table: string
+  column: string
+  writtenBy: string
+  /** `missing`: the table or column is not in this database. */
+  status: "missing" | "planned" | "applied" | "failed"
+  /** Rows holding a member id in the column, before this run. */
+  found: number
+  /** Rows rekeyed (`apply`) or to be rekeyed (dry run). */
+  rekey: RowRef[]
+  /** Of those, rows written by a member since removed, and rows of a closed store. */
+  removedMember: number
+  closedStore: number
+  unmatched: RowRef[]
+  conflicts: Array<RowRef & { index: string }>
+  keptWithParent: RowRef[]
+  /** Rows the target's `keepWhen` rule keeps, with its reason. */
+  keptByRule: Array<RowRef & { reason: string }>
+  /** Unique indexes on the column that use expressions: not checked here; a clash there rolls the table back. */
+  uncheckedIndexes: string[]
+  error?: string
+  /**
+   * A failed table that could not be read again within the bounds either:
+   * `found` and the lists are unknown, not zero. None of its rows changed.
+   */
+  unread?: true
+}
+
+export type HeldReport = HeldColumn & {
+  status: "missing" | "counted"
+  found: number
+  sample: Array<Record<string, unknown>>
+}
+
+export type RekeySummary = {
+  apply: boolean
+  targets: TargetReport[]
+  held: HeldReport[]
+  /** Every member-owned SELLER_EARNINGS account and its balances (MEMBER_OWNED_SELLER_EARNINGS_SQL). */
+  memberOwnedEarnings: Array<Record<string, unknown>>
+}
+
+/** How long `apply` waits for a table's lock, and lets each statement run. */
+export type RekeyTimeouts = { lockTimeoutMs: number; statementTimeoutMs: number }
+
+export const DEFAULT_TIMEOUTS: RekeyTimeouts = { lockTimeoutMs: 5_000, statementTimeoutMs: 120_000 }
+
+const IDENTIFIER = /^[a-z_][a-z0-9_]*$/
+
+/** A table or column name from the lists above, quoted. */
+function ident(name: string): string {
+  if (!IDENTIFIER.test(name)) {
+    throw new Error(`rekey-member-keyed-store-data: refusing identifier ${JSON.stringify(name)}`)
+  }
+  return `"${name}"`
+}
+
+async function columnsOf(pg: Pg, table: string): Promise<Set<string>> {
+  const { rows } = await pg.raw<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?`,
+    [table]
+  )
+  return new Set(rows.map((r) => r.column_name))
+}
+
+type UniqueIndex = { name: string; columns: string[]; hasExpressions: boolean; predicate: string | null; nullsNotDistinct: boolean }
+
+async function uniqueIndexesOn(pg: Pg, table: string, column: string): Promise<UniqueIndex[]> {
+  const { rows } = await pg.raw<{
+    name: string
+    columns: string[] | null
+    has_expressions: boolean
+    predicate: string | null
+    definition: string
+    nulls_not_distinct: string | null
+  }>(
+    `SELECT ic.relname::text AS name,
+            ARRAY(SELECT a.attname::text
+                    FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                   WHERE k.ord <= i.indnkeyatts
+                   ORDER BY k.ord) AS columns,
+            (i.indexprs IS NOT NULL) AS has_expressions,
+            pg_get_expr(i.indpred, i.indrelid) AS predicate,
+            pg_get_indexdef(i.indexrelid) AS definition,
+            to_jsonb(i) ->> 'indnullsnotdistinct' AS nulls_not_distinct
+       FROM pg_index i
+       JOIN pg_class ic ON ic.oid = i.indexrelid
+      WHERE i.indrelid = to_regclass(?) AND i.indisunique`,
+    [table]
+  )
+  return rows
+    .filter((r) => (r.columns ?? []).includes(column) || (r.has_expressions && r.definition.includes(column)))
+    .map((r) => ({
+      name: r.name,
+      columns: r.columns ?? [],
+      hasExpressions: r.has_expressions,
+      predicate: r.predicate,
+      nullsNotDistinct: r.nulls_not_distinct === "true",
+    }))
+}
+
+type Classified = RowRef & {
+  row_ctid: string
+  matched: boolean
+  member_removed: boolean
+  store_closed: boolean
+  via: string[]
+  kept_by_rule: boolean
+}
+
+/** Every row holding a member id in the column, with the member's store. */
+async function classify(pg: Pg, target: RekeyTarget): Promise<Classified[]> {
+  const t = ident(target.table)
+  const c = ident(target.column)
+  const via = target.keepWithParent?.via ?? []
+  const viaSelect = via.map((v, i) => `, t.${ident(v)}::text AS via_${i}`).join("")
+  const keepSelect = target.keepWhen ? `, COALESCE((${predicateSql(target.keepWhen.sql)}), false) AS kept_by_rule` : ", false AS kept_by_rule"
+  const { rows } = await pg.raw<Record<string, unknown>>(
+    `SELECT t.ctid::text AS row_ctid, t."id"::text AS id, t.${c} AS member_id,
+            (m.id IS NOT NULL AND m.seller_id IS NOT NULL) AS matched,
+            m.seller_id AS store_id,
+            COALESCE(m.deleted_at IS NOT NULL, false) AS member_removed,
+            COALESCE(s.deleted_at IS NOT NULL, false) AS store_closed${viaSelect}${keepSelect}
+       FROM ${t} t
+       LEFT JOIN "member" m ON m.id = t.${c}
+       LEFT JOIN "seller" s ON s.id = m.seller_id
+      WHERE left(t.${c}, 4) = 'mem_'
+      ORDER BY t."id", t.ctid`
+  )
+  return rows.map((r) => ({
+    row_ctid: String(r.row_ctid),
+    id: String(r.id),
+    member_id: String(r.member_id),
+    store_id: r.matched ? String(r.store_id) : null,
+    matched: Boolean(r.matched),
+    member_removed: Boolean(r.member_removed),
+    store_closed: Boolean(r.store_closed),
+    via: via.map((_, i) => (r[`via_${i}`] == null ? "" : String(r[`via_${i}`]))),
+    kept_by_rule: Boolean(r.kept_by_rule),
+  }))
+}
+
+/**
+ * The rows that would break this unique index once rekeyed: a moving row that
+ * would share every indexed value with another row the index covers. NULLs
+ * are distinct unless the index says otherwise, as Postgres has it.
+ */
+async function conflictsFor(pg: Pg, target: RekeyTarget, index: UniqueIndex): Promise<Set<string>> {
+  const t = ident(target.table)
+  const c = ident(target.column)
+  const others = index.columns.filter((col) => col !== target.column)
+  const otherSelect = others.map((col, i) => `, t.${ident(col)} AS k_${i}`).join("")
+  const eq = index.nullsNotDistinct ? "IS NOT DISTINCT FROM" : "="
+  const otherMatch = others.map((_, i) => ` AND o.k_${i} ${eq} p.k_${i}`).join("")
+  const { rows } = await pg.raw<{ row_ctid: string }>(
+    `WITH projected AS (
+       SELECT t.row_ctid,
+              CASE WHEN left(t.${c}, 4) = 'mem_' AND m.seller_id IS NOT NULL THEN m.seller_id ELSE t.${c} END AS new_key,
+              (left(t.${c}, 4) = 'mem_' AND m.seller_id IS NOT NULL) AS moving${otherSelect}
+         FROM (SELECT ctid AS row_ctid, * FROM ${t} WHERE ${predicateSql(index.predicate)}) t
+         LEFT JOIN "member" m ON m.id = t.${c}
+     )
+     SELECT p.row_ctid::text AS row_ctid
+       FROM projected p
+      WHERE p.moving
+        AND EXISTS (SELECT 1 FROM projected o
+                     WHERE o.row_ctid <> p.row_ctid AND o.new_key ${eq} p.new_key${otherMatch})`
+  )
+  return new Set(rows.map((r) => r.row_ctid))
+}
+
+/**
+ * An index predicate as Postgres prints it (`pg_get_expr`), or a target's
+ * `keepWhen` SQL, made safe to embed in a `pg.raw` query.
+ *
+ * knex's pg dialect (`positionBindings`, knex 3.2.10) reads every `?` as a
+ * binding unless an odd number of backslashes stands directly before it, and
+ * then drops those backslashes. So each `?` gets one backslash (the jsonb `?`,
+ * `?|` and `?&` operators reach Postgres unchanged), every other backslash
+ * passes through untouched, and a backslash directly before a `?` cannot be
+ * sent at all: escaped, it would be read as a binding, which shifts every
+ * real binding after it or, inside a string literal, silently changes the
+ * literal. Such a predicate is refused; the caller reports the table as
+ * failed and keeps its rows.
+ */
+export function predicateSql(predicate: string | null): string {
+  if (!predicate) return "TRUE"
+  if (predicate.includes("\\?")) {
+    throw new Error(
+      `This predicate has a backslash directly before "?", which knex cannot send to Postgres unchanged; the table is left as it is: ${predicate}`
+    )
+  }
+  return `(${predicate.split("?").join("\\?")})`
+}
+
+type Plan = { report: TargetReport; rekeyCtids: string[]; keptIds: Set<string> }
+
+/**
+ * The ids each table kept, for its children (`keepWithParent`). ALL_KEPT
+ * stands for a table whose failed apply could not even be read again: none of
+ * its rows moved, and which ones it holds is unknown, so a child keeps every
+ * row that names a parent of it.
+ */
+const ALL_KEPT = "all rows kept" as const
+type KeptByTable = Map<string, Set<string> | typeof ALL_KEPT>
+
+async function plan(pg: Pg, target: RekeyTarget, keptByTable: KeptByTable): Promise<Plan> {
+  const report: TargetReport = {
+    table: target.table,
+    column: target.column,
+    writtenBy: target.writtenBy,
+    status: "planned",
+    found: 0,
+    rekey: [],
+    removedMember: 0,
+    closedStore: 0,
+    unmatched: [],
+    conflicts: [],
+    keptWithParent: [],
+    keptByRule: [],
+    uncheckedIndexes: [],
+  }
+  const columns = await columnsOf(pg, target.table)
+  const via = target.keepWithParent?.via ?? []
+  if (!columns.has(target.column) || !columns.has("id") || via.some((v) => !columns.has(v))) {
+    report.status = "missing"
+    return { report, rekeyCtids: [], keptIds: new Set() }
+  }
+
+  const rows = await classify(pg, target)
+  report.found = rows.length
+
+  const conflictIndex = new Map<string, string>()
+  for (const index of await uniqueIndexesOn(pg, target.table, target.column)) {
+    if (index.hasExpressions) {
+      report.uncheckedIndexes.push(index.name)
+      continue
+    }
+    for (const ctid of await conflictsFor(pg, target, index)) {
+      if (!conflictIndex.has(ctid)) conflictIndex.set(ctid, index.name)
+    }
+  }
+
+  const keptParents = target.keepWithParent ? keptByTable.get(target.keepWithParent.table) ?? new Set<string>() : new Set<string>()
+  const rekeyCtids: string[] = []
+  const keptIds = new Set<string>()
+  for (const row of rows) {
+    const ref: RowRef = { id: row.id, member_id: row.member_id, store_id: row.store_id }
+    if (!row.matched) {
+      report.unmatched.push(ref)
+      keptIds.add(row.id)
+    } else if (conflictIndex.has(row.row_ctid)) {
+      report.conflicts.push({ ...ref, index: conflictIndex.get(row.row_ctid) as string })
+      keptIds.add(row.id)
+    } else if (row.via.some((parentId) => parentId && (keptParents === ALL_KEPT || keptParents.has(parentId)))) {
+      report.keptWithParent.push(ref)
+      keptIds.add(row.id)
+    } else if (row.kept_by_rule) {
+      report.keptByRule.push({ ...ref, reason: target.keepWhen?.reason ?? "kept by rule" })
+      keptIds.add(row.id)
+    } else {
+      report.rekey.push(ref)
+      rekeyCtids.push(row.row_ctid)
+      if (row.member_removed) report.removedMember += 1
+      if (row.store_closed) report.closedStore += 1
+    }
+  }
+  return { report, rekeyCtids, keptIds }
+}
+
+/** A Postgres `tid[]` literal for these ctids ("(0,1)" and the like). */
+function tidArray(ctids: readonly string[]): string {
+  return `{${ctids.map((ctid) => `"${ctid.replace(/[^0-9(),]/g, "")}"`).join(",")}}`
+}
+
+/**
+ * Run `work` in one transaction under the run's bounds. Without them a lock
+ * waits behind any open writer for as long as it stays open, and queues every
+ * later write to the table behind itself; a timeout fails the transaction,
+ * which rolls back, and the caller reports it and goes on to the next table.
+ * The bounds are SET LOCAL, so they end with the transaction and never reach
+ * the pool's other users.
+ *
+ * Every read of a target goes through here as well as apply's lock and
+ * update: the dry run's plan, and the re-plan that reports a table whose
+ * apply failed, which ran outside any bound (SD-145 review). Those two are
+ * read only.
+ */
+async function bounded<R>(
+  pg: Pg,
+  timeouts: RekeyTimeouts,
+  access: "read only" | "read write",
+  work: (trx: Pg) => Promise<R>
+): Promise<R> {
+  return pg.transaction(async (trx) => {
+    await trx.raw(access === "read only" ? "SET TRANSACTION READ ONLY" : "SET TRANSACTION READ WRITE")
+    await trx.raw(`SET LOCAL lock_timeout = '${Math.max(1, Math.floor(timeouts.lockTimeoutMs))}ms'`)
+    await trx.raw(`SET LOCAL statement_timeout = '${Math.max(1, Math.floor(timeouts.statementTimeoutMs))}ms'`)
+    return work(trx)
+  })
+}
+
+/** The plan alone, read only, under the run's bounds. */
+function boundedPlan(
+  pg: Pg,
+  target: RekeyTarget,
+  keptByTable: KeptByTable,
+  timeouts: RekeyTimeouts
+): Promise<Plan> {
+  return bounded(pg, timeouts, "read only", (trx) => plan(trx, target, keptByTable))
+}
+
+async function rekeyTable(
+  pg: Pg,
+  target: RekeyTarget,
+  keptByTable: KeptByTable,
+  timeouts: RekeyTimeouts
+): Promise<Plan> {
+  const columns = await columnsOf(pg, target.table)
+  if (!columns.has(target.column)) {
+    // Nothing to lock: plan() reports it as missing.
+    return boundedPlan(pg, target, keptByTable, timeouts)
+  }
+  return bounded(pg, timeouts, "read write", async (trx) => {
+    await trx.raw(`LOCK TABLE ${ident(target.table)} IN SHARE ROW EXCLUSIVE MODE`)
+    const planned = await plan(trx, target, keptByTable)
+    if (planned.report.status === "missing" || planned.rekeyCtids.length === 0) {
+      planned.report.status = planned.report.status === "missing" ? "missing" : "applied"
+      return planned
+    }
+    const t = ident(target.table)
+    const c = ident(target.column)
+    const { rows } = await trx.raw<{ id: string; member_id: string; store_id: string }>(
+      `UPDATE ${t} t
+          SET ${c} = m.seller_id
+         FROM "member" m
+        WHERE m.id = t.${c}
+          AND m.seller_id IS NOT NULL
+          AND left(t.${c}, 4) = 'mem_'
+          AND t.ctid = ANY(?::tid[])
+      RETURNING t."id"::text AS id, m.id AS member_id, t.${c} AS store_id`,
+      [tidArray(planned.rekeyCtids)]
+    )
+    if (rows.length !== planned.rekeyCtids.length) {
+      throw new Error(
+        `${target.table}.${target.column}: planned ${planned.rekeyCtids.length} rows under the lock, updated ${rows.length}`
+      )
+    }
+    planned.report.rekey = rows
+      .map((r) => ({ id: r.id, member_id: r.member_id, store_id: r.store_id }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    planned.report.status = "applied"
+    return planned
+  })
+}
+
+async function countHeld(pg: Pg, held: HeldColumn): Promise<HeldReport> {
+  const columns = await columnsOf(pg, held.table)
+  if (!columns.has(held.column) || !columns.has("id")) {
+    return { ...held, status: "missing", found: 0, sample: [] }
+  }
+  const t = ident(held.table)
+  const c = ident(held.column)
+  const detail = (held.detail ?? []).filter((d) => columns.has(d))
+  const detailSelect = detail.map((d) => `, t.${ident(d)}::text AS ${ident(d)}`).join("")
+  const [{ rows: count }, { rows: sample }] = await Promise.all([
+    pg.raw<{ n: string }>(`SELECT count(*)::text AS n FROM ${t} t WHERE left(t.${c}, 4) = 'mem_'`),
+    pg.raw<Record<string, unknown>>(
+      `SELECT t."id"::text AS id, t.${c} AS member_id, m.seller_id AS store_id${detailSelect}
+         FROM ${t} t
+         LEFT JOIN "member" m ON m.id = t.${c}
+        WHERE left(t.${c}, 4) = 'mem_'
+        ORDER BY t."id"
+        LIMIT ${SAMPLE}`
+    ),
+  ])
+  return { ...held, status: "counted", found: Number(count[0]?.n ?? 0), sample }
+}
+
+/** Plan, or with `apply` perform, the rekey. Prints as it goes. */
+export async function rekeyMemberKeyedStoreData(
+  container: MedusaContainer,
+  options: {
+    apply: boolean
+    log?: Log
+    targets?: readonly RekeyTarget[]
+    held?: readonly HeldColumn[]
+    timeouts?: Partial<RekeyTimeouts>
+  }
+): Promise<RekeySummary> {
+  const timeouts: RekeyTimeouts = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) }
+  const pg = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as unknown as Pg
+  const log: Log = options.log ?? (() => undefined)
+  const keptByTable: KeptByTable = new Map()
+  const targets: TargetReport[] = []
+
+  for (const target of options.targets ?? REKEY_TARGETS) {
+    let planned: Plan
+    let kept: Set<string> | typeof ALL_KEPT
+    try {
+      planned = options.apply
+        ? await rekeyTable(pg, target, keptByTable, timeouts)
+        : await boundedPlan(pg, target, keptByTable, timeouts)
+      kept = planned.keptIds
+    } catch (error) {
+      // The table's transaction rolled back: every member-keyed row in it
+      // keeps its member id, and so do its children. What it still holds is
+      // read again, under the same bounds; if even that fails, nothing of it
+      // is reported as rekeyed and its children keep every row that names a
+      // parent (ALL_KEPT).
+      const message = error instanceof Error ? error.message : String(error)
+      const remaining = await boundedPlan(pg, target, keptByTable, timeouts).catch(() => null)
+      const report: TargetReport = remaining
+        ? { ...remaining.report, rekey: [], status: "failed", error: message }
+        : {
+            table: target.table,
+            column: target.column,
+            writtenBy: target.writtenBy,
+            status: "failed",
+            found: 0,
+            rekey: [],
+            removedMember: 0,
+            closedStore: 0,
+            unmatched: [],
+            conflicts: [],
+            keptWithParent: [],
+            keptByRule: [],
+            uncheckedIndexes: [],
+            error: message,
+            unread: true,
+          }
+      planned = { report, rekeyCtids: [], keptIds: new Set() }
+      kept = remaining ? new Set([...remaining.keptIds, ...remaining.report.rekey.map((r) => r.id)]) : ALL_KEPT
+    }
+    keptByTable.set(target.table, kept)
+    targets.push(planned.report)
+    printTarget(planned.report, options.apply, log)
+  }
+
+  const held: HeldReport[] = []
+  for (const column of options.held ?? HELD_FOR_DECISION) {
+    const report = await countHeld(pg, column)
+    held.push(report)
+    printHeld(report, log)
+  }
+
+  const memberOwnedEarnings = (await columnsOf(pg, "hawala_ledger_account")).has("owner_id")
+    ? (await pg.raw<Record<string, unknown>>(MEMBER_OWNED_SELLER_EARNINGS_SQL)).rows
+    : []
+  log(`HELD member-owned SELLER_EARNINGS accounts: ${memberOwnedEarnings.length} (never rewritten here)`)
+  for (const row of memberOwnedEarnings) log(`  ${JSON.stringify(row)}`)
+
+  return { apply: options.apply, targets, held, memberOwnedEarnings }
+}
+
+const refLine = (r: RowRef) => `${r.id} ${r.member_id} -> ${r.store_id ?? "(no member)"}`
+
+function printTarget(r: TargetReport, apply: boolean, log: Log): void {
+  const name = `${r.table}.${r.column}`
+  if (r.status === "missing") {
+    log(`${name}: not in this database (skipped)`)
+    return
+  }
+  if (r.unread) {
+    log(
+      `${name} [${r.writtenBy}]: FAILED, and could not be read again within the timeouts, so its rows are not counted;` +
+        ` none was changed, and rows of other tables that hang off it keep their member ids: ${r.error ?? ""}`
+    )
+    return
+  }
+  const verb = apply ? (r.status === "applied" ? "rekeyed" : "rekeyed 0, rolled back") : "would rekey"
+  log(
+    `${name} [${r.writtenBy}]: ${r.found} member-keyed; ${verb} ${r.rekey.length}` +
+      ` (removed member ${r.removedMember}, closed store ${r.closedStore});` +
+      ` no member ${r.unmatched.length}; unique clash ${r.conflicts.length}; kept with parent ${r.keptWithParent.length};` +
+      ` kept by rule ${r.keptByRule.length}`
+  )
+  if (r.error) log(`  FAILED, rolled back: ${r.error}`)
+  const shown = apply ? r.rekey : r.rekey.slice(0, SAMPLE)
+  for (const row of shown) log(`  ${apply ? "changed" : "sample"} ${refLine(row)}`)
+  if (!apply && r.rekey.length > SAMPLE) log(`  ... and ${r.rekey.length - SAMPLE} more`)
+  for (const row of r.unmatched) log(`  left alone (no such member) ${row.id} ${row.member_id}`)
+  for (const row of r.conflicts) log(`  left alone (would break ${row.index}) ${refLine(row)}`)
+  for (const row of r.keptWithParent) log(`  left alone (parent keeps its member id) ${refLine(row)}`)
+  for (const row of r.keptByRule) log(`  left alone (${row.reason}) ${refLine(row)}`)
+  for (const index of r.uncheckedIndexes) log(`  unique index ${index} uses expressions and is not checked; a clash there rolls the table back`)
+}
+
+function printHeld(r: HeldReport, log: Log): void {
+  const name = `${r.table}.${r.column}`
+  if (r.status === "missing") {
+    log(`HELD ${name}: not in this database`)
+    return
+  }
+  log(`HELD ${name} [${r.writtenBy}]: ${r.found} member-keyed, never rewritten here: ${r.reason}`)
+  for (const row of r.sample) log(`  ${JSON.stringify(row)}`)
+}
+
+export default async function run({ container, args }: ExecArgs) {
+  const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const tag = "[rekey-member-keyed-store-data]"
+  const parsed = parseScriptArgs(args, APPLY_OR_DRY_RUN)
+  if (!parsed.ok) {
+    // Thrown, so `medusa exec` exits non-zero: nothing was read.
+    logger.error(`${tag} refused: ${parsed.message}`)
+    throw new Error(`rekey-member-keyed-store-data refused: ${parsed.message}`)
+  }
+  const apply = parsed.flags.has("apply")
+  logger.info(`${tag} ${apply ? "apply: rewriting, one transaction per table" : "dry run: nothing is written; add `apply` to write"}`)
+  const summary = await rekeyMemberKeyedStoreData(container, { apply, log: (line) => logger.info(`${tag} ${line}`) })
+  const total = summary.targets.reduce((n, t) => n + t.rekey.length, 0)
+  const left = summary.targets.reduce(
+    (n, t) => n + t.unmatched.length + t.conflicts.length + t.keptWithParent.length + t.keptByRule.length,
+    0
+  )
+  const failed = summary.targets.filter((t) => t.status === "failed").map((t) => `${t.table}.${t.column}`)
+  const held = summary.held.reduce((n, h) => n + h.found, 0)
+  logger.info(
+    `${tag} ${apply ? "rekeyed" : "would rekey"} ${total} rows; left alone ${left}; ` +
+      `held for an operator and counsel decision ${held}; member-owned SELLER_EARNINGS accounts ${summary.memberOwnedEarnings.length}` +
+      (failed.length ? `; FAILED and rolled back: ${failed.join(", ")}` : "")
+  )
+  if (failed.length) {
+    throw new Error(`rekey-member-keyed-store-data: ${failed.join(", ")} failed and rolled back`)
+  }
+}

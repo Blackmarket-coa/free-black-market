@@ -1,11 +1,30 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaRequest } from "@medusajs/framework/http"
 import type { VendorRequest } from "../types"
+import { sellerIdForVendorActor } from "../../../shared/seller-actor"
 
-/** Resolve the authenticated seller id (set by the vendor seller-context guard). */
-export function getSellerId(req: MedusaRequest): string | null {
+/**
+ * The store a vendor request acts for, or null: what every vendor route that
+ * keys store data reads (SD-145).
+ *
+ * Behind the vendor gate (`ensureSellerContext`) `auth_context.actor_id` is a
+ * member id (`mem_`) for every vendor: Mercur links a login to a member, and
+ * the gate turns a seller-id actor into its matched member for Mercur's
+ * member-keyed guards. So the actor is never the store. This used to return
+ * `actor_id ?? _seller_id`, the member id first, and some ninety vendor routes
+ * that read it, or a local copy of it, kept a store's records per member:
+ * customer tiers the wholesale cart never found, imported products linked to
+ * no store, a manual fulfilment refused for every order, order cycles and
+ * fees only their creator could manage.
+ *
+ * The store is the gate's `_seller_id` for a seller-id actor, taken as it is
+ * in a request the gate resolved, and otherwise the live store of the member,
+ * by the rule both gates apply (`shared/seller-actor.ts`). It answers nothing
+ * itself: each caller sends its own refusal for null.
+ */
+export async function getSellerId(req: MedusaRequest): Promise<string | null> {
   const r = req as VendorRequest
-  return (r.auth_context?.actor_id as string) ?? r._seller_id ?? null
+  return (await sellerIdForVendorActor(r, r._seller_id || r.auth_context?.actor_id)) ?? null
 }
 
 /**

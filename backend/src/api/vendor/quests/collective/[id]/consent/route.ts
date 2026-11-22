@@ -13,7 +13,7 @@ export const POST = async (
   req: MedusaRequest<{ scopes: string[] }>,
   res: MedusaResponse
 ) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const scopes = req.body?.scopes
@@ -41,7 +41,7 @@ export const POST = async (
  * excluded from future aggregation.
  */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
-  const sellerId = getSellerId(req)
+  const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)

@@ -1,17 +1,17 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { WooApiClient } from "../../../../modules/woocommerce-import/lib/woo-api-client"
 import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
 import type { ImportPreview } from "../../../../modules/woocommerce-import/types"
+import { getSellerId } from "../../quests/_helpers"
 
 /**
  * GET /vendor/woocommerce/preview
  * Preview what products would be imported from the connected WooCommerce store.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

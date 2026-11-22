@@ -34,7 +34,7 @@ import type { HttpTypes } from "@medusajs/types"
 
 const h = vi.hoisted(() => ({
   medusaFetch: vi.fn(),
-  addToCart: vi.fn(),
+  tryAddToCart: vi.fn(),
   onAddToCart: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   searchParams: { current: {} as Record<string, string> },
@@ -109,7 +109,7 @@ vi.mock("@/hooks/useGetAllSearchParams", () => ({
 }))
 vi.mock("@/hooks/useUpdateSearchParams", () => ({ default: () => vi.fn() }))
 vi.mock("@/hooks/useScreenSize", () => ({ useScreenSize: () => "lg" }))
-vi.mock("@/lib/data/cart", () => ({ addToCart: h.addToCart }))
+vi.mock("@/lib/data/cart", () => ({ tryAddToCart: h.tryAddToCart }))
 vi.mock("@/lib/helpers/toast", () => ({ toast: h.toast }))
 vi.mock("next/image", () => ({
   // A plain image element in place of Next's optimiser.
@@ -212,7 +212,7 @@ describe("the product page on a real /store/products response", () => {
     vi.clearAllMocks()
     h.cart.current = null
     h.searchParams.current = {}
-    h.addToCart.mockResolvedValue(undefined)
+    h.tryAddToCart.mockResolvedValue({ ok: true })
     h.medusaFetch.mockImplementation(async (path: string, options: FetchOptions) => {
       if (path.endsWith("/listing-type")) return { catalog_id: null }
       if (path !== "/store/products") throw new Error(`unexpected request ${path}`)
@@ -373,14 +373,46 @@ describe("the product page on a real /store/products response", () => {
 
     await addToCartButton.onClick?.()
 
-    expect(h.addToCart).toHaveBeenCalledTimes(1)
-    expect(h.addToCart).toHaveBeenCalledWith({ variantId: PINT, quantity: 1, countryCode: "us" })
+    expect(h.tryAddToCart).toHaveBeenCalledTimes(1)
+    expect(h.tryAddToCart).toHaveBeenCalledWith({ variantId: PINT, quantity: 1, countryCode: "us" })
     expect(h.onAddToCart).toHaveBeenCalledWith(
       expect.objectContaining({ variant_id: PINT, product_id: fixture.id, quantity: 1, total: 5, subtotal: 5 }),
       "usd"
     )
     expect(h.toast.success).toHaveBeenCalledTimes(1)
     expect(h.toast.error).not.toHaveBeenCalled()
+  })
+
+  // Every refusal used to read "Some variant does not have the required
+  // inventory", whatever the backend said: a completed cart in the cookie, a
+  // price missing in the region, a seller not taking orders.
+  it.each([
+    "Cart cart_01 is already completed.",
+    "Variants with IDs variant_01 do not have a price.",
+    "Some variant does not have the required inventory.",
+  ])("tells the buyer the backend's reason when adding is refused: %s", async (reason) => {
+    h.tryAddToCart.mockResolvedValue({ ok: false, error: reason })
+    const { product } = await renderPage()
+    const { addToCartButton } = renderHeader(product)
+
+    await addToCartButton.onClick?.()
+
+    expect(h.toast.success).not.toHaveBeenCalled()
+    expect(h.toast.error).toHaveBeenCalledTimes(1)
+    expect(h.toast.error).toHaveBeenCalledWith({ title: "Error adding to cart", description: reason })
+  })
+
+  it("says the item could not be added, not that it is out of stock, when the request itself fails", async () => {
+    h.tryAddToCart.mockRejectedValue(new Error("Failed to fetch"))
+    const { product } = await renderPage()
+    const { addToCartButton } = renderHeader(product)
+
+    await addToCartButton.onClick?.()
+
+    expect(h.toast.error).toHaveBeenCalledWith({
+      title: "Error adding to cart",
+      description: "This item could not be added to your cart. Please try again.",
+    })
   })
 
   it("sells a variant Medusa does not count: no quantity in the response is not zero in stock", async () => {
@@ -397,7 +429,7 @@ describe("the product page on a real /store/products response", () => {
     expect(addToCartButton.disabled).toBe(false)
 
     await addToCartButton.onClick?.()
-    expect(h.addToCart).toHaveBeenCalledWith({ variantId: CRATE, quantity: 1, countryCode: "us" })
+    expect(h.tryAddToCart).toHaveBeenCalledWith({ variantId: CRATE, quantity: 1, countryCode: "us" })
   })
 
   it("keeps a counted variant with none left out of stock", async () => {
@@ -454,7 +486,7 @@ describe("the product page on a real /store/products response", () => {
     expect(html).not.toContain("OUT OF STOCK")
     expect(addToCartButton.disabled).toBe(false)
     await addToCartButton.onClick?.()
-    expect(h.addToCart).toHaveBeenCalledWith({ variantId: PINT, quantity: 1, countryCode: "us" })
+    expect(h.tryAddToCart).toHaveBeenCalledWith({ variantId: PINT, quantity: 1, countryCode: "us" })
   })
 
   it("could sell nothing on the five fields the page used to fetch", () => {

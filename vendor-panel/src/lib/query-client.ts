@@ -64,12 +64,13 @@ export const queryClient = new QueryClient({
       networkMode: 'offlineFirst',
     },
     mutations: {
-      // Retry mutations once, but never retry rate-limited or auth errors
-      retry: (failureCount, error: any) => {
-        const status = error?.status ?? error?.response?.status
-        if (status === 429 || status === 401 || status === 403) return false
-        return failureCount < 1
-      },
+      // Never retry a write. A failure the panel sees is not proof the backend
+      // did nothing: a 502 or 504 from the gateway, a dropped connection, or a
+      // 204 the SDK cannot parse as JSON can each follow a committed write, and
+      // a second send would make a second POS order, invoice, sale or farm
+      // record, or a second earnings transfer from POS checkout, which takes
+      // no idempotency key. The vendor sees the error and decides.
+      retry: false,
       // Network mode for mutations
       networkMode: 'online',
     },

@@ -10,6 +10,8 @@ import SlidingScaleTier, { type SlidingScaleTier as TierValue } from "./SlidingS
 import StorefrontSwitcher from "./StorefrontSwitcher"
 import { DonationBeneficiary, PublicStorefront } from "@/lib/data/donations"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
+import { reviewStepReached } from "@/lib/helpers/nothing-to-pay"
+import type { OfferedOption } from "@/lib/helpers/seller-shipping"
 
 /**
  * Playbooks that allow sliding-scale pricing. Mirrors the backend
@@ -45,8 +47,11 @@ const Review = ({
   donationSettings,
   storefronts,
   donationFeatureGates,
+  shippingOptions,
 }: {
   cart: any
+  /** What Mercur lists for the cart; Place order names the sellers still without a method from it. */
+  shippingOptions?: ReadonlyArray<OfferedOption> | null
   beneficiaries: DonationBeneficiary[]
   donationSettings: {
     default_percentage: number
@@ -61,10 +66,10 @@ const Review = ({
   const paidByGiftcard =
     cart?.gift_cards && cart?.gift_cards?.length > 0 && cart?.total === 0
 
-  const previousStepsCompleted =
-    cart.shipping_address &&
-    cart.shipping_methods.length > 0 &&
-    (cart.payment_collection || paidByGiftcard)
+  // An address, a delivery option, and a payment method chosen, unless the
+  // cart owes nothing and has none to choose (lib/helpers/nothing-to-pay.ts):
+  // without that, such a cart never saw the button or why there is none.
+  const previousStepsCompleted = reviewStepReached(cart, !!paidByGiftcard)
 
   const firstSeller = cart?.items?.[0]?.product?.seller?.name
 
@@ -124,7 +129,7 @@ const Review = ({
 
       {previousStepsCompleted && (
         <>
-          <PaymentButton cart={cart} data-testid="submit-order-button" />
+          <PaymentButton cart={cart} shippingOptions={shippingOptions} data-testid="submit-order-button" />
           {/*
             LEG-1: the terms, privacy and refund policies have to be reachable
             at the point of payment, not only from the footer. Placed here

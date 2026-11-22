@@ -14,33 +14,32 @@ const createRes = () => {
 }
 
 describe("vendor pos checkout", () => {
-  it("captures payment and returns receipt export payload", async () => {
+  it("refuses every vendor-to-vendor payment until an operator and counsel decide, and moves nothing", async () => {
+    // Posture A (SD-145 review): the payer is a member id behind the vendor
+    // gate, member-owned SELLER_EARNINGS accounts exist and can hold money,
+    // and this route would move USD out of them to any payee in the body.
+    const createVendorToVendorPayment = jest.fn()
     const req: any = {
       body: {
         payee_vendor_id: "seller_receiver",
         amount: 120,
         payment_method: "manual",
       },
-      auth_context: { actor_id: "seller_payer" },
-      scope: {
-        resolve: () => ({
-          createVendorToVendorPayment: async () => ({
-            id: "pay_1",
-            status: "completed",
-            amount: 120,
-            invoice_number: null,
-            created_at: "2026-01-01T00:00:00.000Z",
-          }),
-        }),
-      },
+      auth_context: { actor_id: "mem_payer" },
+      _seller_id: "sel_payer",
+      _sellerContextResolved: true,
+      scope: { resolve: () => ({ createVendorToVendorPayment }) },
     }
 
     const res = createRes()
     await POST(req, res)
 
-    expect(res.statusCode).toBe(201)
-    expect(res.body.payment.id).toBe("pay_1")
-    expect(res.body.receipt_export.format).toBe("json")
-    expect(res.body.receipt_export.payload.payment_id).toBe("pay_1")
+    expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual({
+      message:
+        "Vendor-to-vendor payments are not available. Record the payment outside FBM or invoice the other vendor instead.",
+      type: "not_allowed",
+    })
+    expect(createVendorToVendorPayment).not.toHaveBeenCalled()
   })
 })

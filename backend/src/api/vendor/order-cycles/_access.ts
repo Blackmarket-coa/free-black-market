@@ -1,7 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../modules/order-cycle/service"
-import type { VendorRequest } from "../types"
+import { getSellerId } from "../quests/_helpers"
 
 type OrderCycleRecord = Awaited<
   ReturnType<OrderCycleModuleService["retrieveOrderCycle"]>
@@ -43,7 +43,7 @@ export async function resolveCycleAccess(
   cycleId: string,
   opts: { requireCoordinator: boolean }
 ): Promise<CycleAccess | null> {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await getSellerId(req)
   if (!sellerId) {
     res.status(401).json({ message: "Unauthorized" })
     return null

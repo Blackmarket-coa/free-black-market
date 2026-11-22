@@ -1,31 +1,29 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../modules/order-cycle/service"
-import type { VendorRequest } from "../types"
-import { resolveVendorSellerId } from "../hawala/seller-context"
+import { getSellerId } from "../quests/_helpers"
 
 type ShareBoxTemplateRecord = Awaited<
   ReturnType<OrderCycleModuleService["retrieveShareBoxTemplate"]>
 >
 
 /**
- * Both spellings of the caller's seller id.
+ * The caller's store id, as a one-element list (empty when there is none):
+ * what a template's `coordinator_seller_id` is compared with.
  *
- * The vendor middleware rewrites a `sel_*` actor to `mem_*` and keeps the
- * seller id on `_seller_id`, so a record written under one spelling must
- * still be found under the other. `order-cycles/route.ts` learned this the
- * hard way and its `sellerScopedCycleFilters` does the same union; a template
- * created before a coordinator's actor was rewritten would otherwise vanish
- * from their own list.
+ * It used to hold the caller's member id as well, because this surface stored
+ * whichever spelling it saw (POST wrote the member id, the actor, first) and
+ * behind the vendor gate that was the member id for every vendor: a template
+ * belonged to the member who made it, and the store's other coordinators
+ * never saw it (SD-145). Templates are now written under the store id, and
+ * `scripts/rekey-member-keyed-store-data.ts` moves the ones written under a
+ * member id onto its store.
  */
 export async function callerSellerIds(
   req: MedusaRequest
 ): Promise<string[]> {
-  const actorId = (req as VendorRequest).auth_context?.actor_id
-  const resolved = await resolveVendorSellerId(req)
-  return Array.from(
-    new Set([actorId, resolved].filter((id): id is string => Boolean(id)))
-  )
+  const sellerId = await getSellerId(req)
+  return sellerId ? [sellerId] : []
 }
 
 /**

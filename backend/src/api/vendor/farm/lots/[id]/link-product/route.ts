@@ -1,5 +1,9 @@
 import { syncLotInventoryWorkflow } from "../../../../../../workflows/sync-lot-inventory";
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { AGRICULTURE_MODULE } from "../../../../../../modules/agriculture";
+import { forbidden } from "../../../../../../shared/community-read-access";
+import { farmFailure, farmId, farmIds, optionalFarmId, ownedLot } from "../../../_access";
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -26,30 +30,29 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const agricultureService = req.scope.resolve(
     "agriculture",
   ) as AgricultureServiceType;
-  const linkService = req.scope.resolve("link") as unknown as LinkServiceType;
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } })
-    .auth_context?.actor_id;
-  const lotId = req.params.id;
-
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  const linkService = req.scope.resolve(ContainerRegistrationKeys.LINK) as unknown as LinkServiceType;
+  const params = farmIds(res, req.params, { id: farmId });
+  if (!params) return;
+  const lotId = params.id;
+  // One id each, before any check: an array passed the seller_product check
+  // below as IN, and the INSERT after it failed with its SQL in the 500
+  // (`farmId` in `_access.ts`).
+  const ids = farmIds(res, req.body, {
+    product_id: farmId,
+    variant_id: optionalFarmId,
+    location_id: optionalFarmId,
+  });
+  if (!ids) return;
+  const { product_id, variant_id, location_id } = ids;
 
   try {
-    // Verify ownership
-    const { data: producerLinks } = await query.graph({
-      entity: "producer_seller",
-      fields: ["producer_id"],
-      filters: {
-        seller_id: sellerId,
-      },
-    });
+    // The lot must be the caller's own, through its harvest: this checked only
+    // that the caller had some farm profile. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId);
+    if (!owned) return;
+    const sellerId = owned.caller.sellerId;
 
-    if (!producerLinks || producerLinks.length === 0) {
-      return res.status(403).json({ message: "No farm profile found" });
-    }
-
-    // Get the lot to verify it exists and get details
+    // The lot's details
     const { data: lots } = await query.graph({
       entity: "lot",
       fields: [
@@ -73,8 +76,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const lot = lots[0];
 
     const {
-      product_id,
-      variant_id,
       unit_price,
       currency_code,
       sales_channel,
@@ -87,12 +88,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       shipping_enabled,
       preorder_enabled,
       sync_inventory,
-      location_id,
     } = req.body as Record<string, unknown>;
-
-    if (!product_id) {
-      return res.status(400).json({ message: "product_id is required" });
-    }
 
     // Verify the product belongs to this seller
     const { data: sellerProducts } = await query.graph({
@@ -100,21 +96,53 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       fields: ["seller_id", "product.id", "product.title"],
       filters: {
         seller_id: sellerId,
-        product_id: product_id as string,
+        product_id,
       },
     });
 
     if (!sellerProducts || sellerProducts.length === 0) {
-      return res
-        .status(403)
-        .json({ message: "You do not have access to this product" });
+      return forbidden(res);
+    }
+
+    // The variant and the location go to updateInventoryLevels when
+    // sync_inventory is set, so they must be the store's too: the variant one
+    // of the verified product's, the location one of the store's stock
+    // locations. Only the product was checked, so a store could overwrite
+    // another store's inventory level with its own lot's quantity (SD-145
+    // review: measured 50 to 3 on Postgres). Everything is checked before
+    // anything is written; the 400 for a missing location used to come after
+    // the window and its link were made.
+    if (sync_inventory && variant_id && !location_id) {
+      return res.status(400).json({
+        message: "location_id is required when sync_inventory is enabled",
+      });
+    }
+    if (variant_id) {
+      const { data: variants } = await query.graph({
+        entity: "product_variant",
+        fields: ["id", "product_id"],
+        filters: { id: variant_id },
+      });
+      if (!variants?.length || variants[0].product_id !== product_id) {
+        return forbidden(res);
+      }
+    }
+    if (location_id) {
+      const { data: locations } = await query.graph({
+        entity: "seller_stock_location",
+        fields: ["stock_location_id"],
+        filters: { seller_id: sellerId, stock_location_id: location_id },
+      });
+      if (!locations?.length) {
+        return forbidden(res);
+      }
     }
 
     // Create availability window linking lot to product
     const availabilityWindow =
       await agricultureService.createAvailabilityWindows({
         lot_id: lotId,
-        product_id: product_id as string,
+        product_id,
         unit_price: unit_price || lot.suggested_price_per_unit || 0,
         currency_code: currency_code || "usd",
         sales_channel: sales_channel || "DTC",
@@ -130,28 +158,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         is_active: true,
       });
 
-    // Create link between product and availability window
+    // Link product and window by module key: `{ product_availability_window:
+    // ... }` is not a shape Medusa's Link reads (the same shape threw a
+    // TypeError for the farm profile and harvest links, measured).
     await linkService.create({
-      product_availability_window: {
-        product_id: product_id as string,
-        availability_window_id: availabilityWindow.id,
-      },
+      [Modules.PRODUCT]: { product_id },
+      [AGRICULTURE_MODULE]: { availability_window_id: availabilityWindow.id },
     });
 
-    // If sync_inventory is true, update product variant inventory
-    if (sync_inventory && variant_id) {
-      if (!location_id || typeof location_id !== "string") {
-        return res.status(400).json({
-          message: "location_id is required when sync_inventory is enabled",
-        });
-      }
-
+    // If sync_inventory is true, update product variant inventory (variant and
+    // location checked above).
+    if (sync_inventory && variant_id && location_id) {
       const { result: syncResult } = await syncLotInventoryWorkflow(
         req.scope,
       ).run({
         input: {
           lot_id: lotId,
-          product_variant_id: variant_id as string,
+          product_variant_id: variant_id,
           location_id,
         },
       });
@@ -181,12 +204,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       message: "Product linked successfully",
     });
   } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    res.status(500).json({
-      message: "Failed to link product",
-      error: errorMessage,
-    });
+    farmFailure(req, res, "Failed to link product", error);
   }
 }
 
@@ -196,15 +214,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve("query");
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } })
-    .auth_context?.actor_id;
-  const lotId = req.params.id;
-
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  const params = farmIds(res, req.params, { id: farmId });
+  if (!params) return;
+  const lotId = params.id;
 
   try {
+    // The lot must be the caller's own: this listed any lot's linked products
+    // to any seller. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId);
+    if (!owned) return;
+
     // Get availability windows for this lot with linked products
     const { data: windows } = await query.graph({
       entity: "availability_window",
@@ -261,12 +280,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     res.json({ linked_products: linkedProducts });
   } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    res.status(500).json({
-      message: "Failed to fetch linked products",
-      error: errorMessage,
-    });
+    farmFailure(req, res, "Failed to fetch linked products", error);
   }
 }
 
@@ -276,30 +290,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  */
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve("query");
-  const linkService = req.scope.resolve("link") as unknown as LinkServiceType;
-  const sellerId = (req as unknown as { auth_context?: { actor_id: string } })
-    .auth_context?.actor_id;
-  const lotId = req.params.id;
-
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  const linkService = req.scope.resolve(ContainerRegistrationKeys.LINK) as unknown as LinkServiceType;
+  const params = farmIds(res, req.params, { id: farmId });
+  if (!params) return;
+  const lotId = params.id;
+  // One id, before any check: an array passed the window check below as IN
+  // and failed further on (`farmId` in `_access.ts`).
+  const ids = farmIds(res, req.body, { availability_window_id: farmId });
+  if (!ids) return;
+  const { availability_window_id } = ids;
 
   try {
-    const { availability_window_id } = req.body as Record<string, unknown>;
-
-    if (!availability_window_id) {
-      return res
-        .status(400)
-        .json({ message: "availability_window_id is required" });
-    }
+    // The lot must be the caller's own: this unlinked any lot's window for any
+    // seller who named both ids. Missing or not the caller's: 403.
+    const owned = await ownedLot(req, res, lotId);
+    if (!owned) return;
 
     // Verify the window belongs to this lot
     const { data: windows } = await query.graph({
       entity: "availability_window",
       fields: ["id", "lot_id", "product_id"],
       filters: {
-        id: availability_window_id as string,
+        id: availability_window_id,
         lot_id: lotId,
       },
     });
@@ -313,10 +325,8 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     // Remove the link
     if (window.product_id) {
       await linkService.dismiss({
-        product_availability_window: {
-          product_id: window.product_id,
-          availability_window_id: availability_window_id as string,
-        },
+        [Modules.PRODUCT]: { product_id: window.product_id },
+        [AGRICULTURE_MODULE]: { availability_window_id },
       });
     }
 
@@ -325,18 +335,13 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
       "agriculture",
     ) as AgricultureServiceType;
     await agricultureService.updateAvailabilityWindows({
-      id: availability_window_id as string,
+      id: availability_window_id,
       is_active: false,
       product_id: null,
     });
 
     res.status(200).json({ message: "Product unlinked successfully" });
   } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    res.status(500).json({
-      message: "Failed to unlink product",
-      error: errorMessage,
-    });
+    farmFailure(req, res, "Failed to unlink product", error);
   }
 }
