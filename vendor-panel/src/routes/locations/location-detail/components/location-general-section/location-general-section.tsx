@@ -52,7 +52,7 @@ import {
   ShippingOptionPriceType,
 } from "../../../common/constants"
 import { VendorExtendedAdminStockLocation, VendorExtendedAdminFulfillmentSet, VendorExtendedAdminServiceZone } from "../../../../../types/stock-location"
-import { fulfillmentSetName } from "../../../../../lib/selling-setup"
+import { fulfillmentSetName, shownName } from "../../../../../lib/selling-setup"
 
 type LocationGeneralSectionProps = {
   location: VendorExtendedAdminStockLocation
@@ -292,7 +292,7 @@ function ServiceZone({
     const res = await prompt({
       title: t("general.areYouSure"),
       description: t("stockLocations.serviceZones.delete.confirmation", {
-        name: zone.name,
+        name: shownName(zone.name),
       }),
       confirmText: t("actions.delete"),
       cancelText: t("actions.cancel"),
@@ -309,7 +309,7 @@ function ServiceZone({
       onSuccess: () => {
         toast.success(
           t("stockLocations.serviceZones.delete.successToast", {
-            name: zone.name,
+            name: shownName(zone.name),
           })
         )
       },
@@ -356,7 +356,7 @@ function ServiceZone({
 
         <div className="grow-1 flex flex-1 flex-col">
           <Text size="small" leading="compact" weight="plus">
-            {zone.name}
+            {shownName(zone.name)}
           </Text>
           <div className="flex items-center gap-2">
             <ListSummary
@@ -486,7 +486,7 @@ function FulfillmentSet(props: FulfillmentSetProps) {
     const res = await prompt({
       title: t("general.areYouSure"),
       description: t(`stockLocations.fulfillmentSets.disable.confirmation`, {
-        name: fulfillmentSet?.name,
+        name: shownName(fulfillmentSet?.name),
       }),
       confirmText: t("actions.disable"),
       cancelText: t("actions.cancel"),

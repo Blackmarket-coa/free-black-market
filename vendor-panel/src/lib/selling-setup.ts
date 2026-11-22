@@ -608,6 +608,26 @@ export const fulfillmentSetName = (
 export const serviceZoneName = (countryCode: string, fulfillmentSetId: string) =>
   `${countryCode.toUpperCase()} (${fulfillmentSetId})`
 
+/** The id these names end with, and the space before it. */
+const ID_SUFFIX = / \((?:sloc|fuset)_[0-9A-Za-z]+\)$/
+
+/**
+ * A fulfillment set's or service zone's name as the vendor reads it: without
+ * the id it carries to stay unique across the marketplace. "US
+ * (fuset_01…)" is shown as "US", "Home shipping (sloc_01…)" as "Home
+ * shipping"; a name with no such id is shown as it is.
+ */
+export const shownName = (name: string | null | undefined) =>
+  (name ?? "").replace(ID_SUFFIX, "")
+
+/**
+ * The name a zone is saved with when the vendor renames it: what they typed,
+ * then the id the old name carried, so it stays unique without the vendor
+ * seeing or typing an id.
+ */
+export const renamedZone = (typed: string, previous: string | null | undefined) =>
+  `${typed.trim()}${(previous ?? "").match(ID_SUFFIX)?.[0] ?? ""}`
+
 const optionType = (kind: DeliveryKind) =>
   kind === "pickup"
     ? { label: "Pickup", description: "Pickup fulfillment", code: "pickup" }

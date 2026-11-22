@@ -10,6 +10,7 @@ import { useComboboxData } from "../../../../../hooks/use-combobox-data"
 import { useFulfillmentProviderOptions } from "../../../../../hooks/api"
 import { fetchQuery } from "../../../../../lib/client"
 import { formatProvider } from "../../../../../lib/format-provider"
+import { shownName } from "../../../../../lib/selling-setup"
 import {
   FulfillmentSetType,
   ShippingOptionPriceType,
@@ -86,7 +87,7 @@ export const CreateShippingOptionDetailsForm = ({
                 isPickup ? "pickup" : isReturn ? "returns" : "shipping"
               }.header`,
               {
-                zone: zone.name,
+                zone: shownName(zone.name),
               }
             )}
           </Heading>

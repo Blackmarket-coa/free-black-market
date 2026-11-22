@@ -13,6 +13,7 @@ import {
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useUpdateFulfillmentSetServiceZone } from "../../../../../hooks/api/fulfillment-sets"
 import { countries } from "../../../../../lib/data/countries"
+import { shownName } from "../../../../../lib/selling-setup"
 import { GeoZoneForm } from "../../../common/components/geo-zone-form"
 import { GEO_ZONE_STACKED_MODAL_ID } from "../../../common/constants"
 
@@ -65,7 +66,7 @@ export function EditServiceZoneAreasForm({
         onSuccess: () => {
           toast.success(
             t("stockLocations.serviceZones.manageAreas.successToast", {
-              name: zone.name,
+              name: shownName(zone.name),
             })
           )
 
@@ -92,7 +93,7 @@ export function EditServiceZoneAreasForm({
               <div className="flex w-full max-w-[720px] flex-col gap-y-8">
                 <Heading>
                   {t("stockLocations.serviceZones.manageAreas.header", {
-                    name: zone.name,
+                    name: shownName(zone.name),
                   })}
                 </Heading>
                 <GeoZoneForm form={form} />

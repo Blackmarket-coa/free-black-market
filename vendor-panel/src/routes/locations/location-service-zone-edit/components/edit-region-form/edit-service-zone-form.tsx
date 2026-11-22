@@ -8,6 +8,7 @@ import { Form } from "../../../../../components/common/form"
 import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useUpdateFulfillmentSetServiceZone } from "../../../../../hooks/api/fulfillment-sets"
+import { renamedZone, shownName } from "../../../../../lib/selling-setup"
 
 type EditServiceZoneFormProps = {
   zone: VendorExtendedAdminServiceZone
@@ -28,8 +29,9 @@ export const EditServiceZoneForm = ({
   const { handleSuccess } = useRouteModal()
 
   const form = useForm<zod.infer<typeof EditServiceZoneSchema>>({
+    // Without the id a guided-setup zone's name carries to stay unique.
     defaultValues: {
-      name: zone.name,
+      name: shownName(zone.name),
     },
   })
 
@@ -39,7 +41,7 @@ export const EditServiceZoneForm = ({
   const handleSubmit = form.handleSubmit(async (values) => {
     await mutateAsync(
       {
-        name: values.name,
+        name: renamedZone(values.name, zone.name),
       },
       {
         onSuccess: () => {
