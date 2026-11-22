@@ -33,7 +33,7 @@ This is a read-only plan; I edited nothing. It is based on HEAD b29db1db, the th
 
 **Traps the seed must avoid:**
 - **FAQ page 2 is a different legal path.** It lists exemptions from the *Retail Food Establishment permit* (jams, jellies, vinegars, popcorn), not foods allowed under the home-based law. Seeding it as cottage food would assert something neither source says.
-- **The fact sheet's allowed list is partial.** Its footnote points to the "Home-based Food Production Law Guidance" for a fuller list. A food missing from the list is "not covered by our sources", not "not allowed".
+- **Both of the fact sheet's food lists are partial.** "FOODS ALLOWED*" and "FOODS NOT ALLOWED*" carry the same asterisk, to a footnote pointing to the "Home-based Food Production Law Guidance" for a fuller list. A food missing from both lists is "not covered by our sources": not "allowed" and not "not allowed". (Corrected in the PL-2 review, 2026-11-22: this line first said only the allowed list was partial.)
 - **The Home-based Food ID is not stated to be optional.** Neither PDF says it is optional or how to get one; they only say the label may carry it instead of the name and address.
 - **Gaps in both PDFs:**
   - no effective date
@@ -220,7 +220,7 @@ The FAQ page 2 exemption list is recorded in the FAQ's source note as a differen
 
 **Risks**
 - Paraphrase drift: every rule keeps its verbatim quote alongside the display text.
-- The FAQ page 2 conflation and the partial allowed list (see §1).
+- The FAQ page 2 conflation and the two partial food lists (see §1).
 - Allowlist misconfiguration: unset means nobody can review.
 - Two reviewers at once: handled by the atomic update.
 - Typing the module key by hand instead of importing it.

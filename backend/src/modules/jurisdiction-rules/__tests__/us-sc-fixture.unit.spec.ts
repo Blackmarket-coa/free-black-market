@@ -26,7 +26,12 @@ import { RULE_KINDS } from "../types"
 
 const REPO_ROOT = path.resolve(__dirname, "../../../../..")
 
-/** The plan's sixteen rules, in its order, with the kind it gives each. */
+/**
+ * The plan's sixteen rules, in its order, with the kind it gives each, except
+ * `sales.area`: the plan calls it a requirement, but the fact sheet only
+ * defines the activity as sales within the state and is silent on sales
+ * outside it, so it is a fact (PL-2 review).
+ */
 const PLANNED: Array<[string, string]> = [
   ["permit.retail_food_permit", "fact"],
   ["label.producer_identity", "requirement"],
@@ -38,7 +43,7 @@ const PLANNED: Array<[string, string]> = [
   ["allergens.tree_nut_type", "requirement"],
   ["foods.allowed", "permission"],
   ["foods.not_allowed", "prohibition"],
-  ["sales.area", "requirement"],
+  ["sales.area", "fact"],
   ["sales.channels", "permission"],
   ["tcs.permit_path", "fact"],
   ["sales.annual_cap", "not_stated"],
@@ -179,7 +184,16 @@ describe("US-SC home-based food fixture", () => {
       expect(notAllowed.value).toMatchObject({ list_is_partial: true })
       expect((allowed.value.items as unknown[]).length).toBe(7)
       expect(allowed.display_text).toMatch(/list is partial/)
-      expect(allowed.display_text).toMatch(/not covered by our sources; that does not mean it is not allowed/)
+      // An unnamed food is a gap in the sources, not a lean either way, and not
+      // "unnamed here" (cheesecake is named, in the other list).
+      expect(allowed.display_text).toContain(
+        "A food on neither this list nor the fact sheet's list of foods not allowed is not covered by our sources: it may or may not be allowed, and the fuller SCDA guidance is not among our sources."
+      )
+      expect(allowed.display_text).not.toMatch(/not named here|does not mean it is not allowed/)
+      // The FAQ's own hedges survive: "certain" foods, and they "must" be made and packaged at home.
+      expect(allowed.display_text).toContain(
+        "SCDA's FAQ says the law allows certain foods that do not require time or temperature control (non-TCS) to be sold without inspection or a permit, generally baked goods (without cream fillings), candies, cookies and most breads, and that they must be made and packaged in the home kitchen and labeled according to the law."
+      )
       expect(notAllowed.display_text).toMatch(/partial too/)
       // Both cite the footnote that says so.
       for (const r of [allowed, notAllowed]) {
@@ -226,14 +240,25 @@ describe("US-SC home-based food fixture", () => {
       )
       expect(faqLocators.length).toBeGreaterThan(0)
       for (const locator of faqLocators) {
-        expect(locator).toMatch(/^Page 1, |^Page 2, (third question|answer to the third question)$/)
+        expect(locator).toMatch(/^Page 1, |^Page 2, (second question|answer to the second question) \(the document's third\)$/)
       }
+    })
+
+    it("says what the fact sheet says about where sales happen, and no more", () => {
+      const area = rule("sales.area")
+      expect(area.kind).toBe("fact")
+      expect(area.display_text).toBe(
+        "The fact sheet defines home-based food production as preparing food for sale directly to consumers or retail stores within South Carolina; it does not address sales outside the state."
+      )
+      expect(area.value).toEqual({ defined_as_sales_within: "US-SC", sales_outside_state_addressed: false })
+      // The channels rule keeps the definition's "within South Carolina".
+      expect(rule("sales.channels").display_text).toMatch(/^Home-based food may be sold directly to consumers or to retail stores within South Carolina\. /)
     })
 
     it("does not say the Home-based Food ID is optional, or how to get one", () => {
       const identity = rule("label.producer_identity")
       expect(identity.display_text).not.toMatch(/optional/i)
-      expect(identity.display_text).toMatch(/do not say how that ID number is obtained/)
+      expect(identity.display_text).toMatch(/do not say how that ID number is obtained, or whether one must be obtained\./)
       expect(identity.value).toMatchObject({ id_issuance_stated: false })
     })
 

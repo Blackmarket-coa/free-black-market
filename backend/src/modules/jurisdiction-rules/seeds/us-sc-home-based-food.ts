@@ -185,7 +185,7 @@ export const US_SC_HOME_BASED_FOOD_RULES: SeedRule[] = [
       id_issuance_stated: false,
     },
     display_text:
-      "The label must show the name and address of the home-based food operation, or its SCDA Home-based Food ID number. The sources do not say how that ID number is obtained.",
+      "The label must show the name and address of the home-based food operation, or its SCDA Home-based Food ID number. The sources do not say how that ID number is obtained, or whether one must be obtained.",
     citations: [
       labelIntro,
       {
@@ -344,8 +344,8 @@ export const US_SC_HOME_BASED_FOOD_RULES: SeedRule[] = [
     display_text:
       "The fact sheet lists these foods as allowed: shelf-stable cakes; shelf-stable cookies; shelf-stable cupcakes; dried herbs and spices; pie and pie fillings (high acid); roasted nuts; sourdough bread (made with commercial sourdough starter). " +
       "The list is partial: the fact sheet points to SCDA's Home-based Food Production Law Guidance for a more complete list, which is not among our sources. " +
-      "SCDA's FAQ describes home-based foods as foods that do not require time or temperature control, generally baked goods (without cream fillings), candies, cookies and most breads, made and packaged in the home kitchen. " +
-      "A food that is not named here is not covered by our sources; that does not mean it is not allowed.",
+      "SCDA's FAQ says the law allows certain foods that do not require time or temperature control (non-TCS) to be sold without inspection or a permit, generally baked goods (without cream fillings), candies, cookies and most breads, and that they must be made and packaged in the home kitchen and labeled according to the law. " +
+      "A food on neither this list nor the fact sheet's list of foods not allowed is not covered by our sources: it may or may not be allowed, and the fuller SCDA guidance is not among our sources.",
     citations: [
       {
         source: "fact_sheet",
@@ -410,10 +410,14 @@ export const US_SC_HOME_BASED_FOOD_RULES: SeedRule[] = [
   },
   {
     rule_key: "sales.area",
-    kind: "requirement",
-    value: { sales_within: US_SC },
+    // A fact, not a requirement: the fact sheet defines the activity as sales
+    // within the state and says nothing about sales outside it, so reading a
+    // rule ("sales must stay in South Carolina") into it would assert more
+    // than the source does.
+    kind: "fact",
+    value: { defined_as_sales_within: US_SC, sales_outside_state_addressed: false },
     display_text:
-      "Sales are within South Carolina: the fact sheet describes home-based food production as preparing food for sale directly to consumers or retail stores within South Carolina.",
+      "The fact sheet defines home-based food production as preparing food for sale directly to consumers or retail stores within South Carolina; it does not address sales outside the state.",
     citations: [{ source: "fact_sheet", locator: `${FS_WHAT_IS}, first sentence`, quote: FS_DEFINITION }],
     effective_from: null,
     effective_note: NO_EFFECTIVE_DATE,
@@ -430,7 +434,7 @@ export const US_SC_HOME_BASED_FOOD_RULES: SeedRule[] = [
       retail_sign_text: US_SC_LABEL_STATEMENT,
     },
     display_text:
-      "Home-based food may be sold directly to consumers or to retail stores. " +
+      "Home-based food may be sold directly to consumers or to retail stores within South Carolina. " +
       "A retail food establishment can sell it in its original packaging from the producer, and must clearly post a sign carrying the home-based food statement. " +
       "It may be served or used as an ingredient in a retail food establishment (restaurant) with a variance approved by SCDA, which the establishment's operator applies for.",
     citations: [
@@ -479,12 +483,12 @@ export const US_SC_HOME_BASED_FOOD_RULES: SeedRule[] = [
       { source: "fact_sheet", locator: 'List "Foods not allowed", closing sentence', quote: FS_PERMIT_FOR_NOT_ALLOWED },
       {
         source: "faq",
-        locator: "Page 2, third question",
+        locator: "Page 2, second question (the document's third)",
         quote: "What if I want to sell meals or foods that are “potentially hazardous” or TCS? How can I do this on a budget?",
       },
       {
         source: "faq",
-        locator: "Page 2, answer to the third question",
+        locator: "Page 2, answer to the second question (the document's third)",
         quote:
           "If you can’t afford to build or rent a commercial kitchen, you do have another option. SCDA Regulation 61-25 explains how you can obtain a permit and “share” kitchen time and space at a permitted Retail Food Establishment. These specially designated commercial kitchens are operated by a person who rents time and space in the establishment and allows for you to have a permit using their kitchen. The requirements for getting a permit under this section of the regulation is covered in Chapter 9-5, “Shared Use Kitchens.”",
       },
