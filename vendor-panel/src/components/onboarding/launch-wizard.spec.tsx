@@ -39,7 +39,7 @@ vi.mock("../../lib/logger", () => ({
 }))
 
 import { createBackend, json } from "../../__tests__/backend"
-import { createFakeStore } from "../../__tests__/fake-store"
+import { createFakeStore, US_REGION } from "../../__tests__/fake-store"
 import { setAuthToken } from "../../lib/client"
 import { readSellingSetup, setUpDelivery } from "../../lib/selling-setup"
 import { LaunchWizard, SELLING_TYPE_DEFAULTS } from "./launch-wizard"
@@ -185,6 +185,54 @@ describe("the listing step", () => {
     })
   })
 
+  it("prices the listing in the currency of the region the store's location is in", async () => {
+    const europe = {
+      id: "reg_eu",
+      name: "Europe",
+      currency_code: "eur",
+      countries: [{ iso_2: "de", display_name: "Germany" }],
+    }
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { regions: [US_REGION, europe] })
+    await setUpDelivery({
+      location: { ...barn, country_code: "de" },
+      pickup: { name: "Abholung" },
+      shipping: null,
+    })
+    const html = await show(step({ initial: { ...honey, trackStock: false, quantity: "" } }))
+    expect(html).toContain("Price (EUR)")
+
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+
+    const sent = backend.sent.find((s) => s.path === "/vendor/seller-products")!
+    expect((sent.body as { variants: Array<{ prices: unknown }> }).variants[0].prices).toEqual([
+      { currency_code: "eur", amount: 12 },
+    ])
+    // Published, a buyer in Germany could buy it.
+    store.db.products[0].status = "published"
+    expect(store.buyerCanCheckOut("de")).toBe(true)
+  })
+
+  it("before there is a location, prices the listing in the first region's currency", async () => {
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, {
+      regions: [{ id: "reg_ca", name: "Canada", currency_code: "cad", countries: [{ iso_2: "ca", display_name: "Canada" }] }],
+    })
+    const html = await show(step())
+    expect(html).toContain("Price (CAD)")
+
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+
+    const sent = backend.sent.find((s) => s.path === "/vendor/seller-products")!
+    expect((sent.body as { variants: Array<{ prices: unknown }> }).variants[0].prices).toEqual([
+      { currency_code: "cad", amount: 12 },
+    ])
+  })
+
   it("records the quantity at once when the store already has a stock location", async () => {
     await setUpDelivery({ location: barn, pickup: { name: "Pickup" }, shipping: null })
     const onCreated = vi.fn()
@@ -254,7 +302,7 @@ describe("the listing step", () => {
     expect(onCreated).not.toHaveBeenCalled()
     expect(ui.toast.error.mock.calls.map(([message]) => message)).toEqual([
       "Give your listing a title.",
-      "Enter a price in dollars. Enter 0 for something free.",
+      "Enter a price in USD. Enter 0 for something free.",
       "Enter how many you have (1 or more), or choose not to track stock.",
       "Enter how many you have (1 or more), or choose not to track stock.",
     ])
@@ -324,7 +372,7 @@ describe("the delivery step", () => {
       body: JSON.stringify({
         title: "Wildflower Honey",
         status: "draft",
-        variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0 }],
+        variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0, prices: [{ currency_code: "usd", amount: 12 }] }],
       }),
     })
     return (await response.json()).product.id as string
@@ -483,7 +531,7 @@ describe("the publish step", () => {
       body: JSON.stringify({
         title: "Wildflower Honey",
         status: "draft",
-        variants: [{ title: "Default variant", manage_inventory: false, variant_rank: 0 }],
+        variants: [{ title: "Default variant", manage_inventory: false, variant_rank: 0, prices: [{ currency_code: "usd", amount: 12 }] }],
       }),
     })
     const id = (await response.json()).product.id as string
@@ -660,7 +708,7 @@ describe('"You\'re live!"', () => {
       body: JSON.stringify({
         title: "Wildflower Honey",
         status: "published",
-        variants: [{ title: "Default variant", manage_inventory: false, variant_rank: 0 }],
+        variants: [{ title: "Default variant", manage_inventory: false, variant_rank: 0, prices: [{ currency_code: "usd", amount: 12 }] }],
       }),
     })
     await setUpDelivery({ location: barn, pickup: { name: "Pickup" }, shipping: null })
@@ -679,7 +727,7 @@ describe('"You\'re live!"', () => {
       body: JSON.stringify({
         title: "Wildflower Honey",
         status: "published",
-        variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0 }],
+        variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0, prices: [{ currency_code: "usd", amount: 12 }] }],
       }),
     })
     const id = (await response.json()).product.id
@@ -696,6 +744,29 @@ describe('"You\'re live!"', () => {
     expect(html).toContain('href="/delivery-setup"')
     expect(html).toContain("Wildflower Honey tracks stock and has none.")
     expect(html).toContain(`href="/products/${id}/stock"`)
+  })
+
+  it("is not said for a product with no price in the currency buyers pay in: the screen says so and where to set it", async () => {
+    const response = await fetch("http://panel.test/vendor/seller-products", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Wildflower Honey",
+        status: "published",
+        variants: [{ title: "Default variant", manage_inventory: false, variant_rank: 0, prices: [{ currency_code: "eur", amount: 12 }] }],
+      }),
+    })
+    const id = (await response.json()).product.id
+    await setUpDelivery({ location: barn, pickup: { name: "Pickup" }, shipping: null })
+    expect(store.buyerCanCheckOut()).toMatch(/do not have a price/)
+
+    const html = await show(<PublishedScreen />)
+
+    expect(html).not.toContain("live!")
+    expect(html).toContain(
+      "Wildflower Honey has no price in USD, the currency buyers pay in."
+    )
+    expect(html).toContain(`href="/products/${id}/prices"`)
+    expect(html).not.toContain("tracks stock and has none")
   })
 
   it("is not said when the store could not be read", async () => {
@@ -772,7 +843,7 @@ describe("the wizard", () => {
         body: JSON.stringify({
           title: "Wildflower Honey",
           status: "draft",
-          variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0 }],
+          variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0, prices: [{ currency_code: "usd", amount: 12 }] }],
         }),
       })
     ).json()

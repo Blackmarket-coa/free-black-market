@@ -16,8 +16,19 @@ import { fetchQuery } from "./client"
  * A buyer can check out when:
  *   1. a stock location is linked to the store's sales channel;
  *   2. the seller has a shipping option on that location (Mercur's cart
- *      completion wants one per seller, whatever is sold: pickup counts);
- *   3. a published product is either not stock-tracked or in stock there.
+ *      completion wants one per seller, whatever is sold: pickup counts)
+ *      that a buyer in some region is offered: its service zone covers a
+ *      country of that region, and it has a price the region's carts are
+ *      charged in the region's currency;
+ *   3. a published product has a price in that region's currency and is
+ *      either not stock-tracked or in stock at a linked location.
+ *
+ * Measured with the panel's calls, before regions were read: a location in
+ * Canada (zone CA) read as ready while a buyer in the United States, the
+ * only region, was offered no option and checkout answered "Seller shipping
+ * method not found!"; an option priced only in EUR read as ready while the
+ * buyer's add-shipping-method answered "Shipping options with IDs … do not
+ * have a price".
  *
  * `readSellingSetup` reads those three; `setUpDelivery` makes 1 and 2 with
  * the calls the MVP sweep made successfully through the vendor routes (its
@@ -28,8 +39,6 @@ import { fetchQuery } from "./client"
 
 /** The provider a seller fulfils by hand with: Medusa's manual provider. */
 export const MANUAL_PROVIDER_ID = "manual_manual"
-/** The currency the guided setup and the launch wizard write prices in. */
-export const SELLING_CURRENCY = "usd"
 
 export type DeliveryKind = "pickup" | "shipping"
 
@@ -62,6 +71,13 @@ export type SellingLocation = {
   fulfillment_sets?: FulfillmentSet[] | null
   fulfillment_providers?: Array<{ id: string }> | null
 }
+/** A price as Medusa answers it, for a shipping option or a variant. */
+type PriceRow = {
+  currency_code?: string | null
+  amount?: number | null
+  /** Present only when the request asked for them. */
+  price_rules?: Array<{ attribute?: string; value?: unknown }> | null
+}
 type ShippingOptionRow = {
   id: string
   name: string
@@ -69,7 +85,72 @@ type ShippingOptionRow = {
   service_zone_id?: string | null
   service_zone?: ServiceZone | null
   rules?: Array<{ attribute?: string; value?: unknown }> | null
+  prices?: PriceRow[] | null
 }
+
+/** Where buyers are, and what they pay in: `GET /vendor/regions`. */
+export type SellingRegion = {
+  id: string
+  name?: string | null
+  currency_code: string
+  countries?: Array<{
+    iso_2?: string | null
+    display_name?: string | null
+  }> | null
+}
+
+const lower = (value: unknown) =>
+  typeof value === "string" ? value.trim().toLowerCase() : ""
+
+/** The ISO codes of a region's countries, lower case. */
+export const regionCountryCodes = (region: SellingRegion) =>
+  (region.countries ?? []).map((country) => lower(country?.iso_2)).filter(Boolean)
+
+/** A buyer in this country is in this region: Medusa puts a country in one at most. */
+export const regionOfCountry = (
+  regions: SellingRegion[],
+  countryCode: string | null | undefined
+) => {
+  const code = lower(countryCode)
+  return code
+    ? (regions.find((region) => regionCountryCodes(region).includes(code)) ??
+        null)
+    : null
+}
+
+/** "United States, Canada": the countries buyers are in, by name. */
+export const regionCountryNames = (regions: SellingRegion[]) =>
+  regions
+    .flatMap((region) =>
+      (region.countries ?? []).map(
+        (country) => country?.display_name || lower(country?.iso_2).toUpperCase()
+      )
+    )
+    .filter(Boolean)
+    .join(", ")
+
+/**
+ * Whether a cart in `region` is charged this price. Medusa chooses a price by
+ * the cart's currency and region: one in another currency is never chosen,
+ * and one with rules only where they hold. A rule naming this region holds;
+ * any other (another region, a cart-total condition) may not, so such a
+ * price is not counted. When the answer does not carry the rules, the
+ * currency decides.
+ */
+export const priceAppliesIn = (price: PriceRow | null | undefined, region: SellingRegion) => {
+  if (!price || lower(price.currency_code) !== lower(region.currency_code)) {
+    return false
+  }
+  if (!Array.isArray(price.price_rules)) {
+    return true
+  }
+  return price.price_rules.every(
+    (rule) => rule?.attribute === "region_id" && rule?.value === region.id
+  )
+}
+
+const pricedIn = (prices: PriceRow[] | null | undefined, region: SellingRegion) =>
+  (prices ?? []).some((price) => priceAppliesIn(price, region))
 
 /**
  * The stock-location fields the checks below read. Each part is one the
@@ -98,13 +179,30 @@ const listLocations = async (): Promise<SellingLocation[]> => {
   )
 }
 
-/** With each option's rules: a return option is one by its `is_return` rule. */
+/**
+ * The options read for the checks below: their rules (a return option is one
+ * by its `is_return` rule), and their prices with the prices' rules (a price
+ * for one region only names it in a `region_id` rule). `*prices` is in
+ * Mercur's defaults; `*prices.price_rules` is the fragment Settings, Locations
+ * sends for an option's prices.
+ */
+export const SELLING_OPTION_FIELDS = "*rules,*prices.price_rules"
+
 const listShippingOptions = async (): Promise<ShippingOptionRow[]> => {
   const { shipping_options } = await get("/vendor/shipping-options", {
-    fields: "*rules",
+    fields: SELLING_OPTION_FIELDS,
   })
   return ((shipping_options ?? []) as Array<ShippingOptionRow | null>).filter(
     (option): option is ShippingOptionRow => Boolean(option?.id)
+  )
+}
+
+/** Every region, as the product form reads them, with their countries. */
+const listRegions = async (): Promise<SellingRegion[]> => {
+  const { regions } = await get("/vendor/regions", { limit: 9999 })
+  return ((regions ?? []) as Array<SellingRegion | null>).filter(
+    (region): region is SellingRegion =>
+      Boolean(region?.id && region.currency_code)
   )
 }
 
@@ -123,6 +221,28 @@ const notForBuyers = (option: ShippingOptionRow) =>
   option.data?.is_return === true ||
   hasRule(option, "enabled_in_store", "false")
 
+export type DeliveryOption = {
+  id: string
+  name: string
+  kind: DeliveryKind
+  /** The regions whose buyers are offered it, by id. */
+  regions: string[]
+}
+
+/** An option on a linked location that no buyer is offered, and why. */
+export type UnofferedOption = {
+  id: string
+  name: string
+  kind: DeliveryKind
+  /**
+   * "outside": its zone covers no country buyers are in. "unpriced": it does,
+   * and it has no price those buyers' carts are charged.
+   */
+  reason: "outside" | "unpriced"
+  /** For "unpriced": the currencies it needs a price in, upper case. */
+  currencies: string[]
+}
+
 export type DeliverySetup = {
   /** The store's sales channel, which products are listed in. */
   channel: SalesChannelRef | null
@@ -131,60 +251,125 @@ export type DeliverySetup = {
   location: SellingLocation | null
   /** Whether `location` is linked to the channel. */
   locationLinked: boolean
+  /** Where buyers are, and the currency each region pays in. */
+  regions: SellingRegion[]
   /** The options a buyer can choose at checkout. */
-  options: Array<{ id: string; name: string; kind: DeliveryKind }>
-  /** A linked location and at least one option on it. */
+  options: DeliveryOption[]
+  /** Options on a linked location that no buyer can choose. */
+  unoffered: UnofferedOption[]
+  /** A linked location and at least one option a buyer is offered. */
   ready: boolean
 }
 
 const describeDelivery = (
   channel: SalesChannelRef | null,
   locations: SellingLocation[],
-  shippingOptions: ShippingOptionRow[]
+  shippingOptions: ShippingOptionRow[],
+  regions: SellingRegion[]
 ): DeliverySetup => {
   const linked = locations.filter((location) => isLinked(location, channel))
 
-  // The fulfillment sets of linked locations, and the zones in them.
+  // The fulfillment sets of linked locations, the zones in them, and the
+  // countries each zone covers.
   const kindOfSet = new Map<string, DeliveryKind>()
   const setOfZone = new Map<string, string>()
+  const countriesOfZone = new Map<string, string[]>()
   for (const location of linked) {
     for (const set of location.fulfillment_sets ?? []) {
       if (!set?.id) continue
       kindOfSet.set(set.id, set.type === "pickup" ? "pickup" : "shipping")
       for (const zone of set.service_zones ?? []) {
-        if (zone?.id) setOfZone.set(zone.id, set.id)
+        if (!zone?.id) continue
+        setOfZone.set(zone.id, set.id)
+        countriesOfZone.set(
+          zone.id,
+          (zone.geo_zones ?? []).map((geo) => lower(geo?.country_code)).filter(Boolean)
+        )
       }
     }
   }
 
-  const options = shippingOptions.flatMap((option) => {
-    if (notForBuyers(option)) return []
+  const options: DeliveryOption[] = []
+  const unoffered: UnofferedOption[] = []
+  for (const option of shippingOptions) {
+    if (notForBuyers(option)) continue
     const zoneId = option.service_zone?.id ?? option.service_zone_id ?? ""
     const setId =
       option.service_zone?.fulfillment_set_id ?? setOfZone.get(zoneId) ?? ""
     const kind = kindOfSet.get(setId)
     // An option on a location the sales channel is not linked to is not
     // offered to a cart in that channel.
-    return kind ? [{ id: option.id, name: option.name, kind }] : []
-  })
+    if (!kind) continue
+
+    // Medusa offers a cart the options whose zone covers its address, and
+    // the cart can take one only with a price in its region's currency.
+    const countries = countriesOfZone.get(zoneId) ?? []
+    const covered = regions.filter((region) =>
+      regionCountryCodes(region).some((code) => countries.includes(code))
+    )
+    const priced = covered.filter((region) => pricedIn(option.prices, region))
+    if (priced.length > 0) {
+      options.push({
+        id: option.id,
+        name: option.name,
+        kind,
+        regions: priced.map((region) => region.id),
+      })
+    } else {
+      unoffered.push({
+        id: option.id,
+        name: option.name,
+        kind,
+        reason: covered.length > 0 ? "unpriced" : "outside",
+        currencies: [
+          ...new Set(covered.map((region) => region.currency_code.toUpperCase())),
+        ],
+      })
+    }
+  }
 
   return {
     channel,
     locations,
     location: linked[0] ?? locations[0] ?? null,
     locationLinked: linked.length > 0,
+    regions,
     options,
+    unoffered,
     ready: linked.length > 0 && options.length > 0,
   }
 }
 
+/** Why buyers are not offered an option, in a sentence. */
+export const unofferedReason = (option: UnofferedOption) =>
+  option.reason === "unpriced"
+    ? `${option.name} has no price in ${option.currencies.join(" or ")}, the currency buyers there pay in.`
+    : `${option.name} delivers only to countries where this marketplace has no buyers.`
+
 export const readDeliverySetup = async (): Promise<DeliverySetup> => {
-  const [channel, locations, shippingOptions] = await Promise.all([
+  const [channel, locations, shippingOptions, regions] = await Promise.all([
     defaultSalesChannel(),
     listLocations(),
     listShippingOptions(),
+    listRegions(),
   ])
-  return describeDelivery(channel, locations, shippingOptions)
+  return describeDelivery(channel, locations, shippingOptions, regions)
+}
+
+/**
+ * The currency a new listing is priced in: that of the region the store's
+ * stock location is in, or else of the first region. Null when the
+ * marketplace has no region, and so no buyer anywhere.
+ */
+export const listingCurrency = (
+  delivery: Pick<DeliverySetup, "regions" | "location"> | null | undefined
+): string | null => {
+  const regions = delivery?.regions ?? []
+  const region =
+    regionOfCountry(regions, delivery?.location?.address?.country_code) ??
+    regions[0] ??
+    null
+  return region ? lower(region.currency_code) : null
 }
 
 type ProductRow = { id: string; title?: string; status?: string }
@@ -195,6 +380,7 @@ type VariantRow = {
   manage_inventory?: boolean | null
   allow_backorder?: boolean | null
   inventory_items?: Array<{ inventory_item_id?: string | null }> | null
+  prices?: PriceRow[] | null
 }
 type LevelRow = {
   id?: string
@@ -209,10 +395,17 @@ export type ListingSetup = {
   total: number
   /** A published product a buyer can add to a cart now. */
   buyable: ListingRef | null
+  /**
+   * With none buyable: a published product with no price in a currency
+   * buyers pay in (`currencies`). A cart refuses a variant without one.
+   */
+  needsPrice: ListingRef | null
   /** With none buyable: a published product that is stock-tracked and has none. */
   needsStock: ListingRef | null
   /** With none published: a draft to publish. */
   draft: ListingRef | null
+  /** The currencies a product is checked for a price in, upper case. */
+  currencies: string[]
 }
 
 const ref = (product: ProductRow): ListingRef => ({
@@ -235,7 +428,8 @@ const available = (level: LevelRow) =>
 const PRODUCTS_CHECKED = 3
 const VARIANTS_CHECKED = 5
 
-const variantIsBuyable = async (variant: VariantRow, locationIds: string[]) => {
+/** Untracked, or in stock at one of these locations. */
+const variantHasStock = async (variant: VariantRow, locationIds: string[]) => {
   if (variant.manage_inventory === false) {
     return true
   }
@@ -258,8 +452,14 @@ const variantIsBuyable = async (variant: VariantRow, locationIds: string[]) => {
   return true
 }
 
+/**
+ * Whether one of the store's first published products could be added to a
+ * cart: a variant with a price in the currency of one of `regions`, untracked
+ * or in stock at one of `linkedLocationIds`.
+ */
 export const readListingSetup = async (
-  linkedLocationIds: string[]
+  linkedLocationIds: string[],
+  regions: SellingRegion[]
 ): Promise<ListingSetup> => {
   const { products } = await get("/vendor/products")
   const all = ((products ?? []) as Array<ProductRow | null>).filter(
@@ -267,7 +467,12 @@ export const readListingSetup = async (
   )
   const published = all.filter((product) => product.status === "published")
   const draft = all.find((product) => product.status === "draft")
+  const currencies = [
+    ...new Set(regions.map((region) => region.currency_code.toUpperCase())),
+  ]
 
+  let needsPrice: ListingRef | null = null
+  let needsStock: ListingRef | null = null
   for (const product of published.slice(0, PRODUCTS_CHECKED)) {
     const detail = await get(`/vendor/products/${product.id}`)
     const variants = ((detail?.product?.variants ?? []) as VariantRow[]).slice(
@@ -275,22 +480,32 @@ export const readListingSetup = async (
       VARIANTS_CHECKED
     )
     for (const variant of variants) {
-      if (await variantIsBuyable(variant, linkedLocationIds)) {
+      if (!regions.some((region) => pricedIn(variant.prices, region))) {
+        if (!needsPrice) needsPrice = ref(product)
+        continue
+      }
+      if (await variantHasStock(variant, linkedLocationIds)) {
         return {
           total: all.length,
           buyable: ref(product),
+          needsPrice: null,
           needsStock: null,
           draft: null,
+          currencies,
         }
       }
+      if (!needsStock) needsStock = ref(product)
     }
   }
 
   return {
     total: all.length,
     buyable: null,
-    needsStock: published[0] ? ref(published[0]) : null,
+    needsPrice,
+    needsStock:
+      needsStock ?? (!needsPrice && published[0] ? ref(published[0]) : null),
     draft: published[0] || !draft ? null : ref(draft),
+    currencies,
   }
 }
 
@@ -306,7 +521,15 @@ export const readSellingSetup = async (): Promise<SellingSetup> => {
   const linkedIds = delivery.locations
     .filter((location) => isLinked(location, delivery.channel))
     .map((location) => location.id)
-  const listing = await readListingSetup(linkedIds)
+  // A product counts in a region a buyer is offered delivery in; with none
+  // yet, in any region, so the listing's own state can still be told.
+  const offered = delivery.regions.filter((region) =>
+    delivery.options.some((option) => option.regions.includes(region.id))
+  )
+  const listing = await readListingSetup(
+    linkedIds,
+    offered.length > 0 ? offered : delivery.regions
+  )
   return {
     delivery,
     listing,
@@ -351,7 +574,10 @@ export type DeliverySetupInput = {
   }
   /** Buyers collect at the location, free. */
   pickup: { name: string } | null
-  /** Shipped anywhere in the location's country for one price, in major units. */
+  /**
+   * Shipped anywhere in the location's country for one price, in major units
+   * of the currency of the region that country is in (`listingCurrency`).
+   */
   shipping: { name: string; amount: number } | null
 }
 
@@ -395,7 +621,10 @@ const clean = (value: string | undefined) => {
 /**
  * Make a store's delivery work from nothing: a stock location linked to the
  * sales channel, manual fulfilment enabled at it, and a pickup option, a
- * flat-rate shipping option, or both, covering the location's country.
+ * flat-rate shipping option, or both, covering the location's country and
+ * priced in the currency of the region that country is in. A country in no
+ * region is refused before anything is written: an option there would be
+ * offered to no buyer.
  *
  * Each call is one the scout measured. It reads first and makes only what is
  * missing, so pressing the button again after a step failed does not make a
@@ -410,10 +639,15 @@ const clean = (value: string | undefined) => {
 export const setUpDelivery = async (
   input: DeliverySetupInput
 ): Promise<DeliverySetupResult> => {
-  const [channel, locations, existingOptions] = await step(
+  const [channel, locations, existingOptions, regions] = await step(
     "read your store's current setup",
     () =>
-      Promise.all([defaultSalesChannel(), listLocations(), listShippingOptions()])
+      Promise.all([
+        defaultSalesChannel(),
+        listLocations(),
+        listShippingOptions(),
+        listRegions(),
+      ])
   )
   if (!channel) {
     throw new SetupStepError(
@@ -428,6 +662,49 @@ export const setUpDelivery = async (
     locations[0] ??
     null
   const createdLocation = !location
+
+  const wanted = (
+    [
+      input.pickup && { kind: "pickup" as const, name: input.pickup.name, amount: 0 },
+      input.shipping && {
+        kind: "shipping" as const,
+        name: input.shipping.name,
+        amount: input.shipping.amount,
+      },
+    ] as Array<{ kind: DeliveryKind; name: string; amount: number } | null>
+  ).filter((option): option is NonNullable<typeof option> => Boolean(option))
+
+  // Where the options deliver, and so which region's buyers they are for and
+  // what currency they are priced in. Checked before anything is written.
+  const country = lower(location?.address?.country_code || input.location.country_code)
+  let region: SellingRegion | null = null
+  if (wanted.length > 0) {
+    if (!country) {
+      throw new SetupStepError(
+        "work out where you deliver",
+        "the stock location has no country. Add one in Settings, Locations."
+      )
+    }
+    if (regions.length === 0) {
+      throw new SetupStepError(
+        "work out where you deliver",
+        "this marketplace has no buyer regions yet, so no option would be offered to anyone. Contact support."
+      )
+    }
+    region = regionOfCountry(regions, country)
+    if (!region) {
+      throw new SetupStepError(
+        "work out where you deliver",
+        `buyers on this marketplace are in ${regionCountryNames(regions)}, and ${
+          location ? `${location.name} is` : "that place is"
+        } in ${country.toUpperCase()}: an option there would be offered to no one. ${
+          location
+            ? "Change its address in Settings, Locations."
+            : "Choose a place in one of those countries."
+        }`
+      )
+    }
+  }
   if (!location) {
     const address = {
       address_1: input.location.address_1.trim(),
@@ -465,19 +742,9 @@ export const setUpDelivery = async (
     )
   }
 
-  const wanted = (
-    [
-      input.pickup && { kind: "pickup" as const, name: input.pickup.name, amount: 0 },
-      input.shipping && {
-        kind: "shipping" as const,
-        name: input.shipping.name,
-        amount: input.shipping.amount,
-      },
-    ] as Array<{ kind: DeliveryKind; name: string; amount: number } | null>
-  ).filter((option): option is NonNullable<typeof option> => Boolean(option))
-
   const options: DeliverySetupResult["options"] = []
-  if (wanted.length > 0) {
+  if (region && wanted.length > 0) {
+    const currency = lower(region.currency_code)
     // 3. Manual fulfilment at the location: a shipping option's provider has
     //    to be enabled where it ships from.
     if (!location.fulfillment_providers?.some((p) => p?.id === MANUAL_PROVIDER_ID)) {
@@ -539,20 +806,6 @@ export const setUpDelivery = async (
       ((fulfillment_options ?? []) as Array<Record<string, unknown>>).find(
         (option) => !option?.is_return
       ) ?? {}
-
-    const country = (
-      location.address?.country_code ||
-      input.location.country_code ||
-      ""
-    )
-      .trim()
-      .toLowerCase()
-    if (!country) {
-      throw new SetupStepError(
-        "work out where you deliver",
-        "the stock location has no country. Add one in Settings, Locations."
-      )
-    }
 
     for (const want of wanted) {
       const label =
@@ -627,7 +880,7 @@ export const setUpDelivery = async (
           service_zone_id: zoneId,
           shipping_profile_id: profileId,
           provider_id: MANUAL_PROVIDER_ID,
-          prices: [{ currency_code: SELLING_CURRENCY, amount: want.amount }],
+          prices: [{ currency_code: currency, amount: want.amount }],
           data: fulfilmentData,
           rules: [
             { value: "false", attribute: "is_return", operator: "eq" },

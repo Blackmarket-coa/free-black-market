@@ -33,7 +33,7 @@ vi.mock("./logger", () => ({
 }))
 
 import { createBackend, json } from "../__tests__/backend"
-import { createFakeStore } from "../__tests__/fake-store"
+import { createFakeStore, US_REGION } from "../__tests__/fake-store"
 import {
   sellingSetupQueryKey,
   useSellingSetup,
@@ -111,11 +111,15 @@ describe("readSellingSetup", () => {
       "GET /vendor/sales-channels",
       "GET /vendor/stock-locations",
       "GET /vendor/shipping-options",
+      "GET /vendor/regions",
       "GET /vendor/products",
     ])
     expect(backend.sent[1].query).toEqual({ fields: SELLING_LOCATION_FIELDS })
     expect(SELLING_LOCATION_FIELDS).toContain("*sales_channels")
-    expect(backend.sent[2].query).toEqual({ fields: "*rules" })
+    // Each option's rules, and its prices with theirs.
+    expect(backend.sent[2].query).toEqual({ fields: "*rules,*prices.price_rules" })
+    // Every region with its countries and currency, as the product form asks.
+    expect(backend.sent[3].query).toEqual({ limit: "9999" })
     expect(
       backend.sent.every(
         (s) => s.headers.get("authorization") === "Bearer tok-seller"
@@ -180,7 +184,7 @@ describe("readSellingSetup", () => {
 
     shipping.rules = [{ attribute: "is_return", value: "false", operator: "eq" }]
     expect((await readSellingSetup()).delivery.options).toEqual([
-      { id: shipping.id, name: "Flat delivery", kind: "shipping" },
+      { id: shipping.id, name: "Flat delivery", kind: "shipping", regions: ["reg_us"] },
     ])
 
     store.db.locations[0].channels = []
@@ -265,13 +269,157 @@ describe("readSellingSetup", () => {
     await createProduct(
       honey({
         title: "Coaching session",
-        variants: [{ title: "Default variant", manage_inventory: false, variant_rank: 0 }],
+        variants: [
+          {
+            title: "Default variant",
+            manage_inventory: false,
+            variant_rank: 0,
+            prices: [{ currency_code: "usd", amount: 40 }],
+          },
+        ],
       })
     )
     const setup = await readSellingSetup()
     expect(setup.listing.buyable).toMatchObject({ title: "Coaching session" })
     expect(setup.ready).toBe(true)
     expect(store.buyerCanCheckOut()).toBe(true)
+  })
+})
+
+describe("readSellingSetup, where buyers are and what they pay in", () => {
+  /** Delivery the guided setup made, and a published, untracked product priced in USD. */
+  const sellable = async () => {
+    await setUpDelivery(both)
+    await createProduct(
+      honey({
+        variants: [
+          {
+            title: "Default variant",
+            manage_inventory: false,
+            variant_rank: 0,
+            prices: [{ currency_code: "usd", amount: 12 }],
+          },
+        ],
+      })
+    )
+    expect((await readSellingSetup()).ready).toBe(true)
+    expect(store.buyerCanCheckOut()).toBe(true)
+  }
+
+  it("is not ready when the only zones cover a country no region holds (measured: a Canadian zone, a US buyer)", async () => {
+    await sellable()
+    // What Settings, Locations lets a vendor make: zones for Canada only.
+    for (const zone of store.db.zones) {
+      zone.geo_zones = [{ type: "country", country_code: "ca" }]
+    }
+    expect(store.buyerCanCheckOut()).toBe("Seller shipping method not found!")
+
+    const setup = await readSellingSetup()
+
+    expect(setup.delivery.options).toEqual([])
+    expect(setup.delivery.unoffered).toEqual([
+      expect.objectContaining({ name: "Pickup at the barn", reason: "outside" }),
+      expect.objectContaining({ name: "Flat delivery", reason: "outside" }),
+    ])
+    expect(setup.delivery.ready).toBe(false)
+    expect(setup.ready).toBe(false)
+  })
+
+  it("is not ready when the options have no price in the region's currency (measured: EUR only, a USD region)", async () => {
+    await sellable()
+    for (const option of store.db.options) {
+      option.prices = [{ currency_code: "eur", amount: 5, rules: [] }]
+    }
+    expect(store.buyerCanCheckOut()).toMatch(/^Shipping options with IDs .* do not have a price$/)
+
+    const setup = await readSellingSetup()
+
+    expect(setup.delivery.options).toEqual([])
+    expect(setup.delivery.unoffered).toEqual([
+      expect.objectContaining({ name: "Pickup at the barn", reason: "unpriced", currencies: ["USD"] }),
+      expect.objectContaining({ name: "Flat delivery", reason: "unpriced", currencies: ["USD"] }),
+    ])
+    expect(setup.ready).toBe(false)
+  })
+
+  it("reads each price's rules: a price for another region does not count, one for this region does", async () => {
+    await sellable()
+    const [pickup, shipping] = store.db.options
+    pickup.prices = [
+      { currency_code: "usd", amount: 0, rules: [{ attribute: "region_id", value: "reg_elsewhere" }] },
+    ]
+    shipping.prices = [
+      { currency_code: "usd", amount: 5, rules: [{ attribute: "region_id", value: "reg_us" }] },
+    ]
+
+    const setup = await readSellingSetup()
+
+    expect(setup.delivery.options).toEqual([
+      { id: shipping.id, name: "Flat delivery", kind: "shipping", regions: ["reg_us"] },
+    ])
+    expect(setup.delivery.unoffered).toEqual([
+      expect.objectContaining({ id: pickup.id, reason: "unpriced" }),
+    ])
+    expect(setup.ready).toBe(true)
+    expect(store.buyerCanCheckOut()).toBe(true)
+  })
+
+  it("counts a product's price only in a region whose buyers are offered delivery", async () => {
+    const germany = {
+      id: "reg_eu",
+      name: "Europe",
+      currency_code: "eur",
+      countries: [{ iso_2: "de", display_name: "Germany" }],
+    }
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { regions: [US_REGION, germany] })
+    // Delivery for US buyers only; the product priced only in euros.
+    await setUpDelivery(both)
+    await createProduct(
+      honey({
+        variants: [
+          { title: "Default variant", manage_inventory: false, variant_rank: 0, prices: [{ currency_code: "eur", amount: 12 }] },
+        ],
+      })
+    )
+    // A US buyer cannot pay for it; a German one has no delivery.
+    expect(store.buyerCanCheckOut("us")).toMatch(/do not have a price/)
+    expect(store.buyerCanCheckOut("de")).toBe("Seller shipping method not found!")
+
+    const setup = await readSellingSetup()
+
+    expect(setup.delivery.ready).toBe(true)
+    expect(setup.listing).toMatchObject({ buyable: null, currencies: ["USD"] })
+    expect(setup.ready).toBe(false)
+  })
+
+  it("does not count a published product with no price in the currency buyers pay in", async () => {
+    await setUpDelivery(both)
+    const euros = await createProduct(
+      honey({
+        title: "Euro Honey",
+        variants: [
+          {
+            title: "Default variant",
+            manage_inventory: false,
+            variant_rank: 0,
+            prices: [{ currency_code: "eur", amount: 12 }],
+          },
+        ],
+      })
+    )
+    expect(store.buyerCanCheckOut()).toMatch(/^Variants with IDs .* do not have a price$/)
+
+    const setup = await readSellingSetup()
+
+    expect(setup.delivery.ready).toBe(true)
+    expect(setup.listing).toMatchObject({
+      buyable: null,
+      needsPrice: { id: euros, title: "Euro Honey" },
+      currencies: ["USD"],
+    })
+    expect(setup.ready).toBe(false)
   })
 })
 
@@ -283,6 +431,7 @@ describe("setUpDelivery, for a store with nothing", () => {
       "GET /vendor/sales-channels",
       "GET /vendor/stock-locations",
       "GET /vendor/shipping-options",
+      "GET /vendor/regions",
       "POST /vendor/stock-locations",
       "POST /vendor/stock-locations/sloc_1/sales-channels",
       "GET /vendor/fulfillment-providers",
@@ -493,6 +642,83 @@ describe("setUpDelivery, for a store with nothing", () => {
       type: "default",
     })
     expect(store.db.options.every((o) => o.shipping_profile_id === store.db.profiles[0].id)).toBe(true)
+  })
+
+  it("prices the options in the currency of the region the location is in, and covers its country", async () => {
+    const germany = {
+      id: "reg_eu",
+      name: "Europe",
+      currency_code: "eur",
+      countries: [{ iso_2: "de", display_name: "Germany" }],
+    }
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { regions: [US_REGION, germany] })
+
+    await setUpDelivery({ ...both, location: { ...barn, country_code: "DE" } })
+
+    const options = posts().filter((s) => s.path === "/vendor/shipping-options")
+    expect(options.map((s) => (s.body as { prices: unknown }).prices)).toEqual([
+      [{ currency_code: "eur", amount: 0 }],
+      [{ currency_code: "eur", amount: 5 }],
+    ])
+    const zones = posts().filter((s) => s.path.endsWith("/service-zones"))
+    expect(zones.map((s) => (s.body as { geo_zones: unknown }).geo_zones)).toEqual([
+      [{ type: "country", country_code: "de" }],
+      [{ type: "country", country_code: "de" }],
+    ])
+    await createProduct(
+      honey({
+        variants: [
+          { title: "Default variant", manage_inventory: false, variant_rank: 0, prices: [{ currency_code: "eur", amount: 12 }] },
+        ],
+      })
+    )
+    const setup = await readSellingSetup()
+    expect(setup.delivery.options.map((o) => o.regions)).toEqual([["reg_eu"], ["reg_eu"]])
+    expect(setup.ready).toBe(true)
+    expect(store.buyerCanCheckOut("de")).toBe(true)
+  })
+
+  it("refuses a new place in a country no region holds, before writing anything", async () => {
+    const error = await setUpDelivery({
+      ...both,
+      location: { ...barn, country_code: "CA" },
+    }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(SetupStepError)
+    expect((error as SetupStepError).message).toBe(
+      "Could not work out where you deliver: buyers on this marketplace are in United States, and that place is in CA: an option there would be offered to no one. Choose a place in one of those countries."
+    )
+    expect(posts()).toEqual([])
+  })
+
+  it("refuses to add options at an existing location outside every region, and says where to change it", async () => {
+    // A location Settings, Locations made in Canada.
+    await fetch("http://panel.test/vendor/stock-locations", {
+      method: "POST",
+      body: JSON.stringify({ name: "Toronto Shed", address: { address_1: "1 Queen St", country_code: "ca" } }),
+    })
+    backend.sent.length = 0
+
+    const error = await setUpDelivery(both).catch((e: unknown) => e)
+
+    expect((error as SetupStepError).message).toBe(
+      "Could not work out where you deliver: buyers on this marketplace are in United States, and Toronto Shed is in CA: an option there would be offered to no one. Change its address in Settings, Locations."
+    )
+    expect(posts()).toEqual([])
+    expect(store.db.sets).toEqual([])
+  })
+
+  it("refuses when the marketplace has no region at all", async () => {
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { regions: [] })
+
+    await expect(setUpDelivery(both)).rejects.toThrow(
+      "Could not work out where you deliver: this marketplace has no buyer regions yet, so no option would be offered to anyone. Contact support."
+    )
+    expect(posts()).toEqual([])
   })
 
   it("says which step the backend refused, in the backend's words, and stops", async () => {

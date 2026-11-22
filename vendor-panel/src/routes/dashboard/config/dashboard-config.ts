@@ -1,4 +1,4 @@
-import type { SellingSetup } from "../../../lib/selling-setup"
+import { unofferedReason, type SellingSetup } from "../../../lib/selling-setup"
 import { VendorType, VendorFeatures } from "../../../providers/vendor-type-provider"
 
 /**
@@ -107,7 +107,9 @@ export function getPrimaryCTARoute(type: VendorType): string {
  *
  * Now: the profile is complete, and a buyer could check out
  * (lib/selling-setup.ts: a stock location linked to the sales channel, a
- * shipping option on it, a published product in stock or untracked). A store
+ * shipping option on it that buyers in a region are offered and charged in
+ * their currency, a published product priced in that currency and in stock
+ * or untracked). A store
  * buyers have already ordered from stays out of setup: selling out or pausing
  * an option must not put the checklist back over its orders.
  */
@@ -164,6 +166,8 @@ export function getOnboardingSteps(
         ? "Say where your goods are and how buyers get them. Buyers cannot check out until you do."
         : !delivery.locationLinked
         ? `${delivery.location.name} is not linked to your sales channel, so buyers cannot add your products to a cart.`
+        : delivery.options.length === 0 && delivery.unoffered.length > 0
+        ? `No buyer is offered your pickup or shipping, so buyers cannot check out. ${delivery.unoffered.map(unofferedReason).join(" ")}`
         : delivery.options.length === 0
         ? `${delivery.location.name} has no pickup or shipping option, so buyers cannot check out.`
         : `Buyers can choose: ${delivery.options.map((option) => option.name).join(", ")}.`,
@@ -189,6 +193,14 @@ export function getOnboardingSteps(
             title: firstProduct,
             description: `${listing.buyable.title} is published and can be bought.`,
             to: "/products",
+            icon: "Tag",
+          }
+        : listing?.needsPrice
+        ? {
+            key: "products",
+            title: `Price ${listing.needsPrice.title} in ${listing.currencies.join(" or ")}`,
+            description: `It is published, but it has no price in ${listing.currencies.join(" or ")}, the currency buyers pay in, so they cannot add it to a cart.`,
+            to: `/products/${listing.needsPrice.id}/prices`,
             icon: "Tag",
           }
         : listing?.needsStock

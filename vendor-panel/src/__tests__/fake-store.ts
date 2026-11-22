@@ -28,6 +28,11 @@ import { json, type createBackend } from "./backend"
  *   - `POST /vendor/onboarding/publish` records any `listing_id`, as the base
  *     does (measured: another store's product id answered 200); refusing a
  *     foreign id is the backend onboarding unit's change, not the base's;
+ *   - a buyer is in the region whose countries include their address
+ *     country; the options offered are those whose service zone covers that
+ *     country, and an option or a variant can be taken only with a price in
+ *     the region's currency (`buyerCanCheckOut`, after the review's measured
+ *     Canada-zone and EUR-only cases);
  *   - `POST /vendor/inventory-items/location-levels/batch` refuses another
  *     store's item or location with 403. At the base it accepts them
  *     (measured: one store wrote another's levels, the hole a backend fix is
@@ -62,6 +67,7 @@ type Variant = {
   manage_inventory: boolean
   allow_backorder: boolean
   item: string | null
+  prices: Price[]
 }
 type Product = Record<string, any> & {
   id: string
@@ -70,6 +76,26 @@ type Product = Record<string, any> & {
   variants: Variant[]
 }
 type Level = { id: string; item: string; location: string; stocked: number }
+type Region = {
+  id: string
+  name: string
+  currency_code: string
+  countries: Array<{ iso_2: string; display_name: string }>
+}
+/** A price as stored: rules as Medusa keeps them, attribute by attribute. */
+type Price = {
+  currency_code: string
+  amount: number
+  rules: Array<{ attribute: string; value: string }>
+}
+
+/** The marketplace the MVP sweep ran against: one region, the United States, in USD. */
+export const US_REGION: Region = {
+  id: "reg_us",
+  name: "United States",
+  currency_code: "usd",
+  countries: [{ iso_2: "us", display_name: "United States" }],
+}
 
 const refuse = (message: string) =>
   json(400, { type: "invalid_data", message })
@@ -87,6 +113,43 @@ const unknownKey = (body: unknown, allowed: string[]) => {
     : null
 }
 
+/**
+ * Prices as sent: `{ currency_code, amount }`, a shipping option's
+ * `{ region_id, amount }` (Medusa gives it the region's currency and a
+ * `region_id` rule), or a variant's `{ currency_code, amount, rules }`.
+ */
+const storePrices = (sent: unknown, regions: Region[]): Price[] =>
+  (Array.isArray(sent) ? sent : []).map((price: Record<string, any>) => {
+    const region = regions.find((r) => r.id === price?.region_id)
+    const rules = Object.entries((price?.rules ?? {}) as Record<string, unknown>).map(
+      ([attribute, value]) => ({ attribute, value: String(value) })
+    )
+    return region
+      ? {
+          currency_code: region.currency_code,
+          amount: price.amount,
+          rules: [{ attribute: "region_id", value: region.id }, ...rules],
+        }
+      : { currency_code: String(price?.currency_code ?? ""), amount: price?.amount, rules }
+  })
+/** Medusa's choice of price for a cart in `region`. */
+const chargedIn = (prices: Price[], region: Region) =>
+  prices.some(
+    (price) =>
+      price.currency_code.toLowerCase() === region.currency_code.toLowerCase() &&
+      price.rules.every((rule) => rule.attribute === "region_id" && rule.value === region.id)
+  )
+/** As Medusa answers a price: its rules only when `fields` asks for them. */
+const priceView = (price: Price, index: number, withRules: boolean) => ({
+  id: `price_${index + 1}`,
+  currency_code: price.currency_code,
+  amount: price.amount,
+  rules_count: price.rules.length,
+  ...(withRules && {
+    price_rules: price.rules.map((rule) => ({ ...rule, operator: "eq" })),
+  }),
+})
+
 export const createFakeStore = (
   backend: Backend,
   seed: {
@@ -96,6 +159,8 @@ export const createFakeStore = (
     takenNames?: string[]
     /** What the product-create route answers instead of creating. */
     refuseProducts?: () => Response
+    /** Where buyers are: the United States in USD unless a spec says otherwise. */
+    regions?: Region[]
   } = {}
 ) => {
   let serial = 0
@@ -114,6 +179,7 @@ export const createFakeStore = (
     products: [] as Product[],
     levels: [] as Level[],
     takenNames: new Set(seed.takenNames ?? []),
+    regions: seed.regions ?? [US_REGION],
     onboarding: {
       id: "onb_1",
       selling_type: null as string | null,
@@ -160,20 +226,25 @@ export const createFakeStore = (
   })
   const optionView = (option: Option, fields = "") => {
     const zone = db.zones.find((z) => z.id === option.zone)!
-    const { zone: _zone, rules, ...rest } = option
+    const { zone: _zone, rules, prices, ...rest } = option
+    // `*prices` is in Mercur's defaults; the rules of each only on request.
+    const withPriceRules = fields.includes("prices.price_rules")
     return {
       ...rest,
+      prices: (prices as Price[]).map((price, i) => priceView(price, i, withPriceRules)),
       service_zone_id: zone.id,
       service_zone: { id: zone.id, name: zone.name, fulfillment_set_id: zone.set },
-      ...(fields.includes("rules") && { rules }),
+      ...(fields.split(",").includes("*rules") && { rules }),
     }
   }
   /** Not in rank order: last rank first. */
   const answered = (variants: Variant[]) => [...variants].reverse()
+  // FBM's detail route reads `variants.prices.*`: the prices, not their rules.
   const productView = (product: Product) => ({
     ...product,
-    variants: answered(product.variants).map(({ item, ...variant }) => ({
+    variants: answered(product.variants).map(({ item, prices, ...variant }) => ({
       ...variant,
+      prices: (prices as Price[]).map((price, i) => priceView(price, i, false)),
       inventory_items: item ? [{ inventory_item_id: item, required_quantity: 1 }] : [],
     })),
   })
@@ -185,6 +256,10 @@ export const createFakeStore = (
     )
   const findLocation = (path: string) =>
     db.locations.find((l) => l.id === path.split("/")[3])
+
+  backend.on("GET", "/vendor/regions", () =>
+    json(200, { regions: db.regions, count: db.regions.length })
+  )
 
   backend.on("GET", "/vendor/sales-channels", () =>
     json(200, { sales_channels: [db.channel], count: 1 })
@@ -325,7 +400,14 @@ export const createFakeStore = (
     if (!b.type?.label || !b.type?.description || !b.type?.code) {
       return refuse("type needs label, description and code")
     }
-    const option: Option = { ...b, id: id("so"), name: b.name, zone: zone.id, price_type: "flat" }
+    const option: Option = {
+      ...b,
+      prices: storePrices(b.prices, db.regions),
+      id: id("so"),
+      name: b.name,
+      zone: zone.id,
+      price_type: "flat",
+    }
     delete option.service_zone_id
     db.options.push(option)
     return json(201, { shipping_option: optionView(option) })
@@ -362,7 +444,7 @@ export const createFakeStore = (
         manage_inventory: v.manage_inventory !== false,
         allow_backorder: v.allow_backorder === true,
         item: v.manage_inventory !== false ? id("iitem") : null,
-        prices: v.prices ?? [],
+        prices: storePrices(v.prices, db.regions),
       })),
     }
     db.products.push(product)
@@ -493,13 +575,25 @@ export const createFakeStore = (
     db,
     /**
      * What Medusa and Mercur ask of a cart before a buyer of this store's
-     * first published product can complete it, in the order they ask.
+     * first published product can complete it, in the order they ask: a
+     * buyer at an address in `country` (the United States by default), in
+     * whatever region holds that country. The stock-location, inventory,
+     * shipping-method and option-price refusals are the measured wording;
+     * the variant-price one is Medusa's (`get-variant-price-sets`), read.
      */
-    buyerCanCheckOut: (): true | string => {
+    buyerCanCheckOut: (country = "us"): true | string => {
+      const region = db.regions.find((r) =>
+        r.countries.some((c) => c.iso_2 === country.toLowerCase())
+      )
+      if (!region) return `No region holds ${country.toUpperCase()}`
       const product = db.products.find((p) => p.status === "published")
       if (!product) return "no published product"
       const linked = db.locations.filter((l) => l.channels.includes(db.channel.id))
       const variant = product.variants[0]
+      // Adding to the cart: a price in the cart's currency.
+      if (!chargedIn(variant.prices as Price[], region)) {
+        return `Variants with IDs ${variant.id} do not have a price`
+      }
       if (variant.manage_inventory) {
         if (linked.length === 0) {
           return `Sales channel ${db.channel.id} is not associated with any stock location for variant ${variant.id}.`
@@ -512,17 +606,30 @@ export const createFakeStore = (
         )
         if (!stocked) return "Some variant does not have the required inventory"
       }
-      const offered = db.options.some((option) => {
+      // The options offered for the address: on a linked location, not for
+      // returns, in a zone that covers the buyer's country.
+      const offered = db.options.filter((option) => {
         const zone = db.zones.find((z) => z.id === option.zone)
         const set = db.sets.find((s) => s.id === zone?.set)
         return (
           linked.some((l) => l.id === set?.location) &&
           !option.rules?.some(
             (r: any) => r.attribute === "is_return" && r.value === "true"
+          ) &&
+          Boolean(
+            zone?.geo_zones.some(
+              (g) => String(g.country_code).toLowerCase() === country.toLowerCase()
+            )
           )
         )
       })
-      return offered ? true : "Seller shipping method not found!"
+      // Measured: with none offered the completion answers this.
+      if (offered.length === 0) return "Seller shipping method not found!"
+      // Measured: adding an option with no price in the cart's currency.
+      if (!offered.some((option) => chargedIn(option.prices as Price[], region))) {
+        return `Shipping options with IDs ${offered.map((o) => o.id).join(", ")} do not have a price`
+      }
+      return true
     },
   }
 }

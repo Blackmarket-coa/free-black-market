@@ -16,10 +16,12 @@ export const CountrySelect = forwardRef<
     placeholder?: string
     value?: string
     defaultValue?: string
+    /** Offer only these countries (ISO 3166-1 alpha-2, any case). */
+    countryCodes?: string[]
   }
 >(
   (
-    { className, disabled, placeholder, value, defaultValue, ...props },
+    { className, disabled, placeholder, value, defaultValue, countryCodes, ...props },
     ref
   ) => {
     const { t } = useTranslation()
@@ -63,7 +65,14 @@ export const CountrySelect = forwardRef<
           <option value="" disabled className="text-ui-fg-muted">
             {placeholder || t("fields.selectCountry")}
           </option>
-          {countries.map((country) => {
+          {(countryCodes
+            ? countries.filter((country) =>
+                countryCodes.some(
+                  (code) => code.toLowerCase() === country.iso_2.toLowerCase()
+                )
+              )
+            : countries
+          ).map((country) => {
             return (
               <option key={country.iso_2} value={country.iso_2.toLowerCase()}>
                 {country.display_name}

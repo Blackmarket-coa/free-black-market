@@ -17,10 +17,14 @@ import {
   useSetUpDelivery,
 } from "../../hooks/api/selling-setup"
 import {
-  SELLING_CURRENCY,
+  regionCountryCodes,
+  regionCountryNames,
+  regionOfCountry,
   type DeliverySetup,
   type DeliverySetupInput,
   type DeliverySetupResult,
+  type SellingRegion,
+  unofferedReason,
 } from "../../lib/selling-setup"
 
 /**
@@ -32,6 +36,12 @@ import {
  * This asks where the goods are and how buyers get them, and makes the rest
  * with `setUpDelivery`. It says delivery is set up only from what the backend
  * answers when the setup is read back.
+ *
+ * A new place can only be in a country buyers are in (a region's country),
+ * and the flat rate is asked for in that region's currency: an option in a
+ * zone no buyer is in, or priced in a currency no buyer pays in, is offered
+ * to no one (measured: a Canadian zone and a EUR-only price each left a US
+ * buyer unable to check out while the store read as ready).
  */
 
 export type DeliveryAnswers = {
@@ -45,7 +55,7 @@ export type DeliveryAnswers = {
   pickupName: string
   offerShipping: boolean
   shippingName: string
-  /** As typed, in major units: "5" is $5.00. */
+  /** As typed, in major units of the region's currency: "5" is $5.00 in USD. */
   shippingPrice: string
 }
 
@@ -64,15 +74,26 @@ export const DEFAULT_DELIVERY_ANSWERS: DeliveryAnswers = {
   shippingPrice: "",
 }
 
+/** The currency buyers in that country pay in, upper case ("USD"). */
+const currencyFor = (regions: SellingRegion[], countryCode: string | null | undefined) =>
+  (regionOfCountry(regions, countryCode)?.currency_code ?? "").toUpperCase()
+
 /**
  * The setup the answers ask for, or what is wrong with them. A store that
  * already has a stock location is not asked for an address.
  */
 export const deliveryInputFrom = (
   answers: DeliveryAnswers,
-  current: Pick<DeliverySetup, "location" | "options"> | undefined
+  current: Pick<DeliverySetup, "location" | "options" | "regions"> | undefined
 ): { input: DeliverySetupInput } | { problem: string } => {
+  const regions = current?.regions ?? []
   const hasLocation = Boolean(current?.location)
+  if (regions.length === 0) {
+    return {
+      problem:
+        "This marketplace has no buyer region yet, so no option would be offered to anyone. Contact support.",
+    }
+  }
   if (!hasLocation) {
     if (!answers.locationName.trim()) {
       return { problem: "Give the place you keep your goods a name." }
@@ -83,7 +104,16 @@ export const deliveryInputFrom = (
     if (!/^[a-z]{2}$/i.test(answers.countryCode.trim())) {
       return { problem: "Choose the country that place is in." }
     }
+    if (!regionOfCountry(regions, answers.countryCode)) {
+      return {
+        problem: `Choose a country buyers on this marketplace are in: ${regionCountryNames(regions)}.`,
+      }
+    }
   }
+  const currency = currencyFor(
+    regions,
+    current?.location?.address?.country_code || answers.countryCode
+  )
   if (!answers.offerPickup && !answers.offerShipping) {
     return {
       problem:
@@ -104,8 +134,7 @@ export const deliveryInputFrom = (
     amount = Number(typed)
     if (typed === "" || !Number.isFinite(amount) || amount < 0) {
       return {
-        problem:
-          "Enter what you charge for shipping, in dollars. Enter 0 to ship free.",
+        problem: `Enter what you charge for shipping, in ${currency || "your buyers' currency"}. Enter 0 to ship free.`,
       }
     }
   }
@@ -153,11 +182,22 @@ export const DeliverySetupForm = ({
 
   const delivery = setup?.delivery
   const location = delivery?.location ?? null
+  const regions = delivery?.regions ?? []
+  // Only countries buyers are in; the first of them until the vendor chooses.
+  const countryChoices = [...new Set(regions.flatMap(regionCountryCodes))]
+  const country = countryChoices.includes(answers.countryCode.trim().toLowerCase())
+    ? answers.countryCode.trim().toLowerCase()
+    : (countryChoices[0] ?? "")
+  const deliversFrom = location ? location.address?.country_code : country
+  const currency = currencyFor(regions, deliversFrom)
+  const locationOutside = Boolean(
+    location && regions.length > 0 && !regionOfCountry(regions, deliversFrom)
+  )
 
   const submit = async () => {
     // One setup at a time, however fast the button is pressed.
     if (isBusyNow()) return
-    const asked = deliveryInputFrom(answers, delivery)
+    const asked = deliveryInputFrom({ ...answers, countryCode: country }, delivery)
     if ("problem" in asked) {
       setProblem(asked.problem)
       toast.error(asked.problem)
@@ -212,11 +252,24 @@ export const DeliverySetupForm = ({
         <Alert variant="warning">
           {location
             ? delivery.locationLinked
-              ? `Buyers cannot check out yet: ${location.name} has no pickup or shipping option.`
+              ? delivery.unoffered.length > 0
+                ? `Buyers cannot check out yet: no buyer is offered your pickup or shipping. ${delivery.unoffered
+                    .map(unofferedReason)
+                    .join(" ")} Fix it in Settings, Locations, or add an option here.`
+                : `Buyers cannot check out yet: ${location.name} has no pickup or shipping option.`
               : `Buyers cannot add your products to a cart yet: ${location.name} is not linked to your sales channel.`
             : "Buyers cannot check out yet: your store has no stock location and no pickup or shipping option."}
         </Alert>
       )}
+      {locationOutside ? (
+        <Alert variant="warning">
+          {location?.name} is in{" "}
+          {(location?.address?.country_code ?? "").toUpperCase() || "no country"},
+          where this marketplace has no buyers: it sells to{" "}
+          {regionCountryNames(regions)}. A pickup or shipping option there would
+          be offered to no one. Change its address in Settings, Locations.
+        </Alert>
+      ) : null}
 
       <section className="flex flex-col gap-y-3">
         <Heading level="h2">Where your goods are</Heading>
@@ -285,9 +338,13 @@ export const DeliverySetupForm = ({
                 <Label htmlFor="ds-country">Country</Label>
                 <CountrySelect
                   id="ds-country"
-                  value={answers.countryCode}
+                  value={country}
+                  countryCodes={countryChoices}
                   onChange={(e) => set("countryCode", e.target.value)}
                 />
+                <Text size="small" className="text-ui-fg-subtle mt-1">
+                  Only countries buyers on this marketplace are in.
+                </Text>
               </div>
             </div>
           </>
@@ -355,7 +412,7 @@ export const DeliverySetupForm = ({
                   </div>
                   <div>
                     <Label htmlFor="ds-shipping-price">
-                      Price per order ({SELLING_CURRENCY.toUpperCase()})
+                      Price per order{currency ? ` (${currency})` : ""}
                     </Label>
                     <Input
                       id="ds-shipping-price"

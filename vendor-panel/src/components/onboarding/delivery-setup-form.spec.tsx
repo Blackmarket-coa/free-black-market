@@ -33,7 +33,7 @@ vi.mock("../../lib/logger", () => ({
 }))
 
 import { createBackend, json } from "../../__tests__/backend"
-import { createFakeStore } from "../../__tests__/fake-store"
+import { createFakeStore, US_REGION } from "../../__tests__/fake-store"
 import { ProtectedRoute } from "../authentication/protected-route"
 import { MainLayout } from "../layout/main-layout"
 import { sellingSetupQueryKey } from "../../hooks/api/selling-setup"
@@ -201,8 +201,90 @@ describe("the guided delivery setup", () => {
     expect(ui.toast.error.mock.calls.map(([message]) => message)).toEqual([
       "Give the place you keep your goods a name.",
       "Tick pickup, shipping, or both: a buyer has to choose one at checkout.",
-      "Enter what you charge for shipping, in dollars. Enter 0 to ship free.",
+      "Enter what you charge for shipping, in USD. Enter 0 to ship free.",
     ])
+  })
+
+  it("offers only the countries buyers are in, and asks the flat rate in their region's currency", async () => {
+    const europe = {
+      id: "reg_eu",
+      name: "Europe",
+      currency_code: "eur",
+      countries: [
+        { iso_2: "de", display_name: "Germany" },
+        { iso_2: "fr", display_name: "France" },
+      ],
+    }
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { regions: [europe] })
+    await load()
+
+    // The vendor's default country, the United States, is not one of them.
+    const html = render({ initial: { ...typed } })
+
+    const offered = [...html.matchAll(/<option value="([a-z]{2})"/g)].map((m) => m[1])
+    expect(offered.sort()).toEqual(["de", "fr"])
+    expect(html).toContain("Price per order (EUR)")
+    expect(html).not.toContain("(USD)")
+
+    ui.press(ui.button("Save delivery"))
+    await settled()
+
+    // The first of their countries until the vendor chooses, priced in euros.
+    expect(store.db.locations[0].address).toMatchObject({ country_code: "de" })
+    expect(store.db.options.map((o) => o.prices)).toEqual([
+      [{ currency_code: "eur", amount: 0, rules: [] }],
+      [{ currency_code: "eur", amount: 5, rules: [] }],
+    ])
+  })
+
+  it("refuses a country no region holds, and sends nothing", () => {
+    expect(
+      deliveryInputFrom(
+        { ...typed, countryCode: "ca" },
+        { location: null, options: [], regions: [US_REGION] }
+      )
+    ).toEqual({
+      problem: "Choose a country buyers on this marketplace are in: United States.",
+    })
+    expect(
+      deliveryInputFrom(typed, { location: null, options: [], regions: [US_REGION] })
+    ).toHaveProperty("input")
+  })
+
+  it("says when the store's location is in a country where the marketplace has no buyers", async () => {
+    await fetch("http://panel.test/vendor/stock-locations", {
+      method: "POST",
+      body: JSON.stringify({ name: "Toronto Shed", address: { address_1: "1 Queen St", country_code: "ca" } }),
+    })
+    await load()
+
+    const html = render({ initial: typed })
+
+    expect(html).toContain("Toronto Shed is in")
+    expect(html).toContain("CA")
+    expect(html).toContain("where this marketplace has no buyers: it sells to")
+    expect(html).toContain("United States")
+  })
+
+  it("says why an option the store has is offered to no buyer", async () => {
+    await load()
+    render({ initial: typed })
+    ui.press(ui.button("Save delivery"))
+    await settled()
+    for (const option of store.db.options) {
+      option.prices = [{ currency_code: "eur", amount: 5, rules: [] }]
+    }
+    await load()
+
+    const html = render({ initial: typed })
+
+    expect(html).not.toContain("Delivery is set up")
+    expect(html).toContain("no buyer is offered your pickup or shipping")
+    expect(html).toContain(
+      "Flat delivery has no price in USD, the currency buyers there pay in."
+    )
   })
 
   it("ticks neither pickup nor shipping for the vendor", () => {
@@ -211,7 +293,7 @@ describe("the guided delivery setup", () => {
     expect(
       deliveryInputFrom(
         { ...typed, offerPickup: false, offerShipping: false },
-        { location: null, options: [] }
+        { location: null, options: [], regions: [US_REGION] }
       )
     ).toHaveProperty("problem")
   })

@@ -26,9 +26,10 @@ import { useProducts } from "../../hooks/api/products"
 import { backendMessage } from "../../lib/backend-message"
 import { uploadFilesQuery } from "../../lib/client"
 import {
-  SELLING_CURRENCY,
+  listingCurrency,
   type DeliverySetup,
   type SellingSetup,
+  unofferedReason,
 } from "../../lib/selling-setup"
 import { PRODUCT_CREATE_FORM_DEFAULTS } from "../../routes/products/product-create/constants"
 import type { ProductCreateSchemaType } from "../../routes/products/product-create/types"
@@ -108,7 +109,10 @@ export const writeWizardProduct = (
 
 export type ListingAnswers = {
   title: string
-  /** As typed, in major units: "12" is $12.00. */
+  /**
+   * As typed, in major units of the currency buyers pay in where the store
+   * is (`listingCurrency`): "12" is $12.00 in a USD region.
+   */
   price: string
   description: string
   sku: string
@@ -131,7 +135,10 @@ export const defaultListingAnswers = (
 /**
  * The draft product the listing step asks the backend for, or what is wrong
  * with the answers. The request is the product form's own
- * (`toCreateProductPayload`): one default variant, the price as typed.
+ * (`toCreateProductPayload`): one default variant, the price as typed, in the
+ * currency of the region the store's stock location is in (or of the first
+ * region before there is one). A price in another currency is one no
+ * buyer's cart is charged: Medusa refuses to add the variant.
  */
 export const listingRequestFrom = (
   answers: ListingAnswers,
@@ -139,7 +146,7 @@ export const listingRequestFrom = (
     delivery,
     thumbnail,
   }: {
-    delivery: Pick<DeliverySetup, "channel" | "location"> | undefined
+    delivery: Pick<DeliverySetup, "channel" | "location" | "regions"> | undefined
     thumbnail?: string
   }
 ):
@@ -149,10 +156,25 @@ export const listingRequestFrom = (
   if (!title) {
     return { problem: "Give your listing a title." }
   }
+  if (!delivery) {
+    // Without it the listing would be in no sales channel, and unpriced.
+    return {
+      problem: "Your store's setup could not be read. Reload the page and try again.",
+    }
+  }
+  const currency = listingCurrency(delivery)
+  if (!currency) {
+    return {
+      problem:
+        "This marketplace has no buyer region yet, so there is no currency to price your listing in. Contact support.",
+    }
+  }
   const typedPrice = answers.price.trim().replace(",", ".")
   const price = Number(typedPrice)
   if (typedPrice === "" || !Number.isFinite(price) || price < 0) {
-    return { problem: "Enter a price in dollars. Enter 0 for something free." }
+    return {
+      problem: `Enter a price in ${currency.toUpperCase()}. Enter 0 for something free.`,
+    }
   }
   let quantity: number | null = null
   if (answers.trackStock) {
@@ -169,8 +191,8 @@ export const listingRequestFrom = (
     }
   }
 
-  const channel = delivery?.channel
-  const location = delivery?.location
+  const channel = delivery.channel
+  const location = delivery.location
   const variant = PRODUCT_CREATE_FORM_DEFAULTS.variants![0]
   const values = {
     ...PRODUCT_CREATE_FORM_DEFAULTS,
@@ -184,7 +206,7 @@ export const listingRequestFrom = (
         ...variant,
         sku: answers.sku.trim(),
         manage_inventory: answers.trackStock,
-        prices: { [SELLING_CURRENCY]: typedPrice },
+        prices: { [currency]: typedPrice },
       },
     ],
   } as ProductCreateSchemaType
@@ -380,7 +402,7 @@ export const ListingStep = ({
         </div>
         <div>
           <Label htmlFor="lw-price">
-            Price ({SELLING_CURRENCY.toUpperCase()})
+            Price ({listingCurrency(delivery)?.toUpperCase() ?? "…"})
           </Label>
           <Input
             id="lw-price"
@@ -753,18 +775,31 @@ export const blockersOf = (
         ? "Your store has no stock location and no pickup or shipping option."
         : !delivery.locationLinked
           ? `${delivery.location.name} is not linked to your sales channel.`
-          : `${delivery.location.name} has no pickup or shipping option.`,
+          : delivery.unoffered.length > 0
+            ? `No buyer is offered your pickup or shipping: ${delivery.unoffered
+                .map(unofferedReason)
+                .join(" ")}`
+            : `${delivery.location.name} has no pickup or shipping option.`,
       to: "/delivery-setup",
       action: "Set up pickup or shipping",
     })
   }
   if (!listing.buyable) {
+    if (listing.needsPrice) {
+      blockers.push({
+        text: `${listing.needsPrice.title} has no price in ${listing.currencies.join(" or ")}, the currency buyers pay in.`,
+        to: `/products/${listing.needsPrice.id}/prices`,
+        action: "Set its price",
+      })
+    }
     if (listing.needsStock) {
       blockers.push({
         text: `${listing.needsStock.title} tracks stock and has none.`,
         to: `/products/${listing.needsStock.id}/stock`,
         action: "Enter its stock",
       })
+    } else if (listing.needsPrice) {
+      // Said above.
     } else if (listing.draft) {
       blockers.push({
         text: `${listing.draft.title} is still a draft.`,

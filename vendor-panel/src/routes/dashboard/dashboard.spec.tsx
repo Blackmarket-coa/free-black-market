@@ -109,7 +109,7 @@ const listHoney = async (status = "published") =>
         body: JSON.stringify({
           title: "Wildflower Honey",
           status,
-          variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0 }],
+          variants: [{ title: "Default variant", manage_inventory: true, variant_rank: 0, prices: [{ currency_code: "usd", amount: 12 }] }],
         }),
       })
     ).json()
@@ -220,6 +220,41 @@ describe("the dashboard does not say a store is set up until a buyer could check
     })
     // The product itself is fine.
     expect(row("products")).toMatchObject({ state: true })
+  })
+
+  it("stays in setup while no buyer is offered the option or charged for the product in their currency", async () => {
+    const product = await listHoney()
+    store.db.products[0].variants[0].prices = [{ currency_code: "eur", amount: 12, rules: [] }]
+    await setUpDelivery({ location: barn, pickup: { name: "Pickup" }, shipping: null })
+    await recordStock({
+      productId: product,
+      locationId: store.db.locations[0].id,
+      stock: [{ variant_rank: 0, quantity: 10 }],
+    })
+    expect(store.buyerCanCheckOut()).toMatch(/do not have a price/)
+
+    const priced = await dashboard({ mercur: mercurSaysDone })
+    expect(priced.inSetup).toBe(true)
+    expect(priced.row("delivery")).toMatchObject({ state: true })
+    expect(priced.row("products")).toEqual({
+      label: "Price Wildflower Honey in USD",
+      description:
+        "It is published, but it has no price in USD, the currency buyers pay in, so they cannot add it to a cart.",
+      state: false,
+      link: `/products/${product}/prices`,
+    })
+
+    // The product priced, the option now in euros only.
+    store.db.products[0].variants[0].prices = [{ currency_code: "usd", amount: 12, rules: [] }]
+    store.db.options[0].prices = [{ currency_code: "eur", amount: 0, rules: [] }]
+    expect(store.buyerCanCheckOut()).toMatch(/^Shipping options with IDs/)
+    const unpriced = await dashboard({ mercur: mercurSaysDone })
+    expect(unpriced.inSetup).toBe(true)
+    expect(unpriced.row("delivery")).toMatchObject({
+      description:
+        "No buyer is offered your pickup or shipping, so buyers cannot check out. Pickup has no price in USD, the currency buyers there pay in.",
+      state: false,
+    })
   })
 
   it("stays in setup while the published product has no stock, and sends the vendor to its stock", async () => {
