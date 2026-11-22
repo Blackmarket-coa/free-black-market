@@ -23,10 +23,10 @@ import { json, type createBackend } from "./backend"
  *     another store's product has (`takenHandles`), or one of this store's,
  *     is refused with the product route's measured 400, and a product sent
  *     with no handle gets Medusa's `toHandle` of its title;
- *   - a product's variants do not come back in `variant_rank` order (the
- *     review measured the create answering rank 1 before rank 0), so they are
- *     answered last rank first here, and only `variant_rank` says which is
- *     which;
+ *   - a product's variants do not come back in a stable order: one of the
+ *     review's two runs answered rank 1 before rank 0, the other rank 0
+ *     first. They are answered last rank first here, so only `variant_rank`
+ *     can say which is which;
  *   - another store's product or inventory item is refused with Mercur's
  *     403, "You are not allowed to perform this action" (measured);
  *   - `POST /vendor/onboarding/publish` records any `listing_id`, as the base

@@ -42,7 +42,9 @@ import {
 import { setAuthToken } from "./client"
 import {
   fulfillmentSetName,
+  listingCurrency,
   publishFirstListing,
+  regionOfCountry,
   unofferedReason,
   readSellingSetup,
   recordStock,
@@ -448,6 +450,17 @@ describe("readSellingSetup, where buyers are and what they pay in", () => {
     expect(unofferedReason(unpriced)).toBe(
       "Flat delivery has no price in USD, the currency buyers there pay in."
     )
+  })
+
+  it("finds a country's region whatever the case of its code", () => {
+    expect(regionOfCountry([US_REGION], "US")).toBe(US_REGION)
+    expect(regionOfCountry([US_REGION], " us ")).toBe(US_REGION)
+    expect(
+      listingCurrency({
+        regions: [{ ...US_REGION, id: "reg_x", currency_code: "eur", countries: [{ iso_2: "de", display_name: "Germany" }] }, US_REGION],
+        location: { id: "sloc_1", name: "Barn", address: { country_code: "US" } },
+      })
+    ).toBe("usd")
   })
 
   it("does not count a published product with no price in the currency buyers pay in", async () => {

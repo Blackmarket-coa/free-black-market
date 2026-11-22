@@ -424,6 +424,27 @@ describe("the protected layout, for a sign-up token kept after approval", () => 
     ).toHaveLength(2)
   })
 
+  it("does not keep the retry screen up for a vendor who has signed in again after a refresh got no answer", async () => {
+    setAuthToken(signUpToken())
+    backend.on("POST", "/auth/token/refresh", limited)
+    const client = newClient()
+    client.setQueryData(usersQueryKeys.session(), session)
+    render(client, <ProtectedRoute />)
+    await run(client, usersQueryKeys.session())
+    expect(show(client, <ProtectedRoute />).html).toContain(
+      "We hit a snag loading your account"
+    )
+
+    // A new sign-in stores a token that names the store; the 429 is still cached.
+    const signedIn = sellerToken()
+    setAuthToken(signedIn)
+
+    const screen = show(client, <ProtectedRoute />)
+    expect(screen.html).not.toContain("We hit a snag loading your account")
+    expect(screen.navigations).toEqual([])
+    expect(getAuthToken()).toBe(signedIn)
+  })
+
   it("leaves a token that already names the store alone", async () => {
     const token = sellerToken()
     setAuthToken(token)
@@ -519,6 +540,24 @@ describe("the pending-approval page, when the status turns approved", () => {
     expect(page.navigations).toEqual([])
     expect(page.html).toContain("Your store is approved")
     expect(page.html).toContain("Too many requests, please try again later")
+    expect(page.html).toContain("Try again")
+    expect(getAuthToken()).toBe(stale)
+  })
+
+  it("on a 429 over an approved status read before, stays here with the retry instead of opening the dashboard", async () => {
+    const stale = signUpToken()
+    setAuthToken(stale)
+    backend.on("POST", "/auth/token/refresh", limited)
+    const client = newClient()
+    // What an earlier read of this page cached.
+    client.setQueryData(usersQueryKeys.registrationStatus(), approved)
+
+    render(client, <PendingApproval />)
+    await run(client, usersQueryKeys.registrationStatus())
+
+    const page = show(client, <PendingApproval />)
+    expect(page.navigations).toEqual([])
+    expect(page.html).toContain("Your store is approved")
     expect(page.html).toContain("Try again")
     expect(getAuthToken()).toBe(stale)
   })

@@ -287,6 +287,23 @@ describe("the listing step", () => {
     )
   })
 
+  it("sends nothing when the store's setup could not be read, and says that, not that there is no region", async () => {
+    backend.on("GET", "/vendor/stock-locations", () =>
+      json(500, { message: "An unknown error occurred." })
+    )
+    const onCreated = vi.fn()
+    await show(step({ onCreated }))
+
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+
+    expect(writes()).toEqual([])
+    expect(onCreated).not.toHaveBeenCalled()
+    expect(ui.toast.error).toHaveBeenCalledWith(
+      "Your store's setup could not be read. Reload the page and try again."
+    )
+  })
+
   it("sends nothing without a title, a price, or an answer about stock", async () => {
     const onCreated = vi.fn()
     for (const initial of [
