@@ -19,6 +19,10 @@ import { json, type createBackend } from "./backend"
  *   - `GET /vendor/shipping-profiles` answers link rows holding the profile;
  *   - `GET /vendor/stock-locations` answers sales channels and service zones
  *     only when `fields` asks for them;
+ *   - product handles are unique across the whole marketplace: a handle
+ *     another store's product has (`takenHandles`), or one of this store's,
+ *     is refused with the product route's measured 400, and a product sent
+ *     with no handle gets Medusa's `toHandle` of its title;
  *   - a product's variants do not come back in `variant_rank` order (the
  *     review measured the create answering rank 1 before rank 0), so they are
  *     answered last rank first here, and only `variant_rank` says which is
@@ -161,10 +165,20 @@ export const createFakeStore = (
     refuseProducts?: () => Response
     /** Where buyers are: the United States in USD unless a spec says otherwise. */
     regions?: Region[]
+    /** Product handles other stores' products already have. */
+    takenHandles?: string[]
+    /** The store's own handle, as `GET /vendor/sellers/me` answers it. */
+    storeHandle?: string
   } = {}
 ) => {
   let serial = 0
   const id = (prefix: string) => `${prefix}_${++serial}`
+  /** Requests whose next answer is lost after the backend has done the work. */
+  const losing = new Set<string>()
+  const lost = (key: string, response: Response) =>
+    losing.delete(key)
+      ? Promise.reject(new TypeError("Failed to fetch"))
+      : response
 
   const db = {
     channel: { id: "sc_1", name: "Default Sales Channel" },
@@ -180,6 +194,8 @@ export const createFakeStore = (
     levels: [] as Level[],
     takenNames: new Set(seed.takenNames ?? []),
     regions: seed.regions ?? [US_REGION],
+    takenHandles: new Set(seed.takenHandles ?? []),
+    seller: { id: "sel_1", handle: seed.storeHandle ?? "bravo-pantry" },
     onboarding: {
       id: "onb_1",
       selling_type: null as string | null,
@@ -426,16 +442,43 @@ export const createFakeStore = (
     })
   })
 
+  backend.on("GET", "/vendor/sellers/me", () => json(200, { seller: db.seller }))
+
   backend.on("POST", "/vendor/seller-products", ({ body }) => {
     if (seed.refuseProducts) return seed.refuseProducts()
     const b = body as Record<string, any>
     if (!b?.title) return refuse("title is required")
+    // Medusa's toHandle when none is sent, and its isValidHandle.
+    const handle: string =
+      b.handle ||
+      String(b.title)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[\s_]+/g, "-")
+        .replace(/[^a-z0-9-]/g, "")
+        .replace(/-{2,}/g, "-")
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(handle)) {
+      return json(400, {
+        message: "Failed to create product",
+        error: `Invalid product handle '${handle}'. It must contain URL safe characters`,
+        type: "invalid_data",
+      })
+    }
+    if (db.takenHandles.has(handle) || db.products.some((p) => p.handle === handle)) {
+      // Measured, word for word.
+      return json(400, {
+        message: "Failed to create product",
+        error: `Product with handle: ${handle}, already exists.`,
+        type: "invalid_data",
+      })
+    }
     const product: Product = {
       ...b,
       id: id("prod"),
       title: b.title,
       status: b.status ?? "draft",
-      handle: String(b.title).toLowerCase().replace(/\W+/g, "-"),
+      handle,
       variants: (b.variants ?? []).map((v: Record<string, any>, index: number) => ({
         id: id("variant"),
         title: v.title ?? "Default variant",
@@ -449,12 +492,15 @@ export const createFakeStore = (
     }
     db.products.push(product)
     // The create route answers variants without their inventory items.
-    return json(200, {
-      product: {
-        ...product,
-        variants: answered(product.variants).map(({ item: _item, ...variant }) => variant),
-      },
-    })
+    return lost(
+      "POST /vendor/seller-products",
+      json(200, {
+        product: {
+          ...product,
+          variants: answered(product.variants).map(({ item: _item, ...variant }) => variant),
+        },
+      })
+    )
   })
   backend.on("GET", "/vendor/products", () =>
     json(200, {
@@ -573,6 +619,13 @@ export const createFakeStore = (
 
   return {
     db,
+    /**
+     * The next such request is carried out and its answer lost, as when the
+     * connection drops after the backend has committed.
+     */
+    loseNextAnswer: (method: string, path: string) => {
+      losing.add(`${method} ${path}`)
+    },
     /**
      * What Medusa and Mercur ask of a cart before a buyer of this store's
      * first published product can complete it, in the order they ask: a

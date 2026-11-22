@@ -916,6 +916,106 @@ export const setUpDelivery = async (
 }
 
 /**
+ * Medusa's `toHandle` (`@medusajs/utils`), with leading and trailing hyphens
+ * dropped so the result passes its `isValidHandle`: "Pat's Pickles" is
+ * "pats-pickles".
+ */
+export const toHandle = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+/**
+ * A product handle for this store: the title's, then the store's own handle,
+ * then "-2", "-3"… while the store already has it. Product handles are unique
+ * across the whole marketplace (measured: a second store's "Pat's Pickles"
+ * was refused, "Product with handle: pats-pickles, already exists."), and
+ * store handles are unique, so two stores never ask for the same one.
+ */
+export const storeProductHandle = (
+  title: string,
+  storeHandle: string,
+  taken: ReadonlySet<string>
+) => {
+  const base = [toHandle(title) || "listing", toHandle(storeHandle)]
+    .filter(Boolean)
+    .join("-")
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) {
+    const next = `${base}-${n}`
+    if (!taken.has(next)) return next
+  }
+}
+
+type OwnProduct = ProductRow & { handle?: string | null }
+
+/** FBM's `GET /vendor/products` answers every product of the store, unpaged. */
+const listOwnProducts = async (): Promise<OwnProduct[]> => {
+  const { products } = await get("/vendor/products")
+  return ((products ?? []) as Array<OwnProduct | null>).filter(
+    (product): product is OwnProduct => Boolean(product?.id)
+  )
+}
+
+const readStoreHandle = async () => {
+  const { seller } = await get("/vendor/sellers/me", { fields: "id,handle" })
+  // Mercur gives every store a unique handle; the end of its id otherwise.
+  return toHandle(String(seller?.handle ?? "")) || toHandle(String(seller?.id ?? "").slice(-8))
+}
+
+export type CreatedProduct = {
+  product: { id: string; title: string } & Record<string, unknown>
+}
+
+/**
+ * Create a product in the store: `POST /vendor/seller-products`, with a
+ * handle of the store's own unless the vendor typed one.
+ *
+ * When the create fails, the store's products are read again: one with the
+ * handle that was sent, which the store did not have before, is the product
+ * the request made before its answer was lost, and it is returned instead of
+ * the error. Measured without this: after a lost answer, sending the listing
+ * again answered 400 "Product with handle: frans-bouquet, already exists.",
+ * and the draft the first request made was left behind. Nothing is sent
+ * again: this only reads.
+ */
+export const createProductInStore = async (
+  payload: { title?: string; handle?: string | null } & Record<string, unknown>
+): Promise<CreatedProduct> => {
+  const typed = typeof payload.handle === "string" ? payload.handle.trim() : ""
+  const [before, storeHandle] = await Promise.all([
+    listOwnProducts(),
+    typed ? Promise.resolve("") : readStoreHandle(),
+  ])
+  const taken = new Set(
+    before.map((product) => product.handle ?? "").filter(Boolean)
+  )
+  const handle =
+    typed || storeProductHandle(String(payload.title ?? ""), storeHandle, taken)
+
+  try {
+    return (await post("/vendor/seller-products", {
+      ...payload,
+      handle,
+    })) as CreatedProduct
+  } catch (error) {
+    if (!taken.has(handle)) {
+      const after = await listOwnProducts().catch(() => [] as OwnProduct[])
+      const made = after.find((product) => product.handle === handle)
+      if (made) {
+        return { product: { ...made, title: made.title ?? "" } }
+      }
+    }
+    throw error
+  }
+}
+
+/**
  * Set how many of a product's variants are in stock at a location.
  *
  * `stock` names variants by `variant_rank`, which the product form sends and

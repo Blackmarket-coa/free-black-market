@@ -153,6 +153,8 @@ describe("the listing step", () => {
     expect(sent.headers.get("authorization")).toBe("Bearer tok-seller")
     expect(sent.body).toMatchObject({
       title: "Wildflower Honey",
+      // Product handles are unique marketplace-wide: this one is the store's.
+      handle: "wildflower-honey-bravo-pantry",
       description: "Raw, from our own hives.",
       status: "draft",
       sales_channels: [{ id: "sc_1", name: "Default Sales Channel" }],
@@ -327,6 +329,42 @@ describe("the listing step", () => {
     await settled()
     expect(store.db.products).toHaveLength(1)
     expect(writes()).toEqual(["POST /vendor/seller-products"])
+  })
+
+  it("lists a title another store already used (measured: a second \"Pat's Pickles\" was refused)", async () => {
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { takenHandles: ["pats-pickles"] })
+    const onCreated = vi.fn()
+    await show(step({ initial: { ...honey, title: "Pat's Pickles" }, onCreated }))
+
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+
+    expect(ui.toast.error).not.toHaveBeenCalled()
+    expect(store.db.products.map((p) => p.handle)).toEqual(["pats-pickles-bravo-pantry"])
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: store.db.products[0].id, title: "Pat's Pickles" })
+    )
+  })
+
+  it("after a lost answer, goes on with the draft the request made instead of reporting a failure", async () => {
+    store.loseNextAnswer("POST", "/vendor/seller-products")
+    const onCreated = vi.fn()
+    await show(step({ onCreated }))
+
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+
+    expect(writes()).toEqual(["POST /vendor/seller-products"])
+    expect(store.db.products).toHaveLength(1)
+    expect(ui.toast.error).not.toHaveBeenCalled()
+    expect(ui.toast.success).toHaveBeenCalledWith("Wildflower Honey is saved as a draft")
+    expect(onCreated).toHaveBeenCalledWith({
+      id: store.db.products[0].id,
+      title: "Wildflower Honey",
+      pendingStock: 10,
+    })
   })
 
   it("shows the backend's refusal in its own words, and reports no product", async () => {

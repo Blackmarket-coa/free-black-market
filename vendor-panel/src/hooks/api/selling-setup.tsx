@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query"
 import { getAuthToken } from "../../lib/client"
 import {
+  createProductInStore,
   publishFirstListing,
   readDeliverySetup,
   readSellingSetup,
@@ -18,7 +19,7 @@ import {
 } from "../../lib/selling-setup"
 import { HttpTypes } from "@medusajs/types"
 import { inventoryItemsQueryKeys } from "./inventory"
-import { productsQueryKeys, useCreateProduct } from "./products"
+import { productsQueryKeys } from "./products"
 import { shippingOptionsQueryKeys } from "./shipping-options"
 import { stockLocationsQueryKeys } from "./stock-locations"
 
@@ -148,14 +149,14 @@ export type CreateProductWithStockResult = HttpTypes.AdminProductResponse & {
  * Create a product and record how many of it are in stock: what the product
  * form and the launch wizard's listing step both do.
  *
- * It creates through `useCreateProduct` (`POST /vendor/seller-products`), then
- * writes the levels with `recordStock`. It is one mutation, so its key covers
- * the whole of it: a second press while either request is in flight is the
- * same press.
+ * It creates with `createProductInStore` (`POST /vendor/seller-products`,
+ * with a handle of the store's own, and the product a lost answer made is
+ * found again rather than made twice), then writes the levels with
+ * `recordStock`. It is one mutation, so its key covers the whole of it: a
+ * second press while either request is in flight is the same press.
  */
 export const useCreateProductWithStock = () => {
   const client = useQueryClient()
-  const createProduct = useCreateProduct()
 
   return useMutation<
     CreateProductWithStockResult,
@@ -164,7 +165,9 @@ export const useCreateProductWithStock = () => {
   >({
     mutationKey: sellingSetupMutationKeys.listing,
     mutationFn: async ({ payload, stock }) => {
-      const created = await createProduct.mutateAsync(payload)
+      const created = (await createProductInStore(
+        payload as unknown as Parameters<typeof createProductInStore>[0]
+      )) as unknown as HttpTypes.AdminProductResponse
       if (!stock || stock.entries.length === 0) {
         return created
       }
@@ -185,6 +188,7 @@ export const useCreateProductWithStock = () => {
     },
     onSettled: () => {
       client.invalidateQueries({ queryKey: sellingSetupQueryKey })
+      client.invalidateQueries({ queryKey: productsQueryKeys.lists() })
       client.invalidateQueries({ queryKey: inventoryItemsQueryKeys.all })
     },
   })

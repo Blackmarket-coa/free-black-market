@@ -262,12 +262,15 @@ describe("useCreateProductWithStock", () => {
     expect(result.product.id).toBe(product.id)
     expect(result.stockError).toBeUndefined()
     expect(backend.calls()).toEqual([
+      // The store's products and handle, for a handle of its own.
+      "GET /vendor/products",
+      "GET /vendor/sellers/me",
       "POST /vendor/seller-products",
       `GET /vendor/products/${product.id}`,
       `GET /vendor/inventory-items/${product.variants[0].item}/location-levels`,
       "POST /vendor/inventory-items/location-levels/batch",
     ])
-    expect(backend.sent[0].body).toMatchObject({
+    expect(backend.sent[2].body).toMatchObject({
       title: "Wildflower Honey",
       status: "published",
       variants: [
@@ -278,9 +281,9 @@ describe("useCreateProductWithStock", () => {
       ],
     })
     expect(
-      (backend.sent[0].body as { variants: object[] }).variants[0]
+      (backend.sent[2].body as { variants: object[] }).variants[0]
     ).not.toHaveProperty("stock_quantity")
-    expect(backend.sent[3].body).toEqual({
+    expect(backend.sent[5].body).toEqual({
       create: [
         {
           inventory_item_id: product.variants[0].item,
@@ -311,8 +314,12 @@ describe("useCreateProductWithStock", () => {
     await hook().create.mutateAsync({
       payload: payloadOf(formValues({ manage_inventory: false })),
     })
-    // Nothing to record: one request.
-    expect(backend.calls()).toEqual(["POST /vendor/seller-products"])
+    // Nothing to record: one write.
+    expect(backend.calls()).toEqual([
+      "GET /vendor/products",
+      "GET /vendor/sellers/me",
+      "POST /vendor/seller-products",
+    ])
     expect(store.buyerCanCheckOut()).toBe(true)
   })
 
@@ -364,6 +371,92 @@ describe("useCreateProductWithStock", () => {
     release()
     await pending
     expect(busy.isBusyNow()).toBe(false)
+  })
+})
+
+describe("the product's handle", () => {
+  const create = (values = formValues({ manage_inventory: false })) =>
+    hook().create.mutateAsync({ payload: payloadOf(values) })
+  const sentHandle = () =>
+    (backend.sent.find((s) => s.path === "/vendor/seller-products")?.body as {
+      handle?: string
+    })?.handle
+
+  it("is the title's and the store's: GET /vendor/sellers/me names the store", async () => {
+    await create()
+
+    expect(backend.sent.find((s) => s.path === "/vendor/sellers/me")?.query).toEqual({
+      fields: "id,handle",
+    })
+    expect(sentHandle()).toBe("wildflower-honey-bravo-pantry")
+    expect(store.db.products[0].handle).toBe("wildflower-honey-bravo-pantry")
+  })
+
+  it("does not collide with another store's product of the same title (measured: \"Product with handle: pats-pickles, already exists.\")", async () => {
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { takenHandles: ["wildflower-honey"] })
+
+    const result = await create()
+
+    expect(result.product.id).toBe(store.db.products[0].id)
+    expect(store.db.products).toHaveLength(1)
+  })
+
+  it("takes a short suffix when the store already has a product with it", async () => {
+    await create()
+    await create()
+    await create()
+
+    expect(store.db.products.map((p) => p.handle)).toEqual([
+      "wildflower-honey-bravo-pantry",
+      "wildflower-honey-bravo-pantry-2",
+      "wildflower-honey-bravo-pantry-3",
+    ])
+  })
+
+  it("is the vendor's own when they typed one", async () => {
+    await create({ ...formValues({ manage_inventory: false }), handle: "raw-honey" })
+
+    expect(sentHandle()).toBe("raw-honey")
+    // Not needed for a typed handle.
+    expect(backend.calls()).not.toContain("GET /vendor/sellers/me")
+  })
+
+  it("after a lost answer, continues with the product the request made: nothing is sent again, and there is one product", async () => {
+    await setUpDelivery({ location: barn, pickup: null, shipping: null })
+    backend.sent.length = 0
+    store.loseNextAnswer("POST", "/vendor/seller-products")
+    const values = formValues({ stock_quantity: "10" })
+
+    const result = await hook().create.mutateAsync({
+      payload: payloadOf(values),
+      stock: { locationId: store.db.locations[0].id, entries: initialStockFrom(values.variants) },
+    })
+
+    expect(store.db.products).toHaveLength(1)
+    expect(result.product.id).toBe(store.db.products[0].id)
+    expect(result.stockError).toBeUndefined()
+    expect(backend.calls().filter((c) => c.startsWith("POST"))).toEqual([
+      "POST /vendor/seller-products",
+      "POST /vendor/inventory-items/location-levels/batch",
+    ])
+    expect(store.db.levels).toMatchObject([{ stocked: 10 }])
+  })
+
+  it("does not take a product the store already had for one a failed request made", async () => {
+    // The store has "raw-honey"; the vendor types it again and the backend refuses.
+    await create({ ...formValues({ manage_inventory: false }), handle: "raw-honey" })
+    const error = await create({
+      ...formValues({ manage_inventory: false }),
+      title: "Another honey",
+      handle: "raw-honey",
+    }).catch((e: unknown) => e)
+
+    expect(backendMessage(error, "")).toBe(
+      "Failed to create product: Product with handle: raw-honey, already exists."
+    )
+    expect(store.db.products).toHaveLength(1)
   })
 })
 
