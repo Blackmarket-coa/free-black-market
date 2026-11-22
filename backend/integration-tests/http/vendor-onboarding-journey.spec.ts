@@ -9,6 +9,7 @@ import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
 import sellerInventoryItemLink from "@mercurjs/b2c-core/links/seller-inventory-item"
 import sellerShippingProfileLink from "@mercurjs/b2c-core/links/seller-shipping-profile"
+import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { REQUEST_MODULE } from "../../src/modules/request"
 import { SELLER_EXTENSION_MODULE } from "../../src/modules/seller-extension"
 import { listSellerMetadataRecords } from "../../src/modules/seller-extension/metadata-service"
@@ -20,7 +21,6 @@ import { MARKETPLACE_WEBHOOKS_MODULE } from "../../src/modules/marketplace-webho
 import { assignPlaybookWorkflow } from "../../src/workflows/assign-playbook"
 import { backfillApprovedSellerPlaybooks } from "../../src/shared/approved-playbook-backfill"
 import { pluginSlugsFrom } from "../../src/shared/extension-keys"
-import { INVENTORY_ITEM_NOT_YOURS, SHIPPING_PROFILE_NOT_YOURS } from "../../src/shared/vendor-product-body"
 import runBackfillScript from "../../src/scripts/backfill-approved-seller-playbooks"
 import { newTestPassword } from "./helpers/test-password"
 
@@ -50,7 +50,10 @@ jest.setTimeout(600 * 1000)
  *   not allow. An untyped product now takes the playbook's default.
  * - Products made through /vendor/seller-products had no shipping profile,
  *   and a body naming another store's seller_id there, or in POST
- *   /vendor/products, made the product in that store.
+ *   /vendor/products, made the product in that store. A body naming
+ *   another store's shipping profile or inventory item, or an item no store
+ *   holds, is now refused 403 on both routes, and a seller link that fails
+ *   leaves no product (the routes used to log it and answer 200).
  * - The admin panel's Accept (POST /admin/requests/:id) answered approval
  *   refusals 500.
  * - The assign route refused three of the thirteen resource keys the quiz
@@ -61,7 +64,7 @@ jest.setTimeout(600 * 1000)
  *
  * The first case runs on the database as the app booted it; the runner
  * truncates every table between cases and runs the module loaders again,
- * as a restart would. Spends 17 of the auth limiter's 20 a minute (filings
+ * as a restart would. Spends 19 of the auth limiter's 20 a minute (filings
  * and sign-ins; logins are registered through the auth module).
  */
 
@@ -806,23 +809,34 @@ medusaIntegrationTestRunner({
       // A body naming the other store's shipping profile, or its inventory
       // item, is refused on both create routes, and nothing is made.
       const otherItemId = (await productOf(otherProduct.id)).variants[0].inventory_items[0].inventory_item_id as string
-      const withOtherItem = async (title: string) => {
+      const withItem = async (itemId: string, title: string) => {
         const payload = await panelProductPayload(token, title)
-        return { ...payload, variants: [{ ...payload.variants[0], inventory_items: [{ inventory_item_id: otherItemId, required_quantity: 1 }] }] }
+        return { ...payload, variants: [{ ...payload.variants[0], inventory_items: [{ inventory_item_id: itemId, required_quantity: 1 }] }] }
       }
+      const withOtherItem = (title: string) => withItem(otherItemId, title)
+      const [unlinked] = await container().resolve(Modules.INVENTORY).createInventoryItems([{ sku: `UNLINKED-${uid()}`, title: "Unlinked" }])
+      const unlinkedItemId = unlinked.id as string
       const refusals = [
-        ["/vendor/seller-products", { ...(await panelProductPayload(token, "Profile Honey")), shipping_profile_id: otherProfileId }, SHIPPING_PROFILE_NOT_YOURS],
-        ["/vendor/seller-products", { ...(await panelProductPayload(token, "Missing Profile Honey")), shipping_profile_id: "sp_does_not_exist" }, SHIPPING_PROFILE_NOT_YOURS],
-        ["/vendor/seller-products", await withOtherItem("Item Honey"), INVENTORY_ITEM_NOT_YOURS],
-        ["/vendor/products", { ...(await withOtherItem("Draft Item Honey")), status: "draft" }, INVENTORY_ITEM_NOT_YOURS],
+        ["/vendor/seller-products", { ...(await panelProductPayload(token, "Profile Honey")), shipping_profile_id: otherProfileId }],
+        ["/vendor/seller-products", { ...(await panelProductPayload(token, "Missing Profile Honey")), shipping_profile_id: "sp_does_not_exist" }],
+        ["/vendor/seller-products", await withOtherItem("Item Honey")],
+        ["/vendor/products", { ...(await withOtherItem("Draft Item Honey")), status: "draft" }],
+        // An item no store is linked to (ticket products make those): not
+        // claimed either.
+        ["/vendor/seller-products", await withItem(unlinkedItemId, "Unlinked Item Honey")],
+        ["/vendor/products", { ...(await withItem(unlinkedItemId, "Draft Unlinked Honey")), status: "draft" }],
       ] as const
-      for (const [route, body, message] of refusals) {
+      for (const [route, body] of refusals) {
         const refused = await call(api.post(route, body, bearer(token)))
-        expect({ route, title: body.title, status: refused.status, message: refused.data.message }).toEqual({ route, title: body.title, status: 400, message })
+        expect({ route, title: body.title, status: refused.status, type: refused.data.type }).toEqual({ route, title: body.title, status: 403, type: "not_allowed" })
         const made = await pg().raw(`SELECT count(*)::int AS n FROM product WHERE title = ? AND deleted_at IS NULL`, [body.title])
         expect({ title: body.title, made: made.rows[0].n }).toEqual({ title: body.title, made: 0 })
       }
       expect(await defaultProfileOf(otherStore.id)).toBe(otherProfileId)
+      const unlinkedLinks = await query().graph({ entity: sellerInventoryItemLink.entryPoint, fields: ["seller_id"], filters: { inventory_item_id: unlinkedItemId } })
+      expect(unlinkedLinks.data).toEqual([])
+      const otherItemLinks = await query().graph({ entity: sellerInventoryItemLink.entryPoint, fields: ["seller_id"], filters: { inventory_item_id: otherItemId } })
+      expect(otherItemLinks.data.map((row: { seller_id: string }) => row.seller_id)).toEqual([otherStore.id])
       // The caller's own profile is accepted and used.
       const ownProfile = await call(
         api.post("/vendor/seller-products", { ...(await panelProductPayload(token, "Own Profile Honey")), shipping_profile_id: profileId }, bearer(token))
@@ -841,6 +855,55 @@ medusaIntegrationTestRunner({
       const published = await call(api.post("/vendor/onboarding/publish", { listing_id: product.id }, bearer(token)))
       expect(published.status).toBe(200)
       expect(published.data.state).toMatchObject({ wizard_step: "published", first_published_listing_id: product.id })
+    })
+
+    it("a product whose seller link fails is not made: both create routes answer an error and leave nothing behind", async () => {
+      stubMail()
+      const applicant = await login("hotel")
+      const requestId = await file(applicant, `Hotel Pantry ${uid()}`, {
+        playbook: "stall",
+        recommended: "stall",
+        roles: ["stall"],
+        resources: ["goods"],
+        node: false,
+        vendor_type: "maker",
+      })
+      const approved = await accept(requestId)
+      expect(approved.status).toBe(200)
+      const sellerId = approved.data.seller.id as string
+      const token = await signIn(applicant)
+
+      // Refuse any link that names a seller, the way a broken link write would.
+      const failSellerLinks = (target: any) => {
+        const original = target.create.bind(target)
+        return jest.spyOn(target, "create").mockImplementation(async (links: any) => {
+          const list = Array.isArray(links) ? links : [links]
+          if (list.some((link: any) => link && Object.prototype.hasOwnProperty.call(link, SELLER_MODULE))) {
+            throw new Error("seller link refused (test)")
+          }
+          return original(links)
+        })
+      }
+      const remoteLink = container().resolve(ContainerRegistrationKeys.REMOTE_LINK)
+      const link = container().resolve(ContainerRegistrationKeys.LINK)
+      failSellerLinks(remoteLink)
+      if (link !== remoteLink) failSellerLinks(link)
+
+      for (const [route, body] of [
+        ["/vendor/seller-products", await panelProductPayload(token, "Unlinked Honey")],
+        ["/vendor/products", { ...(await panelProductPayload(token, "Unlinked Draft Honey")), status: "draft" }],
+      ] as const) {
+        const answered = await call(api.post(route, body, bearer(token)))
+        expect({ route, ok: answered.status < 300 }).toEqual({ route, ok: false })
+        const left = await pg().raw(`SELECT count(*)::int AS n FROM product WHERE title = ? AND deleted_at IS NULL`, [body.title])
+        expect({ route, left: left.rows[0].n }).toEqual({ route, left: 0 })
+      }
+      jest.restoreAllMocks()
+      // Nothing of the two attempts is the store's.
+      const { data: storeProducts } = await query().graph({ entity: "seller_product", fields: ["product_id"], filters: { seller_id: sellerId } })
+      expect(storeProducts).toEqual([])
+      const { data: storeItems } = await query().graph({ entity: sellerInventoryItemLink.entryPoint, fields: ["inventory_item_id"], filters: { seller_id: sellerId } })
+      expect(storeItems).toEqual([])
     })
 
     it("the admin panel's Accept answers an approval refusal 409, as /approve does, and leaves the application pending", async () => {
