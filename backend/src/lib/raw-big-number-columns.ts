@@ -32,7 +32,9 @@
  *    once no companion is NULL. A required field's NUMERIC column is NOT NULL
  *    in every migration that made one, so after step 2 nothing is NULL; on a
  *    schema where that is not so, the column stays nullable and Postgres
- *    raises a NOTICE naming it, instead of failing the deploy.
+ *    raises a NOTICE naming it, instead of failing the deploy. `medusa
+ *    db:migrate` does not print that NOTICE, so only the pre-flight query run
+ *    again after the deploy shows such a column.
  *
  * What it does on a schema it was not written for, so nobody reads more into
  * the above than is there:
@@ -40,12 +42,15 @@
  * - On a database built from the migrations, and on one whose companions
  *   were made from the models (`jsonb`), it ends with the model's shape.
  * - A companion that already exists as some other type (`json`, `text`)
- *   fails the migration at step 2 (the CASE cannot mix the types). The
- *   module's migrations run in one transaction, so nothing of it is applied;
- *   `medusa db:migrate` stops at that module, and `scripts/railway-start.js`
- *   then starts the server regardless. The operator's pre-flight query
+ *   fails the migration at step 2 (the CASE cannot mix the types). That
+ *   module's pending migrations run in one transaction and all roll back
+ *   (for demand-pool, both of its SD-63 migrations); `medusa db:migrate`
+ *   does not stop there: every other module still migrates, then the command
+ *   exits 1 before syncing links and running the migration scripts, and
+ *   `scripts/railway-start.js` starts the server regardless (measured with
+ *   the real runner in the SD-63 re-review). The operator's pre-flight query
  *   (SD-63's row in docs/AUDIT_DEBT.md) lists every companion with its type
- *   before the deploy.
+ *   before the deploy, and again after it.
  * - A companion that already exists keeps whatever is in it. A value that
  *   disagrees with its number is not corrected, and a constraint or default
  *   the column already had is replaced only where step 3 sets one.
