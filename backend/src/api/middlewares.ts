@@ -67,6 +67,7 @@ import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/
 import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
 import { requirePlanFeature } from "./middlewares/require-plan-feature";
 import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
+import { refuseOtherStoresVariantItems } from "../shared/vendor-product-body";
 import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
 import { sanitizedErrorHandler } from "../shared/error-sanitizer";
 import { attachStorefrontContext, requireStorefrontContext } from "./middlewares/tenancy-context";
@@ -942,6 +943,13 @@ export default defineMiddlewares({
       matcher: "/vendor/seller-products",
       method: "POST",
       middlewares: [enforceListingTypeAllowed],
+    },
+    // Mercur's variant create: only inventory items of the caller's own store
+    // (the create routes check theirs in the handler; this one is Mercur's).
+    {
+      matcher: "/vendor/products/:id/variants",
+      method: "POST",
+      middlewares: [refuseOtherStoresVariantItems],
     },
     // Auth write routes - login and register (tighter rate limit)
     {

@@ -1,7 +1,17 @@
+import type {
+  MedusaNextFunction,
+  MedusaRequest,
+  MedusaResponse,
+} from "@medusajs/framework/http"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import sellerInventoryItemLink from "@mercurjs/b2c-core/links/seller-inventory-item"
 import sellerShippingProfileLink from "@mercurjs/b2c-core/links/seller-shipping-profile"
+import { forbidden } from "./community-read-access"
+import { createLogger } from "./logger"
+import { sellerIdForVendorActor } from "./seller-actor"
+
+const log = createLogger("shared/vendor-product-body")
 
 /**
  * The records a vendor's product-create body may name that belong to a store:
@@ -100,3 +110,49 @@ export async function refuseOtherStoresRecords(
 
   return null
 }
+
+/**
+ * Route middleware for Mercur's `POST /vendor/products/:id/variants`, which
+ * FBM does not override. Mercur's `CreateProductVariant` accepts
+ * `inventory_items`, and its productVariantsCreated hook links the caller's
+ * store to each named item: a new variant on the caller's own product,
+ * naming an item no store holds, answered 200 and left the store linked to
+ * it (measured by the re-review). Another store's item was refused there
+ * with 400, by Mercur's link check. This applies the create routes' rule
+ * first: only items linked to the caller's store, else `forbidden()`.
+ *
+ * Variant updates take no `inventory_items`: Mercur's `UpdateProductVariant`
+ * (`POST /vendor/products/:id/variants/:variant_id`, and the variants of
+ * `POST /vendor/products/:id`) is strict and has no such field.
+ */
+export async function refuseOtherStoresVariantItems(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  next: MedusaNextFunction
+): Promise<void> {
+  try {
+    const request = req as MedusaRequest & {
+      _seller_id?: string
+      auth_context?: { actor_id?: string }
+    }
+    const sellerId = await sellerIdForVendorActor(
+      req,
+      request._seller_id || request.auth_context?.actor_id
+    )
+    if (!sellerId) {
+      forbidden(res)
+      return
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const refusal = await refuseOtherStoresRecords(req.scope, sellerId, { variants: [body] })
+    if (refusal) {
+      log.warn(`Refused a variant for seller ${sellerId}: ${refusal}`)
+      forbidden(res)
+      return
+    }
+    next()
+  } catch (error) {
+    next(error as Error)
+  }
+}
+
