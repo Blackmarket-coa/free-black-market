@@ -21,6 +21,7 @@ import { MARKETPLACE_WEBHOOKS_MODULE } from "../../src/modules/marketplace-webho
 import { assignPlaybookWorkflow } from "../../src/workflows/assign-playbook"
 import { backfillApprovedSellerPlaybooks } from "../../src/shared/approved-playbook-backfill"
 import { pluginSlugsFrom } from "../../src/shared/extension-keys"
+import { UNIVERSAL_FEATURE_KEYS } from "../../src/modules/vendor-plan/catalog"
 import runBackfillScript from "../../src/scripts/backfill-approved-seller-playbooks"
 import { newTestPassword } from "./helpers/test-password"
 
@@ -390,7 +391,10 @@ medusaIntegrationTestRunner({
       const planAfter = await call(api.get("/vendor/plan/me", bearer(token)))
       expect(planAfter.data.plan.code).toBe("free")
       expect(planAfter.data.plan).toEqual(planBefore.data.plan)
-      expect(planAfter.data.feature_keys).toEqual([])
+      // The free plan's own keys and nothing more: what every plan carries
+      // (PL-1 put costing in every plan), unchanged by the re-run.
+      expect(planAfter.data.feature_keys).toEqual(planBefore.data.feature_keys)
+      expect([...planAfter.data.feature_keys].sort()).toEqual([...UNIVERSAL_FEATURE_KEYS].sort())
       expect(metadata.node_operator_opt_in).toBe(false)
       expect(await credentialsOf(sellerId)).toEqual([])
       expect(await settingsOf(token)).toEqual(NODE_OPERATOR_OFF)
