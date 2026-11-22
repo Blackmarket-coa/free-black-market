@@ -688,5 +688,66 @@ medusaIntegrationTestRunner({
         expect(JSON.stringify(listed.data)).not.toContain("Private markup")
       })
     })
+
+    describe("the operator queries in SD-158's ledger row", () => {
+      // Copied from the row: they list rows written across stores before the
+      // fix, mapping a member id to its store (removed members included) so
+      // that a store's own rows written under a member id are not listed.
+      const NURSERY = `SELECT npa.id, npa.product_id, npa.seller_id, sp.seller_id AS product_owner
+          FROM nursery_product_attribute npa
+          LEFT JOIN "member" m ON m.id = npa.seller_id
+          LEFT JOIN seller_seller_product_product sp ON sp.product_id = npa.product_id AND sp.deleted_at IS NULL
+         WHERE npa.deleted_at IS NULL
+           AND sp.seller_id IS DISTINCT FROM (CASE WHEN left(npa.seller_id, 4) = 'mem_' THEN m.seller_id ELSE npa.seller_id END)`
+      const CYCLE = `SELECT ocp.id, ocp.order_cycle_id, ocp.variant_id, ocp.seller_id, sp.seller_id AS variant_owner
+          FROM order_cycle_product ocp
+          LEFT JOIN "member" m ON m.id = ocp.seller_id
+          LEFT JOIN product_variant pv ON pv.id = ocp.variant_id
+          LEFT JOIN seller_seller_product_product sp ON sp.product_id = pv.product_id AND sp.deleted_at IS NULL
+         WHERE ocp.deleted_at IS NULL
+           AND sp.seller_id IS DISTINCT FROM (CASE WHEN left(ocp.seller_id, 4) = 'mem_' THEN m.seller_id ELSE ocp.seller_id END)`
+      const FEES = `SELECT ocf.id, ocf.order_cycle_id, ef.seller_id AS template_owner, oc.coordinator_seller_id
+          FROM order_cycle_fee ocf
+          JOIN order_cycle oc ON oc.id = ocf.order_cycle_id
+          LEFT JOIN enterprise_fee ef ON ef.id = ocf.enterprise_fee_id
+          LEFT JOIN "member" m ON m.id = ef.seller_id
+          LEFT JOIN "member" cm ON cm.id = oc.coordinator_seller_id
+         WHERE ocf.deleted_at IS NULL
+           AND (CASE WHEN left(ef.seller_id, 4) = 'mem_' THEN m.seller_id ELSE ef.seller_id END)
+               IS DISTINCT FROM (CASE WHEN left(oc.coordinator_seller_id, 4) = 'mem_' THEN cm.seller_id ELSE oc.coordinator_seller_id END)`
+      const listedAmong = async (sql: string, ids: string[]) =>
+        (await pg().raw(`SELECT q.id FROM (${sql}) q WHERE q.id IN (${ids.map(() => "?").join(", ")})`, ids)).rows
+          .map((r: { id: string }) => r.id)
+          .sort()
+
+      it("list the rows another store wrote, and not a store's own rows held under its members' ids", async () => {
+        const a = await team(`Ops A ${uid()}`)
+        const b = await team(`Ops B ${uid()}`)
+        const gone = await removedMemberOf(a.store)
+        const nurseryRow = async (sellerKey: string) => {
+          const plant = await storeProduct(a.store.id)
+          return (await nursery().createNurseryProductAttributes({ seller_id: sellerKey, product_id: plant.id, subtype: "seed_packet" })).id as string
+        }
+        const ownNursery = [await nurseryRow(a.store.id), await nurseryRow(a.ownerMemberId), await nurseryRow(gone)]
+        const crossNursery = [await nurseryRow(b.store.id), await nurseryRow(b.memberId), await nurseryRow(`mem_${uid()}`)]
+        expect(await listedAmong(NURSERY, [...ownNursery, ...crossNursery])).toEqual([...crossNursery].sort())
+
+        const aProduct = await storeProduct(a.store.id, 5)
+        const cycleId = await cycleOf(a.member)
+        const cycleRow = async (variant: string, sellerKey: string) =>
+          (await cycles().createOrderCycleProducts({ order_cycle_id: cycleId, variant_id: variant, seller_id: sellerKey })).id as string
+        const ownCycle = [await cycleRow(aProduct.variants[0], a.store.id), await cycleRow(aProduct.variants[1], a.ownerMemberId), await cycleRow(aProduct.variants[2], gone)]
+        const crossCycle = [await cycleRow(aProduct.variants[3], b.store.id), await cycleRow(aProduct.variants[4], b.memberId)]
+        expect(await listedAmong(CYCLE, [...ownCycle, ...crossCycle])).toEqual([...crossCycle].sort())
+
+        const template = async (sellerKey: string) =>
+          (await cycles().createFeeTemplate(sellerKey, { name: `Fee ${uid()}`, fee_type: "packing", calculator_type: "flat_rate", amount: 10 })).id as string
+        const fee = async (templateId: string) =>
+          (await cycles().createOrderCycleFees({ order_cycle_id: cycleId, enterprise_fee_id: templateId, application_type: "coordinator" })).id as string
+        const ownFees = [await fee(await template(a.store.id)), await fee(await template(a.ownerMemberId))]
+        const crossFees = [await fee(await template(b.store.id)), await fee(await template(b.memberId))]
+        expect(await listedAmong(FEES, [...ownFees, ...crossFees])).toEqual([...crossFees].sort())
+      })
+    })
   },
 })
