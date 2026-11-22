@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { readFileSync } from "fs"
 import { join } from "path"
 import { renderToStaticMarkup } from "react-dom/server"
+import type { UseFormReturn } from "react-hook-form"
 import {
   afterAll,
   afterEach,
@@ -36,8 +37,8 @@ vi.mock("../../../../../components/modals", async () => {
   const Pass = ({ children }: { children?: unknown }) => children as never
   return {
     RouteDrawer: Object.assign(Pass, {
-      Form: ({ form, children }: { form: never; children?: unknown }) => (
-        <FormProvider {...(form as object as never)}>{children as never}</FormProvider>
+      Form: ({ form, children }: { form: UseFormReturn; children?: unknown }) => (
+        <FormProvider {...form}>{children as never}</FormProvider>
       ),
       Body: Pass,
       Footer: Pass,
