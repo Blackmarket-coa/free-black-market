@@ -961,10 +961,14 @@ export const storeProductHandle = (
   title: string,
   storeHandle: string,
   taken: ReadonlySet<string>
-) => {
-  const base = [toHandle(title) || "listing", toHandle(storeHandle)]
-    .filter(Boolean)
-    .join("-")
+) =>
+  freeHandle(
+    [toHandle(title) || "listing", toHandle(storeHandle)].filter(Boolean).join("-"),
+    taken
+  )
+
+/** `base`, or `base-2`, `base-3`… whichever the store does not have. */
+const freeHandle = (base: string, taken: ReadonlySet<string>) => {
   if (!taken.has(base)) return base
   for (let n = 2; ; n++) {
     const next = `${base}-${n}`
@@ -972,7 +976,7 @@ export const storeProductHandle = (
   }
 }
 
-type OwnProduct = ProductRow & { handle?: string | null }
+type OwnProduct = ProductRow & { handle?: string | null; description?: string | null }
 
 /** FBM's `GET /vendor/products` answers every product of the store, unpaged. */
 const listOwnProducts = async (): Promise<OwnProduct[]> => {
@@ -988,26 +992,203 @@ const readStoreHandle = async () => {
   return toHandle(String(seller?.handle ?? "")) || toHandle(String(seller?.id ?? "").slice(-8))
 }
 
+/**
+ * Handles sent in a create whose answer never said what happened, by what
+ * they were made from (the title's handle and the store's, or the handle the
+ * vendor typed). Kept for this tab in `sessionStorage`, so a reload after the
+ * error keeps it, and in memory when the browser refuses storage.
+ */
+const UNCONFIRMED_KEY = "fbm.unconfirmed-product-handles"
+const unconfirmedInMemory = new Map<string, string>()
+const unconfirmed = {
+  get: (key: string): string | null => {
+    try {
+      const all = JSON.parse(window.sessionStorage.getItem(UNCONFIRMED_KEY) || "{}")
+      return typeof all?.[key] === "string" ? all[key] : null
+    } catch {
+      return unconfirmedInMemory.get(key) ?? null
+    }
+  },
+  set: (key: string, handle: string | null) => {
+    if (handle) unconfirmedInMemory.set(key, handle)
+    else unconfirmedInMemory.delete(key)
+    try {
+      const all = JSON.parse(window.sessionStorage.getItem(UNCONFIRMED_KEY) || "{}")
+      if (handle) all[key] = handle
+      else delete all[key]
+      window.sessionStorage.setItem(UNCONFIRMED_KEY, JSON.stringify(all))
+    } catch {
+      // Memory holds it for this page.
+    }
+  },
+}
+
 export type CreatedProduct = {
   product: { id: string; title: string } & Record<string, unknown>
+}
+
+/**
+ * The store has a product with the handle this create used, made by another
+ * request (another tab, or an earlier press), and it is not the listing the
+ * vendor entered. Nothing is adopted and no stock is written: the vendor
+ * chooses between that product and a separate one (`separate: true`).
+ */
+export class SimilarProductExists extends Error {
+  constructor(
+    public product: { id: string; title: string },
+    /** How it differs, in the vendor's terms: "its price is USD 99, you entered USD 8". */
+    public differences: string[]
+  ) {
+    super(
+      `Your store already has "${product.title}", made a moment ago (perhaps in another tab), and it is not quite what you entered: ${differences.join("; ")}.`
+    )
+    this.name = "SimilarProductExists"
+  }
+}
+
+/**
+ * The question the product form asks after `SimilarProductExists`: a
+ * separate product (confirm), or open that one as it is (cancel).
+ */
+export const similarProductPrompt = (error: SimilarProductExists) => ({
+  title: "This product may already be in your store",
+  description: `${error.message} Make a separate product from what you entered, or open that one as it is? Nothing has been changed on it.`,
+  confirmText: "Make a separate product",
+  cancelText: `Open ${error.product.title}`,
+})
+
+/** The create may have been saved, and the store could not be read to tell. */
+export class CreateOutcomeUnknown extends Error {
+  constructor(title: string) {
+    super(
+      `The connection dropped before the backend answered, so it is not known whether "${title}" was saved. Press again: if it was, that product is used, not made a second time.`
+    )
+    this.name = "CreateOutcomeUnknown"
+  }
+}
+
+type SentVariant = {
+  variant_rank?: number
+  manage_inventory?: boolean
+  prices?: Array<{ currency_code?: string; amount?: number; rules?: unknown }>
+}
+
+/** A variant's prices that hold everywhere in their currency, as "USD 8". */
+const plainPrices = (
+  prices: Array<{ currency_code?: string | null; amount?: number | null; rules?: unknown; rules_count?: number | null; price_rules?: unknown[] | null }> | null | undefined
+) =>
+  (prices ?? [])
+    .filter(
+      (price) =>
+        !price?.rules_count &&
+        !(Array.isArray(price?.price_rules) && price.price_rules.length) &&
+        !(price?.rules && Object.keys(price.rules as object).length)
+    )
+    .map((price) => `${lower(price.currency_code).toUpperCase()} ${Number(price.amount)}`)
+    .sort()
+    .join(", ")
+
+/**
+ * How a product the store has differs from the one this create asked for,
+ * by what can be told cheaply: title, status, description, variants, their
+ * plain prices and whether they track stock. Empty when nothing differs.
+ */
+const differencesFrom = (
+  payload: Record<string, unknown>,
+  product: Record<string, any>
+): string[] => {
+  const differences: string[] = []
+  const sentTitle = String(payload.title ?? "").trim()
+  if (String(product.title ?? "").trim() !== sentTitle) {
+    differences.push(`it is called "${product.title}", you entered "${sentTitle}"`)
+  }
+  if (payload.status && product.status !== payload.status) {
+    differences.push(`it is ${product.status}, you asked for ${payload.status}`)
+  }
+  if (String(product.description ?? "").trim() !== String(payload.description ?? "").trim()) {
+    differences.push("its description is different")
+  }
+  const sent = ((payload.variants ?? []) as SentVariant[])
+  const theirs = (product.variants ?? []) as Array<VariantRow>
+  if (sent.length !== theirs.length) {
+    differences.push(`it has ${theirs.length} variant(s), you entered ${sent.length}`)
+    return differences
+  }
+  sent.forEach((variant, index) => {
+    const rank = variant.variant_rank ?? index
+    const match = theirs.find((v) => v.variant_rank === rank) ?? theirs[index]
+    const named = sent.length > 1 ? ` for "${match?.title ?? rank}"` : ""
+    const want = plainPrices(variant.prices)
+    const have = plainPrices(match?.prices)
+    if (want !== have) {
+      differences.push(`its price${named} is ${have || "not set"}, you entered ${want || "none"}`)
+    }
+    if ((variant.manage_inventory !== false) !== (match?.manage_inventory !== false)) {
+      differences.push(
+        `it ${match?.manage_inventory !== false ? "tracks" : "does not track"} stock${named}, you chose otherwise`
+      )
+    }
+  })
+  return differences
+}
+
+/**
+ * Use a product another request made under this create's handle, but only
+ * when it is the listing the vendor entered; otherwise say how it differs.
+ */
+const adoptIfSame = async (
+  payload: Record<string, unknown>,
+  made: OwnProduct
+): Promise<CreatedProduct> => {
+  let detail: Record<string, any> | null = null
+  try {
+    detail = (await get(`/vendor/products/${made.id}`))?.product ?? null
+  } catch {
+    detail = null
+  }
+  const title = made.title ?? ""
+  if (!detail) {
+    throw new SimilarProductExists({ id: made.id, title }, [
+      "it could not be read back to compare",
+    ])
+  }
+  const differences = differencesFrom(payload, detail)
+  if (differences.length > 0) {
+    throw new SimilarProductExists({ id: made.id, title }, differences)
+  }
+  return { product: { ...made, title } }
 }
 
 /**
  * Create a product in the store: `POST /vendor/seller-products`, with a
  * handle of the store's own unless the vendor typed one.
  *
- * When the create fails, the store's products are read again: one with the
- * handle that was sent, which the store did not have before, is the product
- * the request made before its answer was lost, and it is returned instead of
- * the error. Measured without this: after a lost answer, sending the listing
- * again answered 400 "Product with handle: frans-bouquet, already exists.",
- * and the draft the first request made was left behind. Nothing is sent
- * again: this only reads.
+ * A create whose answer is lost may still have made the product. So:
+ *   - the handle is remembered for this tab until an answer says what
+ *     happened; a later press for the same listing that finds the store has
+ *     it uses that product instead of choosing a new handle (measured
+ *     without this: an answer and the re-read both lost, the second press
+ *     made `pats-relish-pat-pickles-2` beside the first);
+ *   - when the create fails, the store's products are read again: one with
+ *     the handle sent, which the store did not have before, is the product
+ *     the request made (measured without this: the resend got 400 "Product
+ *     with handle: frans-bouquet, already exists." and left the draft);
+ *   - either way it is used only when its title, status, description,
+ *     variants, plain prices and stock tracking are what this create asked
+ *     for; otherwise `SimilarProductExists` says how it differs and nothing
+ *     is adopted (measured without this: another tab's product, priced 99,
+ *     adopted where this tab asked for 8).
+ *
+ * `separate: true` is the vendor's choice, after `SimilarProductExists`, of a
+ * new product beside that one: the next free handle, nothing adopted.
+ * Nothing is ever sent twice by this function.
  */
 export const createProductInStore = async (
-  payload: { title?: string; handle?: string | null } & Record<string, unknown>
+  payload: { title?: string; handle?: string | null } & Record<string, unknown>,
+  { separate = false }: { separate?: boolean } = {}
 ): Promise<CreatedProduct> => {
   const typed = typeof payload.handle === "string" ? payload.handle.trim() : ""
+  const title = String(payload.title ?? "")
   const [before, storeHandle] = await Promise.all([
     listOwnProducts(),
     typed ? Promise.resolve("") : readStoreHandle(),
@@ -1015,24 +1196,47 @@ export const createProductInStore = async (
   const taken = new Set(
     before.map((product) => product.handle ?? "").filter(Boolean)
   )
-  const handle =
-    typed || storeProductHandle(String(payload.title ?? ""), storeHandle, taken)
+  const base = typed || storeProductHandle(title, storeHandle, new Set())
+  const remembered = separate ? null : unconfirmed.get(base)
 
+  // An earlier press sent this handle and never learnt what happened; the
+  // store has it now, so that press made it.
+  if (remembered && taken.has(remembered)) {
+    unconfirmed.set(base, null)
+    return adoptIfSame(payload, before.find((p) => p.handle === remembered)!)
+  }
+
+  const handle = separate
+    ? freeHandle(base, taken)
+    : remembered || (typed ? typed : freeHandle(base, taken))
+  // Only a handle the store did not have can tell this request's product.
+  const fresh = !taken.has(handle)
+  if (fresh) unconfirmed.set(base, handle)
+
+  let failure: unknown
   try {
-    return (await post("/vendor/seller-products", {
+    const created = (await post("/vendor/seller-products", {
       ...payload,
       handle,
     })) as CreatedProduct
+    unconfirmed.set(base, null)
+    return created
   } catch (error) {
-    if (!taken.has(handle)) {
-      const after = await listOwnProducts().catch(() => [] as OwnProduct[])
-      const made = after.find((product) => product.handle === handle)
-      if (made) {
-        return { product: { ...made, title: made.title ?? "" } }
-      }
-    }
-    throw error
+    failure = error
   }
+  if (!fresh) throw failure
+
+  let after: OwnProduct[]
+  try {
+    after = await listOwnProducts()
+  } catch {
+    // The handle stays remembered: the next press finds out.
+    throw new CreateOutcomeUnknown(title)
+  }
+  const made = after.find((product) => product.handle === handle)
+  if (!made) throw failure
+  unconfirmed.set(base, null)
+  return adoptIfSame(payload, made)
 }
 
 /**

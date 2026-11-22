@@ -1,5 +1,6 @@
 /**
- * A browser `window` with `localStorage`, for specs that load lib/client.
+ * A browser `window` with `localStorage` and `sessionStorage`, for specs
+ * that load lib/client.
  *
  * lib/client decides once, when it loads, whether it runs in a browser, and
  * the JS SDK reads `window.localStorage` on every request, so the storage has
@@ -24,9 +25,25 @@ export const installBrowserStorage = () => {
     },
     clear: () => store.clear(),
   }
+  // The same map, under a prefix: clearing `store` clears both.
+  const sessionStorage = {
+    getItem: (key: string) => localStorage.getItem(`session:${key}`),
+    setItem: (key: string, value: string) =>
+      localStorage.setItem(`session:${key}`, value),
+    removeItem: (key: string) => localStorage.removeItem(`session:${key}`),
+    clear: () => {
+      for (const key of [...store.keys()]) {
+        if (key.startsWith("session:")) store.delete(key)
+      }
+    },
+  }
   const g = globalThis as { window?: unknown }
   const previousWindow = g.window
-  g.window = { localStorage, location: { origin: "http://panel.test" } }
+  g.window = {
+    localStorage,
+    sessionStorage,
+    location: { origin: "http://panel.test" },
+  }
   return {
     store,
     restore: () => {

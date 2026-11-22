@@ -11,7 +11,11 @@ import {
   toast,
 } from "@medusajs/ui"
 import { ArrowLeft, ArrowRight, CheckCircleSolid } from "@medusajs/icons"
-import { useMutation } from "@tanstack/react-query"
+import {
+  useMutation,
+  useMutationState,
+  useQueryClient,
+} from "@tanstack/react-query"
 import {
   sellingSetupMutationKeys,
   useCreateProductWithStock,
@@ -27,6 +31,7 @@ import { backendMessage } from "../../lib/backend-message"
 import { uploadFilesQuery } from "../../lib/client"
 import {
   listingCurrency,
+  SimilarProductExists,
   type DeliverySetup,
   type SellingSetup,
   unofferedReason,
@@ -300,7 +305,7 @@ export const ListingStep = ({
   // covers the whole press.
   const create = useMutation({
     mutationKey: WIZARD_LISTING_KEY,
-    mutationFn: async () => {
+    mutationFn: async (separate: boolean) => {
       let thumbnail: string | undefined
       if (photo) {
         const uploaded = await uploadFilesQuery([{ file: photo }])
@@ -313,13 +318,30 @@ export const ListingStep = ({
       if ("problem" in asked) {
         throw new Error(asked.problem)
       }
-      const created = await createProduct.mutateAsync(asked.input)
+      const created = await createProduct.mutateAsync({ ...asked.input, separate })
       return { created, pendingStock: asked.pendingStock }
     },
   })
   const { pending, isBusyNow } = useIsBusy(WIZARD_LISTING_KEY)
+  // A product the store already has under this listing's handle, which is
+  // not what the vendor entered (another tab, an earlier press): nothing is
+  // adopted, and the vendor chooses. Read from the mutation cache, so the
+  // choice outlives a re-render of the step.
+  const client = useQueryClient()
+  const listingErrors = useMutationState({
+    filters: { mutationKey: WIZARD_LISTING_KEY },
+    select: (mutation) => mutation.state.error,
+  })
+  const lastError = listingErrors[listingErrors.length - 1]
+  const similar = lastError instanceof SimilarProductExists ? lastError : null
+  const forgetSimilar = () => {
+    const cache = client.getMutationCache()
+    for (const mutation of cache.findAll({ mutationKey: WIZARD_LISTING_KEY })) {
+      cache.remove(mutation)
+    }
+  }
 
-  const submit = async () => {
+  const submit = async (separate = false) => {
     if (isBusyNow()) return
     const asked = listingRequestFrom(answers, { delivery })
     if ("problem" in asked) {
@@ -329,7 +351,7 @@ export const ListingStep = ({
     }
     setProblem(null)
     try {
-      const { created, pendingStock } = await create.mutateAsync()
+      const { created, pendingStock } = await create.mutateAsync(separate)
       const product = created.product
       toast.success(`${product.title} is saved as a draft`)
       if (created.stockError) {
@@ -346,6 +368,10 @@ export const ListingStep = ({
           : pendingStock,
       })
     } catch (e) {
+      if (e instanceof SimilarProductExists) {
+        // Shown below with the two choices.
+        return
+      }
       // The backend's own words: a listing type the playbook does not allow
       // is refused with the types it does.
       const message = backendMessage(e, "The listing could not be created.")
@@ -501,10 +527,41 @@ export const ListingStep = ({
           {problem}
         </Alert>
       ) : null}
+      {similar ? (
+        <Alert variant="warning" className="mt-4">
+          {similar.message} Use that product as it is, or make a separate
+          listing from what you entered?
+          <div className="mt-3 flex gap-2">
+            <Button
+              size="small"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => {
+                const chosen = similar.product
+                forgetSimilar()
+                toast.info(`${chosen.title} is used as it is`, {
+                  description:
+                    "Its price and stock were not changed. Check them in Products.",
+                })
+                void onCreated({ id: chosen.id, title: chosen.title, pendingStock: null })
+              }}
+            >
+              Use {similar.product.title}
+            </Button>
+            <Button
+              size="small"
+              disabled={pending}
+              onClick={() => void submit(true)}
+            >
+              Make a separate listing
+            </Button>
+          </div>
+        </Alert>
+      ) : null}
 
       <StepButtons onBack={onBack} backDisabled={pending}>
         <Button
-          onClick={submit}
+          onClick={() => void submit()}
           disabled={pending || isDeliveryPending}
           isLoading={pending}
         >

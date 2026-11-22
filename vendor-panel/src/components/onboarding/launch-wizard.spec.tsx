@@ -367,6 +367,84 @@ describe("the listing step", () => {
     })
   })
 
+  it("when another tab made a different listing under the same handle, adopts nothing and offers a separate one", async () => {
+    // The other tab's "Wildflower Honey", at 99, made between this press's read and its create.
+    const otherTab = {
+      title: "Wildflower Honey",
+      description: "Raw, from our own hives.",
+      status: "draft",
+      handle: "wildflower-honey-bravo-pantry",
+      variants: [
+        { title: "Default variant", variant_rank: 0, manage_inventory: true, prices: [{ currency_code: "usd", amount: 99 }] },
+      ],
+    }
+    store.justBefore("POST", "/vendor/seller-products", () => store.anotherTabCreates(otherTab))
+    const onCreated = vi.fn()
+    await show(step({ onCreated }))
+
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+
+    // Nothing adopted, nothing said to be saved, no error toast for a choice.
+    expect(onCreated).not.toHaveBeenCalled()
+    expect(ui.toast.success).not.toHaveBeenCalled()
+    expect(ui.toast.error).not.toHaveBeenCalled()
+    expect(store.db.products).toHaveLength(1)
+    expect(store.db.levels).toEqual([])
+    const html = render(step({ onCreated }))
+    expect(html).toContain("its price is USD 99, you entered USD 12")
+    expect(html).toContain("Use that product as it is, or make a separate")
+
+    // A separate listing: the next handle, and the quantity carried on.
+    ui.press(ui.button("Make a separate listing"))
+    await settled()
+
+    expect(store.db.products.map((p) => p.handle)).toEqual([
+      "wildflower-honey-bravo-pantry",
+      "wildflower-honey-bravo-pantry-2",
+    ])
+    expect(onCreated).toHaveBeenCalledWith({
+      id: store.db.products[1].id,
+      title: "Wildflower Honey",
+      pendingStock: 10,
+    })
+  })
+
+  it("the vendor can use the other tab's product as it is: nothing is written to it", async () => {
+    store.justBefore("POST", "/vendor/seller-products", () =>
+      store.anotherTabCreates({
+        title: "Wildflower Honey",
+        status: "draft",
+        handle: "wildflower-honey-bravo-pantry",
+        variants: [
+          { title: "Default variant", variant_rank: 0, manage_inventory: true, prices: [{ currency_code: "usd", amount: 99 }] },
+        ],
+      })
+    )
+    const onCreated = vi.fn()
+    await show(step({ onCreated }))
+    ui.press(ui.button("Save draft and continue"))
+    await settled()
+    render(step({ onCreated }))
+    const posted = writes().length
+
+    ui.press(ui.button("Use Wildflower Honey"))
+    await settled()
+
+    expect(onCreated).toHaveBeenCalledWith({
+      id: store.db.products[0].id,
+      title: "Wildflower Honey",
+      pendingStock: null,
+    })
+    expect(ui.toast.info).toHaveBeenCalledWith("Wildflower Honey is used as it is", {
+      description: "Its price and stock were not changed. Check them in Products.",
+    })
+    expect(writes()).toHaveLength(posted)
+    expect(store.db.products).toHaveLength(1)
+    // The choice is gone once made.
+    expect(render(step({ onCreated }))).not.toContain("not quite what you entered")
+  })
+
   it("shows the backend's refusal in its own words, and reports no product", async () => {
     const refusal =
       'Listing type "physical_product" is not allowed on the Service playbook. Allowed types: event, digital, recurring, bookable. Switch playbooks (vendor settings → playbook) if your offering shape no longer fits.'

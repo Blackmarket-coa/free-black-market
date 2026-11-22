@@ -47,7 +47,13 @@ import {
 } from "../../../hooks/api/selling-setup"
 import { backendMessage } from "../../../lib/backend-message"
 import { setAuthToken } from "../../../lib/client"
-import { readSellingSetup, setUpDelivery } from "../../../lib/selling-setup"
+import {
+  CreateOutcomeUnknown,
+  readSellingSetup,
+  setUpDelivery,
+  SimilarProductExists,
+  similarProductPrompt,
+} from "../../../lib/selling-setup"
 import { StockNote } from "./components/product-create-variants-form/product-create-variants-form"
 import { PRODUCT_CREATE_FORM_DEFAULTS } from "./constants"
 import type { ProductCreateSchemaType } from "./types"
@@ -198,6 +204,9 @@ describe("the product form's stock", () => {
         "variantsMissingStock",
         "useCreateProductWithStock",
         "useDeliverySetup",
+        // A similar product another request made: the vendor is asked.
+        "usePrompt",
+        "similarProductPrompt",
       ])
     )
   })
@@ -442,6 +451,119 @@ describe("the product's handle", () => {
       "POST /vendor/inventory-items/location-levels/batch",
     ])
     expect(store.db.levels).toMatchObject([{ stocked: 10 }])
+  })
+
+  it("when the answer and the re-read are both lost, says it cannot tell, and the next press uses the product the first made (measured: a second press made \"-2\")", async () => {
+    await setUpDelivery({ location: barn, pickup: null, shipping: null })
+    const values = formValues({ stock_quantity: "10" })
+    const input = {
+      payload: payloadOf(values),
+      stock: { locationId: store.db.locations[0].id, entries: initialStockFrom(values.variants) },
+    }
+    // The connection drops after the create is handled, and stays down for the re-read.
+    store.loseNextAnswer("POST", "/vendor/seller-products")
+    store.justBefore("POST", "/vendor/seller-products", () =>
+      store.loseNextAnswer("GET", "/vendor/products")
+    )
+
+    const first = await hook().create.mutateAsync(input).catch((e: unknown) => e)
+    expect(first).toBeInstanceOf(CreateOutcomeUnknown)
+    expect((first as Error).message).toBe(
+      'The connection dropped before the backend answered, so it is not known whether "Wildflower Honey" was saved. Press again: if it was, that product is used, not made a second time.'
+    )
+    expect(store.db.products).toHaveLength(1)
+
+    const second = await hook().create.mutateAsync(input)
+
+    expect(store.db.products.map((p) => p.handle)).toEqual(["wildflower-honey-bravo-pantry"])
+    expect(second.product.id).toBe(store.db.products[0].id)
+    expect(backend.calls().filter((c) => c === "POST /vendor/seller-products")).toHaveLength(1)
+    // It is the listing entered, so its stock is recorded.
+    expect(store.db.levels).toMatchObject([{ stocked: 10 }])
+  })
+
+  it("uses a product another tab made under the same handle only when it is the same listing", async () => {
+    store.justBefore("POST", "/vendor/seller-products", () =>
+      store.anotherTabCreates({ ...payloadOf(formValues({ manage_inventory: false })), handle: "wildflower-honey-bravo-pantry" })
+    )
+
+    const result = await create()
+
+    expect(store.db.products).toHaveLength(1)
+    expect(result.product.id).toBe(store.db.products[0].id)
+  })
+
+  it("does not adopt another tab's product that differs (measured: its price 99 taken where this tab asked for 8): nothing is written to it, and the vendor chooses", async () => {
+    await setUpDelivery({ location: barn, pickup: null, shipping: null })
+    const values = formValues({ stock_quantity: "10" })
+    const input = {
+      payload: payloadOf(values),
+      stock: { locationId: store.db.locations[0].id, entries: initialStockFrom(values.variants) },
+    }
+    store.justBefore("POST", "/vendor/seller-products", () =>
+      store.anotherTabCreates({
+        ...payloadOf(formValues({ prices: { usd: "99" } })),
+        status: "draft",
+        handle: "wildflower-honey-bravo-pantry",
+      })
+    )
+
+    const error = await hook().create.mutateAsync(input).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(SimilarProductExists)
+    const similar = error as SimilarProductExists
+    expect(similar.product).toEqual({ id: store.db.products[0].id, title: "Wildflower Honey" })
+    expect(similar.differences).toEqual([
+      "it is draft, you asked for published",
+      "its price is USD 99, you entered USD 12",
+    ])
+    expect(similar.message).toBe(
+      'Your store already has "Wildflower Honey", made a moment ago (perhaps in another tab), and it is not quite what you entered: it is draft, you asked for published; its price is USD 99, you entered USD 12.'
+    )
+    // No stock written to it, nothing else made.
+    expect(store.db.levels).toEqual([])
+    expect(store.db.products).toHaveLength(1)
+    expect(similarProductPrompt(similar)).toEqual({
+      title: "This product may already be in your store",
+      description: `${similar.message} Make a separate product from what you entered, or open that one as it is? Nothing has been changed on it.`,
+      confirmText: "Make a separate product",
+      cancelText: "Open Wildflower Honey",
+    })
+
+    // The vendor chooses a separate product: the next handle, with its stock.
+    const separate = await hook().create.mutateAsync({ ...input, separate: true })
+
+    expect(store.db.products.map((p) => p.handle)).toEqual([
+      "wildflower-honey-bravo-pantry",
+      "wildflower-honey-bravo-pantry-2",
+    ])
+    expect(separate.product.id).toBe(store.db.products[1].id)
+    expect(store.db.levels).toMatchObject([{ item: store.db.products[1].variants[0].item, stocked: 10 }])
+  })
+
+  it("says how a typed handle's product from another tab differs, and a separate one takes the next handle", async () => {
+    const values = { ...formValues({ manage_inventory: true }), handle: "raw-honey", description: "Raw." }
+    store.justBefore("POST", "/vendor/seller-products", () =>
+      store.anotherTabCreates({
+        ...payloadOf({ ...formValues({ manage_inventory: false }), title: "Raw Honey Jar" }),
+        handle: "raw-honey",
+        description: "Something else.",
+      })
+    )
+
+    const error = await hook()
+      .create.mutateAsync({ payload: payloadOf(values) })
+      .catch((e: unknown) => e)
+
+    expect((error as SimilarProductExists).differences).toEqual([
+      'it is called "Raw Honey Jar", you entered "Wildflower Honey"',
+      "its description is different",
+      "it does not track stock, you chose otherwise",
+    ])
+
+    await hook().create.mutateAsync({ payload: payloadOf(values), separate: true })
+
+    expect(store.db.products.map((p) => p.handle)).toEqual(["raw-honey", "raw-honey-2"])
   })
 
   it("does not take a product the store already had for one a failed request made", async () => {

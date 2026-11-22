@@ -1,4 +1,10 @@
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import {
+  Button,
+  ProgressStatus,
+  ProgressTabs,
+  toast,
+  usePrompt,
+} from "@medusajs/ui"
 import { HttpTypes } from "@medusajs/types"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -20,6 +26,10 @@ import {
 } from "../../../../../hooks/api/selling-setup"
 import { backendMessage } from "../../../../../lib/backend-message"
 import { uploadFilesQuery } from "../../../../../lib/client"
+import {
+  SimilarProductExists,
+  similarProductPrompt,
+} from "../../../../../lib/selling-setup"
 import {
   PRODUCT_CREATE_FORM_DEFAULTS,
   ProductCreateSchema,
@@ -115,6 +125,7 @@ export const ProductCreateForm = ({
   // Creates the product, then records the stock the vendor entered: one
   // mutation, so `isPending` covers both requests.
   const { mutateAsync } = useCreateProductWithStock()
+  const prompt = usePrompt()
   const { pending, isBusyNow } = useIsBusy(sellingSetupMutationKeys.listing)
   const submitting = useRef(false)
   const isPending = pending || form.formState.isSubmitting
@@ -231,17 +242,33 @@ export const ProductCreateForm = ({
         (variant) => variant.should_create && variant.manage_inventory !== false
       )
 
-      const data = await mutateAsync({
-        payload: toCreateProductPayload(values, {
-          status: isDraftSubmission ? "draft" : "published",
-          uploadedMedia,
-          regionsCurrencyMap,
-        }),
-        stock:
-          stockLocation && entries.length
-            ? { locationId: stockLocation.id, entries }
-            : undefined,
-      })
+      const createWith = (separate: boolean) =>
+        mutateAsync({
+          payload: toCreateProductPayload(values, {
+            status: isDraftSubmission ? "draft" : "published",
+            uploadedMedia,
+            regionsCurrencyMap,
+          }),
+          stock:
+            stockLocation && entries.length
+              ? { locationId: stockLocation.id, entries }
+              : undefined,
+          separate,
+        })
+
+      let data: Awaited<ReturnType<typeof createWith>>
+      try {
+        data = await createWith(false)
+      } catch (error) {
+        // The store already has a product under this handle that is not what
+        // was entered (another tab, an earlier press): the vendor chooses.
+        if (!(error instanceof SimilarProductExists)) throw error
+        if (!(await prompt(similarProductPrompt(error)))) {
+          handleSuccess(`../${error.product.id}`)
+          return
+        }
+        data = await createWith(true)
+      }
 
       toast.success(
         t("products.create.successToast", {

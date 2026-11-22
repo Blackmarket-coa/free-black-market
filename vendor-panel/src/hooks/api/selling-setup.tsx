@@ -134,6 +134,11 @@ export type CreateProductWithStockInput = {
     locationId: string
     entries: Array<{ variant_rank: number; quantity: number }>
   }
+  /**
+   * The vendor chose a new product beside one the store already has under
+   * this listing's handle (after `SimilarProductExists`).
+   */
+  separate?: boolean
 }
 
 export type CreateProductWithStockResult = HttpTypes.AdminProductResponse & {
@@ -164,9 +169,11 @@ export const useCreateProductWithStock = () => {
     CreateProductWithStockInput
   >({
     mutationKey: sellingSetupMutationKeys.listing,
-    mutationFn: async ({ payload, stock }) => {
+    // A `SimilarProductExists` rejection writes no stock: the vendor chooses.
+    mutationFn: async ({ payload, stock, separate }) => {
       const created = (await createProductInStore(
-        payload as unknown as Parameters<typeof createProductInStore>[0]
+        payload as unknown as Parameters<typeof createProductInStore>[0],
+        { separate }
       )) as unknown as HttpTypes.AdminProductResponse
       if (!stock || stock.entries.length === 0) {
         return created

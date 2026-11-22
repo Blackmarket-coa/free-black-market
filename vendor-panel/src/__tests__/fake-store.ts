@@ -175,6 +175,13 @@ export const createFakeStore = (
   const id = (prefix: string) => `${prefix}_${++serial}`
   /** Requests whose next answer is lost after the backend has done the work. */
   const losing = new Set<string>()
+  /** What happens just before the next such request is handled. */
+  const before = new Map<string, () => void>()
+  const runBefore = (key: string) => {
+    const run = before.get(key)
+    before.delete(key)
+    run?.()
+  }
   const lost = (key: string, response: Response) =>
     losing.delete(key)
       ? Promise.reject(new TypeError("Failed to fetch"))
@@ -444,8 +451,7 @@ export const createFakeStore = (
 
   backend.on("GET", "/vendor/sellers/me", () => json(200, { seller: db.seller }))
 
-  backend.on("POST", "/vendor/seller-products", ({ body }) => {
-    if (seed.refuseProducts) return seed.refuseProducts()
+  const createProduct = (body: unknown): Response => {
     const b = body as Record<string, any>
     if (!b?.title) return refuse("title is required")
     // Medusa's toHandle when none is sent, and its isValidHandle.
@@ -492,22 +498,28 @@ export const createFakeStore = (
     }
     db.products.push(product)
     // The create route answers variants without their inventory items.
+    return json(200, {
+      product: {
+        ...product,
+        variants: answered(product.variants).map(({ item: _item, ...variant }) => variant),
+      },
+    })
+  }
+  backend.on("POST", "/vendor/seller-products", ({ body }) => {
+    runBefore("POST /vendor/seller-products")
+    if (seed.refuseProducts) return seed.refuseProducts()
+    return lost("POST /vendor/seller-products", createProduct(body))
+  })
+  backend.on("GET", "/vendor/products", () => {
+    runBefore("GET /vendor/products")
     return lost(
-      "POST /vendor/seller-products",
+      "GET /vendor/products",
       json(200, {
-        product: {
-          ...product,
-          variants: answered(product.variants).map(({ item: _item, ...variant }) => variant),
-        },
+        products: db.products.map(({ variants: _variants, ...product }) => product),
+        count: db.products.length,
       })
     )
   })
-  backend.on("GET", "/vendor/products", () =>
-    json(200, {
-      products: db.products.map(({ variants: _variants, ...product }) => product),
-      count: db.products.length,
-    })
-  )
   backend.on("GET", /^\/vendor\/products\/[^/]+$/, ({ path }) => {
     const product = db.products.find((p) => p.id === path.split("/")[3])
     return product ? json(200, { product: productView(product) }) : notYours()
@@ -626,6 +638,12 @@ export const createFakeStore = (
     loseNextAnswer: (method: string, path: string) => {
       losing.add(`${method} ${path}`)
     },
+    /** Run `fn` just before the next such request is handled. */
+    justBefore: (method: string, path: string, fn: () => void) => {
+      before.set(`${method} ${path}`, fn)
+    },
+    /** Another tab of the same store creates a product: not one of this tab's requests. */
+    anotherTabCreates: (body: Record<string, unknown>) => createProduct(body),
     /**
      * What Medusa and Mercur ask of a cart before a buyer of this store's
      * first published product can complete it, in the order they ask: a
