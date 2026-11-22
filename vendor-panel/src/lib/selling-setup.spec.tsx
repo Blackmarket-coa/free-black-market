@@ -43,6 +43,7 @@ import { setAuthToken } from "./client"
 import {
   fulfillmentSetName,
   publishFirstListing,
+  unofferedReason,
   readSellingSetup,
   recordStock,
   SELLING_LOCATION_FIELDS,
@@ -358,7 +359,7 @@ describe("readSellingSetup, where buyers are and what they pay in", () => {
       { id: shipping.id, name: "Flat delivery", kind: "shipping", regions: ["reg_us"] },
     ])
     expect(setup.delivery.unoffered).toEqual([
-      expect.objectContaining({ id: pickup.id, reason: "unpriced" }),
+      expect.objectContaining({ id: pickup.id, reason: "elsewhere", onlyIn: ["another region"] }),
     ])
     expect(setup.ready).toBe(true)
     expect(store.buyerCanCheckOut()).toBe(true)
@@ -392,6 +393,61 @@ describe("readSellingSetup, where buyers are and what they pay in", () => {
     expect(setup.delivery.ready).toBe(true)
     expect(setup.listing).toMatchObject({ buyable: null, currencies: ["USD"] })
     expect(setup.ready).toBe(false)
+  })
+
+  it("says when an option's price is limited to another region, rather than that it has none (measured: a US Territories price on a US zone)", async () => {
+    const territories = {
+      id: "reg_pr",
+      name: "US Territories",
+      currency_code: "usd",
+      countries: [{ iso_2: "pr", display_name: "Puerto Rico" }],
+    }
+    backend.reset()
+    vi.stubGlobal("fetch", backend.fetch)
+    store = createFakeStore(backend, { regions: [US_REGION, territories] })
+    await sellable()
+    for (const option of store.db.options) {
+      option.prices = [
+        { currency_code: "usd", amount: 5, rules: [{ attribute: "region_id", value: "reg_pr" }] },
+      ]
+    }
+    expect(store.buyerCanCheckOut("us")).toMatch(/do not have a price/)
+
+    const setup = await readSellingSetup()
+
+    expect(setup.ready).toBe(false)
+    const flat = setup.delivery.unoffered.find((o) => o.name === "Flat delivery")!
+    expect(flat).toMatchObject({
+      reason: "elsewhere",
+      currencies: ["USD"],
+      buyersIn: ["United States"],
+      onlyIn: ["US Territories"],
+    })
+    expect(unofferedReason(flat)).toBe(
+      "Flat delivery is priced only for buyers in US Territories, so buyers in United States, where it delivers, cannot choose it."
+    )
+    expect(unofferedReason(flat)).not.toContain("has no price")
+  })
+
+  it("says when an option's price holds only for some orders, and when it has none in the currency", async () => {
+    await sellable()
+    const [pickup, shipping] = store.db.options
+    pickup.prices = [
+      { currency_code: "usd", amount: 0, rules: [{ attribute: "item_total", value: "50" }] },
+    ]
+    shipping.prices = [{ currency_code: "eur", amount: 5, rules: [] }]
+
+    const { delivery } = await readSellingSetup()
+
+    const [conditional, unpriced] = delivery.unoffered
+    expect(conditional).toMatchObject({ name: "Pickup at the barn", reason: "conditional" })
+    expect(unofferedReason(conditional)).toBe(
+      "Pickup at the barn is priced in USD only for some orders (a condition on the order total), so a buyer whose order does not meet it cannot choose it."
+    )
+    expect(unpriced).toMatchObject({ name: "Flat delivery", reason: "unpriced" })
+    expect(unofferedReason(unpriced)).toBe(
+      "Flat delivery has no price in USD, the currency buyers there pay in."
+    )
   })
 
   it("does not count a published product with no price in the currency buyers pay in", async () => {

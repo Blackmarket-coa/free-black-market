@@ -235,12 +235,19 @@ export type UnofferedOption = {
   name: string
   kind: DeliveryKind
   /**
-   * "outside": its zone covers no country buyers are in. "unpriced": it does,
-   * and it has no price those buyers' carts are charged.
+   * "outside": its zone covers no country buyers are in. Otherwise its zone
+   * covers some, and those buyers' carts are charged none of its prices:
+   * "elsewhere", a price in their currency is limited by a rule to another
+   * region; "conditional", a price in their currency holds only for some
+   * orders (a cart-total rule); "unpriced", it has none in their currency.
    */
-  reason: "outside" | "unpriced"
-  /** For "unpriced": the currencies it needs a price in, upper case. */
+  reason: "outside" | "unpriced" | "elsewhere" | "conditional"
+  /** The currencies it needs a price in, upper case. */
   currencies: string[]
+  /** The regions whose buyers its zone covers, by name. */
+  buyersIn: string[]
+  /** For "elsewhere": the regions its prices are limited to, by name. */
+  onlyIn: string[]
 }
 
 export type DeliverySetup = {
@@ -316,13 +323,39 @@ const describeDelivery = (
         regions: priced.map((region) => region.id),
       })
     } else {
+      // Prices in a covered region's currency that a rule keeps from it.
+      const currencies = new Set(covered.map((region) => lower(region.currency_code)))
+      const ruled = (option.prices ?? []).filter(
+        (price) =>
+          currencies.has(lower(price?.currency_code)) &&
+          Array.isArray(price?.price_rules) &&
+          price.price_rules.length > 0
+      )
+      const otherRegions = ruled
+        .flatMap((price) => price.price_rules ?? [])
+        .filter((rule) => rule?.attribute === "region_id")
+        .map((rule) => String(rule?.value ?? ""))
+        .filter((id) => !covered.some((region) => region.id === id))
       unoffered.push({
         id: option.id,
         name: option.name,
         kind,
-        reason: covered.length > 0 ? "unpriced" : "outside",
-        currencies: [
-          ...new Set(covered.map((region) => region.currency_code.toUpperCase())),
+        reason:
+          covered.length === 0
+            ? "outside"
+            : otherRegions.length > 0
+              ? "elsewhere"
+              : ruled.length > 0
+                ? "conditional"
+                : "unpriced",
+        currencies: [...currencies].map((code) => code.toUpperCase()),
+        buyersIn: covered.map((region) => region.name || region.id),
+        onlyIn: [
+          ...new Set(
+            otherRegions.map(
+              (id) => regions.find((region) => region.id === id)?.name || "another region"
+            )
+          ),
         ],
       })
     }
@@ -341,10 +374,20 @@ const describeDelivery = (
 }
 
 /** Why buyers are not offered an option, in a sentence. */
-export const unofferedReason = (option: UnofferedOption) =>
-  option.reason === "unpriced"
-    ? `${option.name} has no price in ${option.currencies.join(" or ")}, the currency buyers there pay in.`
-    : `${option.name} delivers only to countries where this marketplace has no buyers.`
+export const unofferedReason = (option: UnofferedOption) => {
+  const currencies = option.currencies.join(" or ")
+  const buyers = option.buyersIn.join(" or ")
+  switch (option.reason) {
+    case "elsewhere":
+      return `${option.name} is priced only for buyers in ${option.onlyIn.join(" or ")}, so buyers in ${buyers}, where it delivers, cannot choose it.`
+    case "conditional":
+      return `${option.name} is priced in ${currencies} only for some orders (a condition on the order total), so a buyer whose order does not meet it cannot choose it.`
+    case "unpriced":
+      return `${option.name} has no price in ${currencies}, the currency buyers there pay in.`
+    default:
+      return `${option.name} delivers only to countries where this marketplace has no buyers.`
+  }
+}
 
 export const readDeliverySetup = async (): Promise<DeliverySetup> => {
   const [channel, locations, shippingOptions, regions] = await Promise.all([
