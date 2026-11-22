@@ -32,9 +32,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
     // The template details of each fee, read only from the coordinator's own
     // templates: a fee that names another store's template (attached before
-    // the POST checked) is listed without it. As before, fees are listed
-    // without details when the templates cannot be read, which is every read
-    // where SD-63's `enterprise_fee.raw_amount` is missing.
+    // the POST checked) is listed without it. As before (the per-fee read
+    // swallowed its errors), fees are listed without details when the
+    // templates cannot be read.
     const templateIds = [...new Set(fees.map((fee) => fee.enterprise_fee_id))]
     let templates: Awaited<ReturnType<OrderCycleModuleService["listEnterpriseFees"]>> = []
     if (templateIds.length) {
