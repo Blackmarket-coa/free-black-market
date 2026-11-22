@@ -20,6 +20,7 @@ import { MARKETPLACE_WEBHOOKS_MODULE } from "../../src/modules/marketplace-webho
 import { assignPlaybookWorkflow } from "../../src/workflows/assign-playbook"
 import { backfillApprovedSellerPlaybooks } from "../../src/shared/approved-playbook-backfill"
 import { pluginSlugsFrom } from "../../src/shared/extension-keys"
+import { INVENTORY_ITEM_NOT_YOURS, SHIPPING_PROFILE_NOT_YOURS } from "../../src/shared/vendor-product-body"
 import runBackfillScript from "../../src/scripts/backfill-approved-seller-playbooks"
 import { newTestPassword } from "./helpers/test-password"
 
@@ -60,7 +61,7 @@ jest.setTimeout(600 * 1000)
  *
  * The first case runs on the database as the app booted it; the runner
  * truncates every table between cases and runs the module loaders again,
- * as a restart would. Spends 15 of the auth limiter's 20 a minute (filings
+ * as a restart would. Spends 17 of the auth limiter's 20 a minute (filings
  * and sign-ins; logins are registered through the auth module).
  */
 
@@ -483,6 +484,11 @@ medusaIntegrationTestRunner({
         const webhooks = container().resolve(MARKETPLACE_WEBHOOKS_MODULE)
         expect(await webhooks.attemptDelivery(deliveryId)).toBe(false)
         expect((await rowOf()).payload.payload.credential.secret).toBe(secret)
+        // A row written before response bodies were scrubbed can hold an echo
+        // of the secret there; the admin list scrubs it on the way out.
+        await pg().raw(`UPDATE marketplace_webhook_delivery SET response_body = ? WHERE id = ?`, [`500 echo ${secret}`, deliveryId])
+        const echoView = (await listedByAdmin()).find((row) => row.id === deliveryId)
+        expect(echoView.response_body).toBe("500 echo [redacted]")
         const replayed = await call(
           api.post(`/admin/blackstar/deliveries/${deliveryId}/replay`, { attempt_now: false }, bearer(admin))
         )
@@ -522,6 +528,41 @@ medusaIntegrationTestRunner({
         // A delivered row is not sent again: its secret is gone.
         expect(await webhooks.attemptDelivery(deliveryId)).toBe(true)
         expect(accepted()).toHaveLength(sentBeforeRetry)
+        // A concurrent attempt that read the row before the success and
+        // failed after it: its write does not land on the delivered row.
+        await (webhooks as any).scheduleRetryOrDie(deliveryId, 2, 500, "late failure")
+        expect(await rowOf()).toMatchObject({ status: "succeeded", response_body: delivered.response_body })
+        // Had something put it back on the queue anyway, the cleared payload
+        // is still not sent, and the row is marked delivered again.
+        await pg().raw(`UPDATE marketplace_webhook_delivery SET status = 'failed', next_attempt_at = NOW() WHERE id = ?`, [deliveryId])
+        expect(await webhooks.attemptDelivery(deliveryId)).toBe(true)
+        expect(accepted()).toHaveLength(sentBeforeRetry)
+        expect((await rowOf()).status).toBe("succeeded")
+        const replayDelivered = await call(api.post(`/admin/blackstar/deliveries/${deliveryId}/replay`, {}, bearer(admin)))
+        expect(replayDelivered.status).toBe(409)
+
+        // ---- An opted-in applicant whose metadata write fails (a logistics
+        // vendor type) and whose provisioning throws: the answer is recorded
+        // first, on a row approval creates.
+        const echo = await login("echo")
+        const echoRequestId = await file(echo, `Echo Haulers ${uid()}`, {
+          playbook: "stall",
+          recommended: "stall",
+          roles: ["stall"],
+          resources: ["transportation"],
+          node: true,
+          vendor_type: "logistics",
+        })
+        const emitSpy = jest.spyOn(webhooks, "emitBlackstar").mockRejectedValueOnce(new Error("queue down"))
+        const echoApproved = await accept(echoRequestId)
+        expect(echoApproved.status).toBe(200)
+        expect(emitSpy).toHaveBeenCalledTimes(1)
+        emitSpy.mockRestore()
+        const echoSellerId = echoApproved.data.seller.id as string
+        expect(await metadataOf(echoSellerId)).toMatchObject({ node_operator_opt_in: true })
+        // The credential issued for the event that never queued was taken back.
+        expect((await credentialsOf(echoSellerId)).filter((c: { status: string }) => c.status === "active")).toEqual([])
+        expect(await settingsOf(await signIn(echo))).toMatchObject({ opted_in: true, credential: null, status: "opted_in_no_credential" })
 
         // ---- The vendor's own secret comes from Settings: re-issued, shown once.
         const token = await signIn(driver)
@@ -702,7 +743,16 @@ medusaIntegrationTestRunner({
       const {
         result: [otherProduct],
       } = await createProductsWorkflow(container()).run({
-        input: { products: [{ title: `Victor Jam ${uid()}`, options: [{ title: "Size", values: ["One"] }] }], additional_data: { seller_id: otherStore.id } },
+        input: {
+          products: [
+            {
+              title: `Victor Jam ${uid()}`,
+              options: [{ title: "Size", values: ["One"] }],
+              variants: [{ title: "One", options: { Size: "One" }, manage_inventory: true, prices: [{ currency_code: "usd", amount: 5 }] }],
+            } as any,
+          ],
+          additional_data: { seller_id: otherStore.id },
+        },
       })
 
       const created = await call(api.post("/vendor/seller-products", await panelProductPayload(token, "Wildflower Honey"), bearer(token)))
@@ -752,6 +802,33 @@ medusaIntegrationTestRunner({
       expect(await sellersOfProduct(draft.id)).toEqual([sellerId])
       expect(draft.shipping_profile?.id).toBe(profileId)
       expect(draft.listing_type).toEqual(expect.objectContaining({ catalog_id: "physical_product" }))
+
+      // A body naming the other store's shipping profile, or its inventory
+      // item, is refused on both create routes, and nothing is made.
+      const otherItemId = (await productOf(otherProduct.id)).variants[0].inventory_items[0].inventory_item_id as string
+      const withOtherItem = async (title: string) => {
+        const payload = await panelProductPayload(token, title)
+        return { ...payload, variants: [{ ...payload.variants[0], inventory_items: [{ inventory_item_id: otherItemId, required_quantity: 1 }] }] }
+      }
+      const refusals = [
+        ["/vendor/seller-products", { ...(await panelProductPayload(token, "Profile Honey")), shipping_profile_id: otherProfileId }, SHIPPING_PROFILE_NOT_YOURS],
+        ["/vendor/seller-products", { ...(await panelProductPayload(token, "Missing Profile Honey")), shipping_profile_id: "sp_does_not_exist" }, SHIPPING_PROFILE_NOT_YOURS],
+        ["/vendor/seller-products", await withOtherItem("Item Honey"), INVENTORY_ITEM_NOT_YOURS],
+        ["/vendor/products", { ...(await withOtherItem("Draft Item Honey")), status: "draft" }, INVENTORY_ITEM_NOT_YOURS],
+      ] as const
+      for (const [route, body, message] of refusals) {
+        const refused = await call(api.post(route, body, bearer(token)))
+        expect({ route, title: body.title, status: refused.status, message: refused.data.message }).toEqual({ route, title: body.title, status: 400, message })
+        const made = await pg().raw(`SELECT count(*)::int AS n FROM product WHERE title = ? AND deleted_at IS NULL`, [body.title])
+        expect({ title: body.title, made: made.rows[0].n }).toEqual({ title: body.title, made: 0 })
+      }
+      expect(await defaultProfileOf(otherStore.id)).toBe(otherProfileId)
+      // The caller's own profile is accepted and used.
+      const ownProfile = await call(
+        api.post("/vendor/seller-products", { ...(await panelProductPayload(token, "Own Profile Honey")), shipping_profile_id: profileId }, bearer(token))
+      )
+      expect(ownProfile.status).toBe(200)
+      expect((await productOf(ownProfile.data.product.id)).shipping_profile?.id).toBe(profileId)
 
       // The wizard's publish step: an id that names no product, and another store's, are refused.
       for (const listing_id of ["prod_does_not_exist", otherProduct.id]) {
