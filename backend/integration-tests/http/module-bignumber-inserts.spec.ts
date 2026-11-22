@@ -218,17 +218,33 @@ medusaIntegrationTestRunner({
     })
 
     it("order-cycle, on a schema that has the companion under both names: a row with none under the new name takes the old one's", async () => {
+      // The rows' cycle, which `order_cycle_product` holds a foreign key to.
+      const now = Date.now()
+      const [cycle] = await getContainer()
+        .resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
+        .createOrderCycles([
+          {
+            name: `Week ${uid()}`,
+            opens_at: new Date(now - 86_400_000),
+            closes_at: new Date(now + 86_400_000),
+            dispatch_at: new Date(now + 2 * 86_400_000),
+            coordinator_seller_id: `sel_coord_${uid()}`,
+          },
+        ])
       try {
         // The old name back beside the new one, as on a schema where somebody
         // added `raw_override_price` by hand without renaming the leftover.
         await pg().raw(`ALTER TABLE "order_cycle_product" ADD COLUMN "raw_price_override" jsonb NULL`)
-        await pg().raw(`
+        await pg().raw(
+          `
           INSERT INTO "order_cycle_product"
             ("id", "order_cycle_id", "variant_id", "seller_id", "override_price", "raw_price_override", "raw_override_price") VALUES
-            ('ocp_old_only', 'oc_x', 'v1', 'sel_1', 450, '{"value":"450","precision":20}', NULL),
-            ('ocp_both', 'oc_x', 'v2', 'sel_1', 99.5, '{"value":"1","precision":20}', '{"value":"99.5","precision":20}'),
-            ('ocp_no_number', 'oc_x', 'v3', 'sel_1', NULL, '{"value":"7","precision":20}', NULL),
-            ('ocp_neither', 'oc_x', 'v4', 'sel_1', 12.50, NULL, NULL)`)
+            ('ocp_old_only', ?, 'v1', 'sel_1', 450, '{"value":"450.00","precision":20}', NULL),
+            ('ocp_both', ?, 'v2', 'sel_1', 99.5, '{"value":"1","precision":20}', '{"value":"99.5","precision":20}'),
+            ('ocp_no_number', ?, 'v3', 'sel_1', NULL, '{"value":"7","precision":20}', NULL),
+            ('ocp_neither', ?, 'v4', 'sel_1', 12.50, NULL, NULL)`,
+          [cycle.id, cycle.id, cycle.id, cycle.id]
+        )
 
         const migration = new Migration20261117OrderCycleRawBigNumberColumns({} as never, {} as never)
         await migration.up()
@@ -244,8 +260,10 @@ medusaIntegrationTestRunner({
           { id: "ocp_neither", raw_override_price: raw("12.5"), raw_price_override: null },
           // No number to pair with: left empty.
           { id: "ocp_no_number", raw_override_price: null, raw_price_override: raw("7") },
-          // Carried over from the old name.
-          { id: "ocp_old_only", raw_override_price: raw("450"), raw_price_override: raw("450") },
+          // Carried over from the old name. Its "450.00" is not what a
+          // backfill from the number writes ("450"), so this row shows which
+          // of the two it got.
+          { id: "ocp_old_only", raw_override_price: raw("450.00"), raw_price_override: raw("450.00") },
         ])
       } finally {
         await pg().raw(`ALTER TABLE "order_cycle_product" DROP COLUMN IF EXISTS "raw_price_override"`)
