@@ -184,12 +184,15 @@ describe("US-SC home-based food fixture", () => {
       expect(notAllowed.value).toMatchObject({ list_is_partial: true })
       expect((allowed.value.items as unknown[]).length).toBe(7)
       expect(allowed.display_text).toMatch(/list is partial/)
-      // An unnamed food is a gap in the sources, not a lean either way, and not
-      // "unnamed here" (cheesecake is named, in the other list).
+      // A food the fact sheet's lists do not name is a gap, not a lean either
+      // way: the FAQ's general description (quoted just before) is all the
+      // sources give, and it does not settle a particular food. Not "unnamed
+      // here" (cheesecake is named, in the other list), and not "not covered"
+      // (the FAQ names candies, cookies and most breads, on neither list).
       expect(allowed.display_text).toContain(
-        "A food on neither this list nor the fact sheet's list of foods not allowed is not covered by our sources: it may or may not be allowed, and the fuller SCDA guidance is not among our sources."
+        "For a food that neither of the fact sheet's lists names, our sources give only the FAQ's general description above; they do not say whether that particular food may be sold, and the fuller SCDA guidance is not among our sources."
       )
-      expect(allowed.display_text).not.toMatch(/not named here|does not mean it is not allowed/)
+      expect(allowed.display_text).not.toMatch(/not named here|does not mean it is not allowed|not covered by our sources|neither this list/)
       // The FAQ's own hedges survive: "certain" foods, and they "must" be made and packaged at home.
       expect(allowed.display_text).toContain(
         "SCDA's FAQ says the law allows certain foods that do not require time or temperature control (non-TCS) to be sold without inspection or a permit, generally baked goods (without cream fillings), candies, cookies and most breads, and that they must be made and packaged in the home kitchen and labeled according to the law."

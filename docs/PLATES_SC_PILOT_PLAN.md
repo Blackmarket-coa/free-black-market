@@ -33,7 +33,7 @@ This is a read-only plan; I edited nothing. It is based on HEAD b29db1db, the th
 
 **Traps the seed must avoid:**
 - **FAQ page 2 is a different legal path.** It lists exemptions from the *Retail Food Establishment permit* (jams, jellies, vinegars, popcorn), not foods allowed under the home-based law. Seeding it as cottage food would assert something neither source says.
-- **Both of the fact sheet's food lists are partial.** "FOODS ALLOWED*" and "FOODS NOT ALLOWED*" carry the same asterisk, to a footnote pointing to the "Home-based Food Production Law Guidance" for a fuller list. A food missing from both lists is "not covered by our sources": not "allowed" and not "not allowed". (Corrected in the PL-2 review, 2026-11-22: this line first said only the allowed list was partial.)
+- **Both of the fact sheet's food lists are partial.** "FOODS ALLOWED*" and "FOODS NOT ALLOWED*" carry the same asterisk, to a footnote pointing to the "Home-based Food Production Law Guidance" for a fuller list. For a food missing from both lists, the sources give only the FAQ's general description (generally baked goods without cream fillings, candies, cookies and most breads); they do not say whether that particular food may be sold, so it is neither "allowed" nor "not allowed". (Corrected in the PL-2 review, 2026-11-22: this line first said only the allowed list was partial.)
 - **The Home-based Food ID is not stated to be optional.** Neither PDF says it is optional or how to get one; they only say the label may carry it instead of the name and address.
 - **Gaps in both PDFs:**
   - no effective date

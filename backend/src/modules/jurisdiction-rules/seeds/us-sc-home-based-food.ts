@@ -26,8 +26,11 @@ import type { JurisdictionProgram, RuleKind } from "../types"
  * 2. **Both food lists on the fact sheet are partial.** "FOODS ALLOWED*" and
  *    "FOODS NOT ALLOWED*" carry the same asterisk, to a footnote pointing at
  *    SCDA's "Home-based Food Production Law Guidance" for a more complete
- *    list. That guidance is not archived. A food neither list names is "not
- *    covered by our sources", not "not allowed" and not "allowed".
+ *    list. That guidance is not archived. For a food neither list names, the
+ *    sources give only the FAQ's general description (generally baked goods
+ *    without cream fillings, candies, cookies and most breads); they do not
+ *    say whether that particular food may be sold. Not "not allowed", not
+ *    "allowed", and not "not covered" either, since the FAQ does describe it.
  * 3. **Neither document says the Home-based Food ID is optional, or how to
  *    get one.** They say only that the label may carry it in place of the
  *    name and address.
@@ -345,7 +348,7 @@ export const US_SC_HOME_BASED_FOOD_RULES: SeedRule[] = [
       "The fact sheet lists these foods as allowed: shelf-stable cakes; shelf-stable cookies; shelf-stable cupcakes; dried herbs and spices; pie and pie fillings (high acid); roasted nuts; sourdough bread (made with commercial sourdough starter). " +
       "The list is partial: the fact sheet points to SCDA's Home-based Food Production Law Guidance for a more complete list, which is not among our sources. " +
       "SCDA's FAQ says the law allows certain foods that do not require time or temperature control (non-TCS) to be sold without inspection or a permit, generally baked goods (without cream fillings), candies, cookies and most breads, and that they must be made and packaged in the home kitchen and labeled according to the law. " +
-      "A food on neither this list nor the fact sheet's list of foods not allowed is not covered by our sources: it may or may not be allowed, and the fuller SCDA guidance is not among our sources.",
+      "For a food that neither of the fact sheet's lists names, our sources give only the FAQ's general description above; they do not say whether that particular food may be sold, and the fuller SCDA guidance is not among our sources.",
     citations: [
       {
         source: "fact_sheet",

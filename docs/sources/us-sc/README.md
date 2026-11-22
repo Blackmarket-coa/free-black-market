@@ -10,7 +10,7 @@ Primary sources for the Plates pilot's South Carolina rules (`docs/PLATES_SC_PIL
 ## Read before seeding rules from these
 
 - Page 2 of the FAQ covers a different legal path: exemptions from the Retail Food Establishment permit (jams, jellies, vinegars, popcorn). It does not list foods allowed under the home-based food law, so it must not be seeded as cottage food.
-- Both of the fact sheet's food lists are partial. "FOODS ALLOWED*" and "FOODS NOT ALLOWED*" carry the same asterisk, to a footnote pointing to the SCDA "Home-based Food Production Law Guidance" for a more complete list (that guidance is not archived here). A food neither list names is "not covered by these sources": not "allowed" and not "not allowed".
+- Both of the fact sheet's food lists are partial. "FOODS ALLOWED*" and "FOODS NOT ALLOWED*" carry the same asterisk, to a footnote pointing to the SCDA "Home-based Food Production Law Guidance" for a more complete list (that guidance is not archived here). For a food neither list names, these sources give only the FAQ's general description (generally baked goods without cream fillings, candies, cookies and most breads); they do not say whether that particular food may be sold, so it is neither "allowed" nor "not allowed".
 - Neither document says the Home-based Food ID is optional, or how to get one. They say only that the label may carry it instead of the name and address.
 - Neither document gives an effective date or an annual sales cap. Neither mentions a food-handler certificate, or online orders, shipping or delivery within the state.
 - The required label statement uses a typographic apostrophe ("CAROLINA’S"). Store it verbatim.
