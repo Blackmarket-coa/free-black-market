@@ -25,6 +25,7 @@ import {
   useAddProductsToExchange,
 } from "../../../../hooks/api/order-cycles"
 import { useProducts } from "../../../../hooks/api/products"
+import { useMe } from "../../../../hooks/api/users"
 
 interface OrderCycleExchangesSectionProps {
   orderCycle: OrderCycle
@@ -242,8 +243,17 @@ interface ExchangeProductsProps {
   orderCycleId: string
 }
 
-const ExchangeProducts = ({ exchange, orderCycleId }: ExchangeProductsProps) => {
+/**
+ * One exchange's products. Only the exchange's own store can add products to
+ * it: the backend writes a store's own variants onto its own exchange and
+ * answers 403 to anyone else, the cycle's coordinator included (SD-158), so
+ * the button is not offered on another store's exchange, nor before the
+ * viewer's store is known.
+ */
+export const ExchangeProducts = ({ exchange, orderCycleId }: ExchangeProductsProps) => {
   const [showAddProducts, setShowAddProducts] = useState(false)
+  const { seller } = useMe()
+  const canAddProducts = !!seller?.id && seller.id === exchange.seller_id
   const products = exchange.products || []
 
   return (
@@ -252,10 +262,12 @@ const ExchangeProducts = ({ exchange, orderCycleId }: ExchangeProductsProps) => 
         <Text size="small" weight="plus">
           Products ({products.length})
         </Text>
-        <Button variant="secondary" size="small" onClick={() => setShowAddProducts(true)}>
-          <PlusMini />
-          Add Products
-        </Button>
+        {canAddProducts && (
+          <Button variant="secondary" size="small" onClick={() => setShowAddProducts(true)}>
+            <PlusMini />
+            Add Products
+          </Button>
+        )}
       </div>
 
       {products.length === 0 ? (
@@ -299,14 +311,16 @@ const ExchangeProducts = ({ exchange, orderCycleId }: ExchangeProductsProps) => 
         </Table>
       )}
 
-      <AddProductsToExchangeModal
-        exchangeId={exchange.id}
-        orderCycleId={orderCycleId}
-        sellerId={exchange.seller_id}
-        existingVariantIds={products.map((p) => p.variant_id)}
-        open={showAddProducts}
-        onClose={() => setShowAddProducts(false)}
-      />
+      {canAddProducts && (
+        <AddProductsToExchangeModal
+          exchangeId={exchange.id}
+          orderCycleId={orderCycleId}
+          sellerId={exchange.seller_id}
+          existingVariantIds={products.map((p) => p.variant_id)}
+          open={showAddProducts}
+          onClose={() => setShowAddProducts(false)}
+        />
+      )}
     </div>
   )
 }

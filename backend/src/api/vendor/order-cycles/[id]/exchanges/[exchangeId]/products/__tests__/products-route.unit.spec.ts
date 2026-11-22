@@ -83,6 +83,14 @@ const makeService = (o: Overrides = {}) => ({
 const VARIANT_PRODUCT: Record<string, string> = { var_1: "prod_owner", var_member: "prod_member" }
 const PRODUCT_SELLER: Record<string, string> = { prod_owner: "sel_owner", prod_member: "sel_member" }
 
+/** Each store's members (removed ones included), as `storeKeysOf` reads them from `member`. */
+const MEMBERS: Record<string, string[]> = { sel_owner: ["mem_owner_1"], sel_member: ["mem_member_1"] }
+const pg = {
+  raw: jest.fn(async (_sql: string, [sellerId]: string[]) => ({
+    rows: (MEMBERS[sellerId] ?? []).map((id) => ({ id })),
+  })),
+}
+
 const query = {
   graph: jest.fn(async ({ entity, filters }: { entity: string; filters: { id?: string[]; product_id?: string[] } }) => {
     if (entity === "product_variant") {
@@ -125,7 +133,9 @@ const makeReq = (
         ? service
         : key === ContainerRegistrationKeys.QUERY
           ? query
-          : undefined,
+          : key === ContainerRegistrationKeys.PG_CONNECTION
+            ? pg
+            : undefined,
   },
 })
 
@@ -218,11 +228,13 @@ describe("exchange products — object-level authorization", () => {
     const res = await callPost(service, "sel_owner", undefined, { products: [{ variant_id: "var_1", available_quantity: 3 }] })
 
     expect(res.statusCode).toBe(201)
-    expect(service.listOrderCycleProducts).toHaveBeenCalledWith(
-      { order_cycle_id: "oc_1", variant_id: "var_1", seller_id: "sel_owner" },
-      { take: 1 }
-    )
-    expect(service.updateOrderCycleProducts).toHaveBeenCalledWith({ id: "ocp_own", exchange_id: "exch_1", available_quantity: 3 })
+    expect(service.listOrderCycleProducts).toHaveBeenCalledWith({ order_cycle_id: "oc_1", variant_id: "var_1" })
+    expect(service.updateOrderCycleProducts).toHaveBeenCalledWith({
+      id: "ocp_own",
+      seller_id: "sel_owner",
+      exchange_id: "exch_1",
+      available_quantity: 3,
+    })
     expect(service.createOrderCycleProducts).not.toHaveBeenCalled()
   })
 
@@ -235,6 +247,23 @@ describe("exchange products — object-level authorization", () => {
       expect(service.createOrderCycleProducts).not.toHaveBeenCalled()
       expect(service.updateOrderCycleProducts).not.toHaveBeenCalled()
     }
+  })
+
+  it("treats an exchange and a row held under one of the store's member ids as the store's, and moves the row to the store", async () => {
+    const service = makeService({
+      exchange: { ...EXCHANGE, seller_id: "mem_owner_1" },
+      rows: [{ id: "ocp_legacy", seller_id: "mem_owner_1", variant_id: "var_1" }],
+    })
+    const res = await callPost(service, "sel_owner", undefined, { products: [{ variant_id: "var_1", override_price: 2 }] })
+
+    expect(res.statusCode).toBe(201)
+    expect(service.updateOrderCycleProducts).toHaveBeenCalledWith({
+      id: "ocp_legacy",
+      seller_id: "sel_owner",
+      exchange_id: "exch_1",
+      override_price: 2,
+    })
+    expect(service.createOrderCycleProducts).not.toHaveBeenCalled()
   })
 
   it("refuses the store's variant when another store holds the cycle's row for it, and leaves that row alone", async () => {
@@ -273,12 +302,33 @@ describe("exchange products — object-level authorization", () => {
 
   it("answers a failed write with what failed, never the error's text", async () => {
     const service = makeService()
-    service.createOrderCycleProducts.mockRejectedValueOnce(
+    service.createOrderCycleProducts.mockRejectedValue(
       new Error('insert into "order_cycle_product" - column "raw_override_price" does not exist')
     )
     const res = await callPost(service, "sel_owner")
 
     expect({ status: res.statusCode, body: res.body }).toEqual({ status: 500, body: { message: "Failed to add products" } })
+    // Tried once more, then given up.
+    expect(service.createOrderCycleProducts).toHaveBeenCalledTimes(2)
+  })
+
+  it("a create that loses a race is tried once more, and updates the row the other write made", async () => {
+    const rows: Row[] = []
+    const service = makeService({ rows })
+    service.createOrderCycleProducts.mockImplementationOnce(async () => {
+      // The concurrent write that won: the store's own row now exists.
+      rows.push({ id: "ocp_won", seller_id: "sel_owner", variant_id: "var_1" })
+      throw new Error("duplicate key value violates unique constraint")
+    })
+    const res = await callPost(service, "sel_owner", undefined, { products: [{ variant_id: "var_1", override_price: 3 }] })
+
+    expect(res.statusCode).toBe(201)
+    expect(service.updateOrderCycleProducts).toHaveBeenCalledWith({
+      id: "ocp_won",
+      seller_id: "sel_owner",
+      exchange_id: "exch_1",
+      override_price: 3,
+    })
   })
 
   it("rejects an empty product list before touching the service", async () => {

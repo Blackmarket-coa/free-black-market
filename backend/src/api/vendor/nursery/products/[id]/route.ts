@@ -10,7 +10,8 @@ const log = createLogger("api/vendor/nursery/products/[id]")
 /**
  * PUT /vendor/nursery/products/:id — update one of the store's attribute rows.
  *
- * The row must be the store's and on one of its products (`ownedAttribute`);
+ * The row must be the store's (its id or a member's) and on one of its
+ * products (`ownedAttribute`);
  * any other, missing included, is `forbidden()`. Only the attribute columns
  * are written: the body used to be spread into the update, `metadata` and the
  * timestamps included.
@@ -28,7 +29,10 @@ export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
     const row = await ownedAttribute(req, res, sellerId, path.id)
     if (!row) return
     const service = nurseryService(req)
-    await service.updateNurseryProductAttributes(asAttributeUpdate({ ...definedFields(fields), id: row.id }))
+    // A row still held under one of the store's member ids moves to the store.
+    await service.updateNurseryProductAttributes(
+      asAttributeUpdate({ ...definedFields(fields), id: row.id, seller_id: sellerId })
+    )
     const attribute = await service.retrieveNurseryProductAttribute(row.id)
     res.json({ attribute })
   } catch (error) {

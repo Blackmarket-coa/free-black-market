@@ -5,6 +5,7 @@ import OrderCycleModuleService from "../../../../../modules/order-cycle/service"
 import { forbidden } from "../../../../../shared/community-read-access"
 import { createLogger } from "../../../../../shared/logger"
 import { parseRouteInput, recordId, routeFailure } from "../../../../../shared/route-input"
+import { storeKeysOf } from "../../../../../shared/store-keys"
 import { resolveCycleAccess } from "../../_access"
 
 const log = createLogger("api/vendor/order-cycles/[id]/fees")
@@ -41,7 +42,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       try {
         templates = await orderCycleService.listEnterpriseFees({
           id: templateIds,
-          seller_id: access.orderCycle.coordinator_seller_id,
+          seller_id: await storeKeysOf(req.scope, access.orderCycle.coordinator_seller_id),
         })
       } catch (error) {
         log.warn("order cycle fee templates could not be read", { order_cycle_id: id, error })
@@ -98,7 +99,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
   try {
     const [enterprise_fee] = await orderCycleService.listEnterpriseFees(
-      { id: enterprise_fee_id, seller_id: access.sellerId },
+      { id: enterprise_fee_id, seller_id: await storeKeysOf(req.scope, access.sellerId) },
       { take: 1 }
     )
     if (!enterprise_fee) {

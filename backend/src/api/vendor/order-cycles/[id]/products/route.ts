@@ -4,6 +4,7 @@ import type OrderCycleModuleService from "../../../../../modules/order-cycle/ser
 import { forbidden } from "../../../../../shared/community-read-access"
 import { createLogger } from "../../../../../shared/logger"
 import { parseRouteInput, routeFailure } from "../../../../../shared/route-input"
+import { storeKeysOf } from "../../../../../shared/store-keys"
 import { getSellerId } from "../../../quests/_helpers"
 import {
   addCycleProductBody,
@@ -56,8 +57,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     }
 
     if (!isCoordinator) {
-      // Non-coordinators only see their own products
-      filters.seller_id = sellerId
+      // Non-coordinators only see their own products: held under the store's
+      // id or one of its members' ids (written before SD-145).
+      filters.seller_id = await storeKeysOf(req.scope, sellerId)
     }
 
     const products = await orderCycleService.listOrderCycleProducts(filters, {
@@ -106,20 +108,23 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     if (!(await storeOwnsVariants(req, access.sellerId, [body.variant_id]))) {
       return forbidden(res)
     }
-    if (await cycleRowsHeldByOthers(orderCycleService, id, access.sellerId, [body.variant_id])) {
-      return res.status(409).json({
-        message: "Another store already lists this variant in this order cycle",
-      })
+    const keys = await storeKeysOf(req.scope, access.sellerId)
+    const conflict = { message: "Another store already lists this variant in this order cycle" }
+    if (await cycleRowsHeldByOthers(orderCycleService, id, keys, [body.variant_id])) {
+      return res.status(409).json(conflict)
     }
 
-    const product = await saveOwnCycleProduct(orderCycleService, id, body.variant_id, access.sellerId, {
+    const saved = await saveOwnCycleProduct(orderCycleService, id, body.variant_id, keys, {
       available_quantity: body.available_quantity,
       override_price: body.override_price,
       is_visible: body.is_visible ?? true,
       display_order: body.display_order ?? 0,
     })
+    if ("conflict" in saved) {
+      return res.status(409).json(conflict)
+    }
 
-    res.status(201).json({ product })
+    res.status(201).json({ product: saved.product })
   } catch (error) {
     // Never the error's own text: on a database without SD-63's column every
     // write failed here with the SQL error in a 400.

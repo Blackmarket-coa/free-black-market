@@ -6,6 +6,7 @@ import type OrderCycleModuleService from "../../../modules/order-cycle/service"
 import { definedFields } from "../../../shared/defined-fields"
 import { productSellerIds } from "../../../shared/product-sellers"
 import { recordId } from "../../../shared/route-input"
+import { storeKeysOf } from "../../../shared/store-keys"
 import { getSellerId } from "../quests/_helpers"
 
 type OrderCycleRecord = Awaited<
@@ -136,11 +137,15 @@ export async function resolveExchangeAccess(
     return null
   }
 
-  const isOwner = exchange.seller_id === access.sellerId
-  if (requireCoordinator && !access.isCoordinator && !isOwner) {
-    // Writes: coordinator or the exchange's own seller.
-    res.status(403).json({ message: "Access denied" })
-    return null
+  // Writes: coordinator or the exchange's own store, whose id the exchange
+  // holds, or one of its members' ids, which the exchanges route wrote until
+  // SD-145 (`storeKeysOf`).
+  if (requireCoordinator && !access.isCoordinator) {
+    const keys = await storeKeysOf(req.scope, access.sellerId)
+    if (!keys.includes(exchange.seller_id)) {
+      res.status(403).json({ message: "Access denied" })
+      return null
+    }
   }
   // Reads are already satisfied by the cycle participant/coordinator check.
 
@@ -161,13 +166,17 @@ export async function resolveExchangeAccess(
  *
  * A store writes only its own rows, with its own variants: every variant must
  * be of a product the store owns (`seller_product`), and the row written is
- * the one matched by cycle, variant and store. That holds for the cycle's
- * coordinator too. Nothing in the code or the docs gives a coordinator a
- * participant's price, quantity or visibility to set: the panel's add dialog
- * offers only the store's own products (`useProducts`), the service stamps the
- * caller as the row's seller, and the one coordinator power over another
- * store's row that is written down is removal (the `products/[productId]`
- * DELETE and `docs/CDFI_COOP_ROADMAP.md`), which stays.
+ * the one matched by cycle, variant and store, the store being its id or one
+ * of its members' ids (`storeKeysOf`: the routes wrote member ids until
+ * SD-145). That holds for the cycle's coordinator too. Nothing in the code or
+ * the docs gives a coordinator a participant's price, quantity or visibility
+ * to set: the products section of the panel offers only the store's own
+ * products (`useProducts`); `addProductToOrderCycle` stamped the caller only
+ * on a create (and updated whatever row matched the variant), and the
+ * exchange route stamped the exchange's seller, so a coordinator could create
+ * rows in a participant's name, which nothing documents. The one coordinator
+ * power over another store's row that is written down is removal (the
+ * `products/[productId]` DELETE and `docs/CDFI_COOP_ROADMAP.md`), which stays.
  */
 
 /** The columns a store sets on its row; never `seller_id`, `sold_quantity` or the ids. */
@@ -232,56 +241,75 @@ export type CycleProductWrite = {
 }
 
 /**
- * Whether another store holds the cycle's row for any of these variants.
+ * Whether another store holds the cycle's row for any of these variants:
+ * a row whose `seller_id` is not one of the store's keys.
  *
  * The store's variant listed in its cycle under another store can only be a
  * row written before SD-158 (or of a product that changed hands). It is
- * refused with 409 rather than taken over, as a nursery attribute row is: the
+ * refused with 409 rather than replaced, as a nursery attribute row is: the
  * row carries the cycle's sales of the variant (`sold_quantity`, and the
- * `order_cycle_sale` rows that name it), which a takeover would hand to the
- * new owner or reset. Where SD-63's column is missing, no row can have been
- * written through these routes at all.
+ * `order_cycle_sale` rows that name it), which a replacement would orphan or
+ * hand to the new owner. A row held under one of the store's own member ids
+ * is the store's, not another store's (SD-158 review: it answered 409).
  */
 export async function cycleRowsHeldByOthers(
   service: OrderCycleModuleService,
   cycleId: string,
-  sellerId: string,
+  storeKeys: string[],
   variantIds: string[]
 ): Promise<boolean> {
   const rows = (await service.listOrderCycleProducts({
     order_cycle_id: cycleId,
     variant_id: [...new Set(variantIds)],
   })) as CycleProductRow[]
-  return rows.some((row) => row.seller_id !== sellerId)
+  return rows.some((row) => !storeKeys.includes(row.seller_id))
 }
 
 /**
  * Write the store's own row for a variant in a cycle: the row matched by
- * cycle, variant and store is updated with the fields sent, or created. The
- * caller has checked that the variant is the store's (`storeOwnsVariants`)
- * and that no other store holds the cycle's row for it
- * (`cycleRowsHeldByOthers`); a create racing another store's still fails on
- * the unique index and nothing is overwritten.
+ * cycle, variant and store (`storeKeys[0]` is the store's id, the rest its
+ * members') is updated in place with the fields sent and its `seller_id` set
+ * to the store's id, or created. Answers `conflict` when another store holds
+ * the cycle's row for the variant, and writes nothing then.
+ *
+ * The caller has checked that the variant is the store's
+ * (`storeOwnsVariants`). A create that loses a race with another write for the
+ * same (cycle, variant) fails on the unique index; it is tried once more from
+ * the top, which finds the row the other write made: the store's own is
+ * updated, another store's is a conflict (SD-158 review measured bursts of
+ * eight answering five fixed 500s). Any other failure fails again and
+ * propagates.
  */
 export async function saveOwnCycleProduct(
   service: OrderCycleModuleService,
   cycleId: string,
   variantId: string,
-  sellerId: string,
+  storeKeys: string[],
   fields: CycleProductWrite
-): Promise<unknown> {
+): Promise<{ product: unknown } | { conflict: true }> {
+  const sellerId = storeKeys[0]
   const given = definedFields(fields)
-  const [own] = (await service.listOrderCycleProducts(
-    { order_cycle_id: cycleId, variant_id: variantId, seller_id: sellerId },
-    { take: 1 }
-  )) as CycleProductRow[]
-  if (own) {
-    return service.updateOrderCycleProducts({ ...given, id: own.id })
+  for (let attempt = 1; ; attempt++) {
+    const rows = (await service.listOrderCycleProducts({
+      order_cycle_id: cycleId,
+      variant_id: variantId,
+    })) as CycleProductRow[]
+    if (rows.some((row) => !storeKeys.includes(row.seller_id))) return { conflict: true }
+    const [own] = rows
+    if (own) {
+      return { product: await service.updateOrderCycleProducts({ ...given, id: own.id, seller_id: sellerId }) }
+    }
+    try {
+      return {
+        product: await service.createOrderCycleProducts({
+          ...given,
+          order_cycle_id: cycleId,
+          variant_id: variantId,
+          seller_id: sellerId,
+        }),
+      }
+    } catch (error) {
+      if (attempt >= 2) throw error
+    }
   }
-  return service.createOrderCycleProducts({
-    ...given,
-    order_cycle_id: cycleId,
-    variant_id: variantId,
-    seller_id: sellerId,
-  })
 }

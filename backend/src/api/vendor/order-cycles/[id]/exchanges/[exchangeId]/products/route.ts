@@ -4,6 +4,7 @@ import type OrderCycleModuleService from "../../../../../../../modules/order-cyc
 import { forbidden } from "../../../../../../../shared/community-read-access"
 import { createLogger } from "../../../../../../../shared/logger"
 import { parseRouteInput, routeFailure } from "../../../../../../../shared/route-input"
+import { storeKeysOf } from "../../../../../../../shared/store-keys"
 import {
   addExchangeProductsBody,
   cycleRowsHeldByOthers,
@@ -70,7 +71,9 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const variantIds = body.products.map((product) => product.variant_id)
 
   try {
-    if (exchange.seller_id !== access.sellerId) {
+    // The store's own exchange: held under its id or one of its members' ids.
+    const keys = await storeKeysOf(req.scope, access.sellerId)
+    if (!keys.includes(exchange.seller_id)) {
       return forbidden(res)
     }
     if (!(await storeOwnsVariants(req, access.sellerId, variantIds))) {
@@ -79,21 +82,25 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     // The cycle comes from the exchange itself, so a mismatched path id can
     // never decide where a row lands.
     const cycleId = exchange.order_cycle_id
-    if (await cycleRowsHeldByOthers(orderCycleService, cycleId, access.sellerId, variantIds)) {
-      return res.status(409).json({
-        message: "Another store already lists one of these variants in this order cycle",
-      })
+    const conflict = { message: "Another store already lists one of these variants in this order cycle" }
+    if (await cycleRowsHeldByOthers(orderCycleService, cycleId, keys, variantIds)) {
+      return res.status(409).json(conflict)
     }
 
+    // Not atomic across variants: another store's row made for one of them
+    // between the check above and its write stops the loop with a 409, after
+    // the variants before it were written.
     const created: unknown[] = []
     for (const product of body.products) {
-      created.push(
-        await saveOwnCycleProduct(orderCycleService, cycleId, product.variant_id, access.sellerId, {
-          exchange_id: exchange.id,
-          available_quantity: product.available_quantity,
-          override_price: product.override_price,
-        })
-      )
+      const saved = await saveOwnCycleProduct(orderCycleService, cycleId, product.variant_id, keys, {
+        exchange_id: exchange.id,
+        available_quantity: product.available_quantity,
+        override_price: product.override_price,
+      })
+      if ("conflict" in saved) {
+        return res.status(409).json(conflict)
+      }
+      created.push(saved.product)
     }
 
     res.status(201).json({ products: created })

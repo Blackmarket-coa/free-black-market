@@ -52,7 +52,7 @@ medusaIntegrationTestRunner({
     const nursery = () => container().resolve(NURSERY_VERTICAL_MODULE)
 
     type Login = { email: string; authIdentityId: string }
-    type Team = { store: { id: string }; owner: string; member: string }
+    type Team = { store: { id: string }; owner: string; member: string; ownerMemberId: string; memberId: string }
 
     async function plainLogin(prefix: string): Promise<Login> {
       const email = `${prefix}-${uid()}@example.com`
@@ -84,7 +84,21 @@ medusaIntegrationTestRunner({
         .resolve(SELLER_MODULE)
         .createMembers([{ seller_id: store.id, name: "Member", email: memberLogin.email, role: "member" }])
       await container().resolve(Modules.AUTH).updateAuthIdentities([{ id: memberLogin.authIdentityId, app_metadata: { seller_id: member.id } }])
-      return { store, owner: tokenFor(ownerLogin, ownerMember.id), member: tokenFor(memberLogin, member.id) }
+      return {
+        store,
+        owner: tokenFor(ownerLogin, ownerMember.id),
+        member: tokenFor(memberLogin, member.id),
+        ownerMemberId: ownerMember.id,
+        memberId: member.id,
+      }
+    }
+
+    /** A member of the store who has since been removed (Mercur soft-deletes it). */
+    async function removedMemberOf(store: { id: string }) {
+      const sellers = container().resolve(SELLER_MODULE)
+      const [gone] = await sellers.createMembers([{ seller_id: store.id, name: "Gone", email: `gone-${uid()}@example.com`, role: "member" }])
+      await sellers.softDeleteMembers([gone.id])
+      return gone.id as string
     }
 
     /** A product of the store, linked through `seller_product`, with `variants` variants. */
@@ -117,6 +131,14 @@ medusaIntegrationTestRunner({
           [productId]
         )
       ).rows
+    const attributeRowById = async (id: string) =>
+      (
+        await pg().raw(
+          `SELECT id, seller_id, product_id, subtype::text AS subtype, hardiness_zone, cost_to_produce, tag_data, deleted_at IS NOT NULL AS deleted
+             FROM nursery_product_attribute WHERE id = ?`,
+          [id]
+        )
+      ).rows[0]
     const postAttribute = (token: string, body: Record<string, unknown>) => call(api.post("/vendor/nursery/products", body, bearer(token)))
     const listedIds = async (token: string) => {
       const res = await call(api.get("/vendor/nursery/products", bearer(token)))
@@ -289,18 +311,93 @@ medusaIntegrationTestRunner({
         expect(await attributeRows(aPlant.id)).toEqual(row)
       })
 
-      it("A's own POST takes such a row over: A's seller_id, the fields A sent, and nothing B wrote", async () => {
+      it("A's own POST replaces such a row: the old one soft-deleted with B's values kept, a fresh one A's with only what A sent", async () => {
         const a = await team(`Nursery G ${uid()}`)
         const b = await team(`Nursery H ${uid()}`)
-        const { aPlant, rowId } = await plantedRow(a, b)
+        const { aPlant, rowId, row } = await plantedRow(a, b)
 
         const takeover = await postAttribute(a.member, { product_id: aPlant.id, subtype: "live_plant_liner", hardiness_zone: "5b" })
-        expect({ status: takeover.status, id: takeover.data?.attribute?.id }).toEqual({ status: 201, id: rowId })
+        expect(takeover.status).toBe(201)
+        const freshId: string = takeover.data.attribute.id
+        expect(freshId).not.toBe(rowId)
         expect(await attributeRows(aPlant.id)).toEqual([
-          { id: rowId, seller_id: a.store.id, product_id: aPlant.id, subtype: "live_plant_liner", hardiness_zone: "5b", cost_to_produce: null, tag_data: null },
+          { id: freshId, seller_id: a.store.id, product_id: aPlant.id, subtype: "live_plant_liner", hardiness_zone: "5b", cost_to_produce: null, tag_data: null },
         ])
+        // B's row is kept, soft-deleted, exactly as B left it.
+        expect(await attributeRowById(rowId)).toEqual({ ...row[0], deleted: true })
+        expect(row[0]).toMatchObject({ seller_id: b.store.id, cost_to_produce: 3.5, tag_data: { note: "written by B" } })
         expect(JSON.stringify(takeover.data)).not.toContain("written by B")
-        expect(await listedIds(a.owner)).toEqual([rowId])
+        expect(await listedIds(a.owner)).toEqual([freshId])
+      })
+
+      /** A's product with a row written under `sellerKey`, as the routes did before SD-145. */
+      async function legacyRow(storeId: string, sellerKey: string) {
+        const plant = await storeProduct(storeId)
+        const row = await nursery().createNurseryProductAttributes({
+          seller_id: sellerKey,
+          product_id: plant.id,
+          subtype: "seed_packet",
+          hardiness_zone: "6b",
+          cost_to_produce: 2.75,
+        })
+        return { plant, rowId: row.id as string }
+      }
+
+      it("rows the store wrote under its members' ids before SD-145, removed members included, are listed for it, and not for another store", async () => {
+        const a = await team(`Nursery M ${uid()}`)
+        const b = await team(`Nursery N ${uid()}`)
+        const byOwner = await legacyRow(a.store.id, a.ownerMemberId)
+        const byGone = await legacyRow(a.store.id, await removedMemberOf(a.store))
+        const byOtherStore = await legacyRow(a.store.id, b.memberId)
+
+        expect((await listedIds(a.member)).sort()).toEqual([byOwner.rowId, byGone.rowId].sort())
+        expect(await listedIds(b.owner)).toEqual([])
+        expect(await attributeRowById(byOtherStore.rowId)).toMatchObject({ deleted: false })
+      })
+
+      it("the store's POST updates such a row in place: the same row, the store's id now, what it did not send kept", async () => {
+        const a = await team(`Nursery O ${uid()}`)
+        const byOwner = await legacyRow(a.store.id, a.ownerMemberId)
+
+        const update = await postAttribute(a.member, { product_id: byOwner.plant.id, subtype: "live_plant_1gal" })
+        expect({ status: update.status, id: update.data?.attribute?.id }).toEqual({ status: 201, id: byOwner.rowId })
+        expect(await attributeRows(byOwner.plant.id)).toEqual([
+          { id: byOwner.rowId, seller_id: a.store.id, product_id: byOwner.plant.id, subtype: "live_plant_1gal", hardiness_zone: "6b", cost_to_produce: 2.75, tag_data: null },
+        ])
+      })
+
+      it("the store's PUT by id updates a row a removed member wrote, and moves it to the store", async () => {
+        const a = await team(`Nursery P ${uid()}`)
+        const byGone = await legacyRow(a.store.id, await removedMemberOf(a.store))
+
+        const put = await call(api.put(`/vendor/nursery/products/${byGone.rowId}`, { cost_to_produce: 3 }, bearer(a.owner)))
+        expect({ status: put.status, cost: put.data?.attribute?.cost_to_produce }).toEqual({ status: 200, cost: 3 })
+        expect(await attributeRowById(byGone.rowId)).toMatchObject({ seller_id: a.store.id, hardiness_zone: "6b", cost_to_produce: 3, deleted: false })
+      })
+
+      it("another store's member id is another store: the owner's POST replaces that row", async () => {
+        const a = await team(`Nursery Q ${uid()}`)
+        const b = await team(`Nursery S ${uid()}`)
+        const byOtherStore = await legacyRow(a.store.id, b.memberId)
+
+        const replaced = await postAttribute(a.member, { product_id: byOtherStore.plant.id, subtype: "live_plant_1gal" })
+        expect(replaced.status).toBe(201)
+        expect(replaced.data.attribute.id).not.toBe(byOtherStore.rowId)
+        expect(await attributeRowById(byOtherStore.rowId)).toMatchObject({ seller_id: b.memberId, cost_to_produce: 2.75, deleted: true })
+      })
+
+      it("concurrent POSTs for one product all succeed, and leave one row, the store's", async () => {
+        const a = await team(`Nursery R ${uid()}`)
+        const plant = await storeProduct(a.store.id)
+        const statuses = await Promise.all(
+          Array.from({ length: 8 }, (_, i) =>
+            postAttribute(i % 2 ? a.owner : a.member, { product_id: plant.id, subtype: "seed_packet", hardiness_zone: `z${i}` }).then((r) => r.status)
+          )
+        )
+        expect(statuses).toEqual(Array(8).fill(201))
+        const rows = await attributeRows(plant.id)
+        expect(rows).toHaveLength(1)
+        expect(rows[0].seller_id).toBe(a.store.id)
       })
     })
 
@@ -456,6 +553,77 @@ medusaIntegrationTestRunner({
         expect(await cycleRows(cycleId)).toEqual(beforeConflict)
       })
 
+      /** A cycle row written under `sellerKey`, as the routes did before SD-145. */
+      const legacyCycleRow = (cycleId: string, variantId: string, sellerKey: string) =>
+        cycles().createOrderCycleProducts({ order_cycle_id: cycleId, variant_id: variantId, seller_id: sellerKey, available_quantity: 4 })
+
+      it("the coordinator's row held under its member id is updated in place: the same row, the store's id now, the quantity it did not send kept", async () => {
+        const { a, aProduct, cycleId } = await cycleWithListing(2)
+        const legacy = await legacyCycleRow(cycleId, aProduct.variants[1], a.ownerMemberId)
+
+        const update = await addToCycle(a.member, cycleId, { variant_id: aProduct.variants[1], override_price: 8 })
+        expect({ status: update.status, id: update.data?.product?.id }).toEqual({ status: 201, id: legacy.id })
+        expect((await cycleRows(cycleId)).find((r: { id: string }) => r.id === legacy.id)).toMatchObject({
+          seller_id: a.store.id,
+          override_price: "8",
+          available_quantity: 4,
+        })
+      })
+
+      it("a participant lists its rows held under its member ids", async () => {
+        const { b, bProduct, cycleId } = await cycleWithListing()
+        const legacy = await legacyCycleRow(cycleId, bProduct.variants[0], b.memberId)
+
+        const list = await call(api.get(`/vendor/order-cycles/${cycleId}/products`, bearer(b.owner)))
+        expect({ status: list.status, ids: list.data?.products?.map((p: { id: string }) => p.id) }).toEqual({ status: 200, ids: [legacy.id] })
+      })
+
+      it("a participant puts its variants on its exchange held under its member id", async () => {
+        const { a, b, bProduct, cycleId } = await cycleWithListing()
+        const legacyExchange = await cycles().createOrderCycleExchanges({
+          order_cycle_id: cycleId,
+          exchange_type: "incoming",
+          seller_id: b.memberId,
+          receiver_id: a.store.id,
+        })
+
+        const res = await addToExchange(b.member, cycleId, legacyExchange.id, [{ variant_id: bProduct.variants[1] }])
+        expect({ status: res.status, seller: res.data?.products?.[0]?.seller_id, exchange: res.data?.products?.[0]?.exchange_id }).toEqual({
+          status: 201,
+          seller: b.store.id,
+          exchange: legacyExchange.id,
+        })
+      })
+
+      it("a participant removes its row held under its member id; another participant cannot touch it", async () => {
+        const { a, b, bProduct, aProduct, cycleId } = await cycleWithListing()
+        const legacy = await legacyCycleRow(cycleId, bProduct.variants[0], b.memberId)
+        const aLegacy = await legacyCycleRow(cycleId, aProduct.variants[1], a.ownerMemberId)
+
+        // B's member id makes no row of A's B's: still refused.
+        const bOnA = await addToCycle(b.owner, cycleId, { variant_id: aProduct.variants[1], override_price: 0.01 })
+        expect({ status: bOnA.status, body: bOnA.data }).toEqual({ status: 403, body: FORBIDDEN })
+        const bRemovesA = await removeFromCycle(b.member, cycleId, aLegacy.id)
+        expect({ status: bRemovesA.status, body: bRemovesA.data }).toEqual({ status: 403, body: FORBIDDEN })
+
+        const removes = await removeFromCycle(b.member, cycleId, legacy.id)
+        expect({ status: removes.status, body: removes.data }).toEqual({ status: 200, body: { success: true } })
+        expect((await cycleRows(cycleId)).map((r: { id: string }) => r.id)).not.toContain(legacy.id)
+      })
+
+      it("concurrent POSTs for one variant all succeed, and leave one row, the store's", async () => {
+        const { a, aProduct, cycleId } = await cycleWithListing(2)
+        const statuses = await Promise.all(
+          Array.from({ length: 8 }, (_, i) =>
+            addToCycle(i % 2 ? a.owner : a.member, cycleId, { variant_id: aProduct.variants[1], available_quantity: i }).then((r) => r.status)
+          )
+        )
+        expect(statuses).toEqual(Array(8).fill(201))
+        const rows = (await cycleRows(cycleId)).filter((r: { variant_id: string }) => r.variant_id === aProduct.variants[1])
+        expect(rows).toHaveLength(1)
+        expect(rows[0].seller_id).toBe(a.store.id)
+      })
+
       it("a failed write answers what failed, never the database's text", async () => {
         const a = await team(`Hub G ${uid()}`)
         const aProduct = await storeProduct(a.store.id)
@@ -464,14 +632,14 @@ medusaIntegrationTestRunner({
         const sqlError = () =>
           new Error('insert into "order_cycle_product" ("id") values ($1) - column "raw_override_price" of relation "order_cycle_product" does not exist')
 
-        const create = jest.spyOn(cycles(), "createOrderCycleProducts").mockRejectedValueOnce(sqlError())
+        // A failure that is not a lost race fails again when tried once more.
+        const create = jest.spyOn(cycles(), "createOrderCycleProducts").mockRejectedValue(sqlError())
         const viaCycle = await addToCycle(a.member, cycleId, { variant_id: aProduct.variants[0] })
         expect({ status: viaCycle.status, body: viaCycle.data }).toEqual({ status: 500, body: { message: "Failed to add product to order cycle" } })
-        create.mockRejectedValueOnce(sqlError())
         const viaExchange = await addToExchange(a.member, cycleId, exchange.data.exchange.id, [{ variant_id: aProduct.variants[0] }])
         expect({ status: viaExchange.status, body: viaExchange.data }).toEqual({ status: 500, body: { message: "Failed to add products" } })
-        // The route's own write was the one refused, both times.
-        expect(create).toHaveBeenCalledTimes(2)
+        // The routes' own writes were the ones refused, twice each.
+        expect(create).toHaveBeenCalledTimes(4)
         expect(await cycleRows(cycleId)).toEqual([])
       })
     })
@@ -501,6 +669,12 @@ medusaIntegrationTestRunner({
         expect({ status: own.status, template: own.data?.fee?.enterprise_fee?.name }).toEqual({ status: 201, template: "Hub packing" })
         expect(await feeRows()).toEqual([aFee.id])
 
+        // A template the coordinator made under its member id before SD-145 is its own.
+        const legacyFee = await cycles().createFeeTemplate(a.ownerMemberId, { name: "Hub transport", fee_type: "transport", calculator_type: "flat_rate", amount: 90 })
+        const legacy = await apply({ enterprise_fee_id: legacyFee.id, application_type: "coordinator" })
+        expect({ status: legacy.status, template: legacy.data?.fee?.enterprise_fee?.name }).toEqual({ status: 201, template: "Hub transport" })
+        expect(await feeRows()).toEqual([aFee.id, legacyFee.id])
+
         // A fee that names B's template, attached before the POST checked:
         // listed, without B's template.
         await cycles().createOrderCycleFees({ order_cycle_id: cycleId, enterprise_fee_id: bFee.id, application_type: "coordinator" })
@@ -508,6 +682,7 @@ medusaIntegrationTestRunner({
         expect(listed.status).toBe(200)
         const byTemplate = new Map((listed.data.fees as Array<{ enterprise_fee_id: string; enterprise_fee?: { name: string } }>).map((f) => [f.enterprise_fee_id, f]))
         expect(byTemplate.get(aFee.id)?.enterprise_fee?.name).toBe("Hub packing")
+        expect(byTemplate.get(legacyFee.id)?.enterprise_fee?.name).toBe("Hub transport")
         expect(byTemplate.get(bFee.id)).toBeDefined()
         expect(byTemplate.get(bFee.id)?.enterprise_fee).toBeUndefined()
         expect(JSON.stringify(listed.data)).not.toContain("Private markup")

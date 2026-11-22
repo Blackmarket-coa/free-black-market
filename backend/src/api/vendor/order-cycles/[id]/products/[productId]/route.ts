@@ -5,6 +5,7 @@ import type OrderCycleModuleService from "../../../../../../modules/order-cycle/
 import { forbidden } from "../../../../../../shared/community-read-access"
 import { createLogger } from "../../../../../../shared/logger"
 import { parseRouteInput, recordId, routeFailure } from "../../../../../../shared/route-input"
+import { storeKeysOf } from "../../../../../../shared/store-keys"
 import { resolveCycleAccess } from "../../../_access"
 
 const log = createLogger("api/vendor/order-cycles/[id]/products/[productId]")
@@ -60,7 +61,8 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
       { take: 1 }
     )) as OrderCycleProductRow[]
 
-    const isOwner = product?.seller_id === access.sellerId
+    // The caller's own row: held under its store's id or one of its members'.
+    const isOwner = product ? (await storeKeysOf(req.scope, access.sellerId)).includes(product.seller_id) : false
     if (!product || product.order_cycle_id !== id || (!access.isCoordinator && !isOwner)) {
       return forbidden(res)
     }

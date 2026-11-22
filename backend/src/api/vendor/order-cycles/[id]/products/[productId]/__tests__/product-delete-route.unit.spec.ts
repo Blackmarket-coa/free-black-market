@@ -1,3 +1,4 @@
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { DELETE } from "../route"
 import { ORDER_CYCLE_MODULE } from "../../../../../../../modules/order-cycle"
 
@@ -61,6 +62,14 @@ const makeService = (o: Overrides = {}) => ({
 
 type Service = ReturnType<typeof makeService>
 
+/** Each store's members (removed ones included), as `storeKeysOf` reads them from `member`. */
+const MEMBERS: Record<string, string[]> = { sel_member: ["mem_member_1"], sel_other: ["mem_other_1"] }
+const pg = {
+  raw: async (_sql: string, [sellerId]: string[]) => ({
+    rows: (MEMBERS[sellerId] ?? []).map((id) => ({ id })),
+  }),
+}
+
 const makeReq = (
   service: Service,
   actorId: string | undefined,
@@ -75,9 +84,11 @@ const makeReq = (
   _sellerContextResolved: actorId ? true : undefined,
   scope: {
     resolve: (key: string) =>
-      key === ORDER_CYCLE_MODULE || key === "orderCycleModuleService"
+      key === ORDER_CYCLE_MODULE
         ? service
-        : undefined,
+        : key === ContainerRegistrationKeys.PG_CONNECTION
+          ? pg
+          : undefined,
   },
 })
 
@@ -155,6 +166,16 @@ describe("DELETE /vendor/order-cycles/:id/products/:productId", () => {
     // They added it through the sibling POST, which stamps seller_id from the
     // caller; they must be able to take it back out.
     const service = makeService({ memberships: MEMBER })
+    const res = await callDelete(service, "sel_member")
+    expect(res.statusCode).toBe(200)
+    expect(service.deleteOrderCycleProducts).toHaveBeenCalledWith("ocp_1")
+  })
+
+  it("lets a participant remove its own product held under one of its member ids (written before SD-145)", async () => {
+    const service = makeService({
+      memberships: MEMBER,
+      product: { id: "ocp_1", order_cycle_id: "oc_1", seller_id: "mem_member_1" },
+    })
     const res = await callDelete(service, "sel_member")
     expect(res.statusCode).toBe(200)
     expect(service.deleteOrderCycleProducts).toHaveBeenCalledWith("ocp_1")

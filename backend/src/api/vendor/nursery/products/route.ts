@@ -3,29 +3,23 @@ import { forbidden } from "../../../../shared/community-read-access"
 import { createLogger } from "../../../../shared/logger"
 import { parseRouteInput, routeFailure } from "../../../../shared/route-input"
 import { getSellerId } from "../../quests/_helpers"
-import {
-  nurseryService,
-  onStoreProducts,
-  saveAttributeAsProductOwner,
-  storeOwnsProduct,
-  upsertAttributeBody,
-} from "../_access"
+import { saveAttributeAsProductOwner, storeAttributes, storeOwnsProduct, upsertAttributeBody } from "../_access"
 
 const log = createLogger("api/vendor/nursery/products")
 
 /**
  * GET /vendor/nursery/products — the store's nursery listing attributes.
  *
- * Only rows on the store's own products (`onStoreProducts`): a row the store
- * wrote on another store's product before SD-158 is not listed.
+ * The rows held under the store's id or one of its members' ids, on the
+ * store's own products (`storeAttributes`): a row the store wrote on another
+ * store's product before SD-158 is not listed.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const sellerId = await getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   try {
-    const rows = await nurseryService(req).listForSeller(sellerId)
-    const attributes = await onStoreProducts(req, sellerId, rows)
+    const attributes = await storeAttributes(req, sellerId)
     res.json({ attributes, count: attributes.length })
   } catch (error) {
     routeFailure(log, req, res, "Failed to list nursery attributes", error)
@@ -55,17 +49,13 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     if (!(await storeOwnsProduct(req, sellerId, product_id))) {
       return forbidden(res)
     }
-    const { attribute, previousSellerId } = await saveAttributeAsProductOwner(
-      nurseryService(req),
-      sellerId,
-      product_id,
-      fields
-    )
-    if (previousSellerId) {
-      log.warn("nursery attribute row taken over by its product's owner", {
+    const { attribute, replaced } = await saveAttributeAsProductOwner(req, sellerId, product_id, fields)
+    if (replaced) {
+      log.warn("nursery attribute row another store wrote on the product's owner's product soft-deleted and replaced", {
         product_id,
         seller_id: sellerId,
-        previous_seller_id: previousSellerId,
+        replaced_row_id: replaced.id,
+        replaced_seller_id: replaced.seller_id,
       })
     }
     res.status(201).json({ attribute })

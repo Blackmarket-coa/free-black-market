@@ -7,6 +7,7 @@ import { forbidden } from "../../../shared/community-read-access"
 import { definedFields } from "../../../shared/defined-fields"
 import { productSellerIds } from "../../../shared/product-sellers"
 import { recordId } from "../../../shared/route-input"
+import { storeKeysOf } from "../../../shared/store-keys"
 
 /**
  * Which nursery attribute rows a store may write and read (SD-158).
@@ -20,13 +21,14 @@ import { recordId } from "../../../shared/route-input"
  * and whose `hardiness_zone` was overwritten; B could also create a row for
  * another of A's products.
  *
- * A row is the store's when its `seller_id` is the store AND its product is
- * the store's, by Mercur's seller-product link (`seller_product`, the only
- * record of who owns a product). Both halves are needed: the first alone
- * would leave B the rows it wrote on A's products before this fix. A row
- * that is missing, another store's, or on a product the store does not own
- * gets `forbidden()`: 403 for each, so the status says nothing about which
- * ids exist.
+ * A row is the store's when its `seller_id` is one of the store's keys (the
+ * store's id, or the id of one of its members, removed ones included: the
+ * routes wrote member ids until SD-145, `storeKeysOf`) AND its product is the
+ * store's, by Mercur's seller-product link (`seller_product`, the only record
+ * of who owns a product). Both halves are needed: the first alone would leave
+ * B the rows it wrote on A's products before this fix. A row that is missing,
+ * another store's, or on a product the store does not own gets `forbidden()`:
+ * 403 for each, so the status says nothing about which ids exist.
  */
 
 type Res = Pick<MedusaResponse, "status">
@@ -58,21 +60,6 @@ export type AttributeFields = Partial<z.output<typeof updateAttributeBody>>
 
 type AttributeRow = { id: string; seller_id: string; product_id: string }
 
-/**
- * What a row is reset to when the product's owner takes it over: every
- * column it writes, empty. Nothing another store wrote survives the takeover.
- */
-const EMPTY_ROW = {
-  edible_use: null,
-  medicinal_use: null,
-  hardiness_zone: null,
-  propagation_method: null,
-  channel_fit: null,
-  cost_to_produce: null,
-  tag_data: null,
-  metadata: null,
-}
-
 export function nurseryService(req: MedusaRequest): NurseryVerticalModuleService {
   return req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)
 }
@@ -83,14 +70,13 @@ export async function storeOwnsProduct(req: MedusaRequest, sellerId: string, pro
 }
 
 /**
- * The rows among `rows` whose product the store owns. A row the store wrote
- * on another store's product before SD-158 is not the store's to read.
+ * The store's attribute rows: held under one of its keys, and on one of its
+ * products. A row the store wrote on another store's product before SD-158 is
+ * not the store's to read.
  */
-export async function onStoreProducts<T extends { product_id: string }>(
-  req: MedusaRequest,
-  sellerId: string,
-  rows: T[]
-): Promise<T[]> {
+export async function storeAttributes(req: MedusaRequest, sellerId: string): Promise<AttributeRow[]> {
+  const keys = await storeKeysOf(req.scope, sellerId)
+  const rows = (await nurseryService(req).listNurseryProductAttributes({ seller_id: keys })) as AttributeRow[]
   const owners = await productSellerIds(
     req.scope,
     rows.map((row) => row.product_id)
@@ -106,7 +92,8 @@ export async function ownedAttribute(
   id: string
 ): Promise<AttributeRow | null> {
   const [row] = (await nurseryService(req).listNurseryProductAttributes({ id }, { take: 1 })) as AttributeRow[]
-  if (!row || row.seller_id !== sellerId || !(await storeOwnsProduct(req, sellerId, row.product_id))) {
+  const keys = row ? await storeKeysOf(req.scope, sellerId) : []
+  if (!row || !keys.includes(row.seller_id) || !(await storeOwnsProduct(req, sellerId, row.product_id))) {
     forbidden(res)
     return null
   }
@@ -131,44 +118,61 @@ function asAttributeCreate(values: Record<string, unknown>): CreateInput {
   return values as unknown as CreateInput
 }
 
+export type SavedAttribute = {
+  attribute: unknown
+  /** The row another store held on the product, now soft-deleted; or null. */
+  replaced: { id: string; seller_id: string } | null
+}
+
 /**
- * Write the store's attribute row for a product it owns: create it, update it
- * with the fields sent, or take over a row another store wrote.
+ * Write the store's attribute row for a product it owns. The caller must
+ * already have checked that the store owns the product (`storeOwnsProduct`).
  *
- * The caller must already have checked that the store owns the product
- * (`storeOwnsProduct`). The row the product has is matched by store and
- * product: the store's own row is updated with the fields sent and nothing
- * else. Because `product_id` is unique, a row another store wrote on the
- * product before SD-158 cannot be ignored on write (a create would fail on the
- * constraint and leave the owner unable to describe its own product), so the
- * owner's write takes it over: `seller_id` becomes the owner and every other
- * column is reset to what was sent, empty otherwise, which is how bookings
- * resolve the same case (`saveConfigAsProductOwner`, SD-83).
- * `previousSellerId` names that other store, or is null.
+ * - The store's own row (held under one of its keys) is updated in place with
+ *   the fields sent, and its `seller_id` set to the store's id: a row still
+ *   held under a member id keeps everything the store wrote (SD-158 review:
+ *   the takeover below used to empty it).
+ * - A row another store wrote on the product before SD-158 is soft-deleted
+ *   and a fresh row is made for the store with the fields sent. Because
+ *   `product_id` is unique among live rows (the index is `WHERE deleted_at IS
+ *   NULL`), the owner could never write otherwise. The old row is kept, with
+ *   its values, for whoever looks into it; nothing it holds reaches the owner.
+ * - No row: one is made.
+ *
+ * A create that loses a race with another write for the product fails on the
+ * unique index; it is tried once more from the top, which then finds the row
+ * the other write made and updates it (SD-158 review measured bursts of eight
+ * answering five fixed 500s). A create that fails for any other reason fails
+ * again and propagates. A takeover whose create fails leaves the other store's
+ * row soft-deleted; the owner's next POST makes the fresh row.
  */
 export async function saveAttributeAsProductOwner(
-  service: NurseryVerticalModuleService,
+  req: MedusaRequest,
   sellerId: string,
   productId: string,
   fields: AttributeFields
-): Promise<{ attribute: unknown; previousSellerId: string | null }> {
+): Promise<SavedAttribute> {
+  const service = nurseryService(req)
+  const keys = await storeKeysOf(req.scope, sellerId)
   const given = definedFields(fields)
-  const [existing] = (await service.listNurseryProductAttributes({ product_id: productId }, { take: 1 })) as AttributeRow[]
-  if (!existing) {
-    const attribute = await service.createNurseryProductAttributes(
-      asAttributeCreate({ ...given, seller_id: sellerId, product_id: productId })
-    )
-    return { attribute, previousSellerId: null }
-  }
-  if (existing.seller_id === sellerId) {
-    await service.updateNurseryProductAttributes(asAttributeUpdate({ ...given, id: existing.id }))
-  } else {
-    await service.updateNurseryProductAttributes(
-      asAttributeUpdate({ ...EMPTY_ROW, ...given, id: existing.id, seller_id: sellerId })
-    )
-  }
-  return {
-    attribute: await service.retrieveNurseryProductAttribute(existing.id),
-    previousSellerId: existing.seller_id === sellerId ? null : existing.seller_id,
+  let replaced: SavedAttribute["replaced"] = null
+  for (let attempt = 1; ; attempt++) {
+    const [existing] = (await service.listNurseryProductAttributes({ product_id: productId }, { take: 1 })) as AttributeRow[]
+    if (existing && keys.includes(existing.seller_id)) {
+      await service.updateNurseryProductAttributes(asAttributeUpdate({ ...given, id: existing.id, seller_id: sellerId }))
+      return { attribute: await service.retrieveNurseryProductAttribute(existing.id), replaced }
+    }
+    if (existing) {
+      await service.softDeleteNurseryProductAttributes(existing.id)
+      replaced = { id: existing.id, seller_id: existing.seller_id }
+    }
+    try {
+      const attribute = await service.createNurseryProductAttributes(
+        asAttributeCreate({ ...given, seller_id: sellerId, product_id: productId })
+      )
+      return { attribute, replaced }
+    } catch (error) {
+      if (attempt >= 2) throw error
+    }
   }
 }
