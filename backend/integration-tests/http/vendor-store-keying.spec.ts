@@ -182,27 +182,6 @@ medusaIntegrationTestRunner({
       return order as { id: string }
     }
 
-    beforeAll(async () => {
-      // A fixture, not FBM's behaviour (SD-63): on a database built from the
-      // migrations these three tables lack the raw_* companions Medusa writes
-      // for their bigNumber fields, so no insert into them can work at all
-      // (module-schema-drift.spec.ts lists them in KNOWN_DRIFT). The keying
-      // checked here is independent of that; without the columns,
-      // POST /vendor/enterprise-fees answers 500 for every caller.
-      await pg().raw(`
-        ALTER TABLE "enterprise_fee" ADD COLUMN IF NOT EXISTS "raw_amount" JSONB NULL;
-        ALTER TABLE "demand_post"
-          ADD COLUMN IF NOT EXISTS "raw_final_total_price" JSONB NULL,
-          ADD COLUMN IF NOT EXISTS "raw_final_unit_price" JSONB NULL,
-          ADD COLUMN IF NOT EXISTS "raw_target_price" JSONB NULL,
-          ADD COLUMN IF NOT EXISTS "raw_total_bounty_amount" JSONB NULL,
-          ADD COLUMN IF NOT EXISTS "raw_total_escrowed" JSONB NULL;
-        ALTER TABLE "supplier_proposal"
-          ADD COLUMN IF NOT EXISTS "raw_delivery_cost" JSONB NULL,
-          ADD COLUMN IF NOT EXISTS "raw_unit_price" JSONB NULL;
-      `)
-    })
-
     afterEach(() => {
       jest.restoreAllMocks()
     })

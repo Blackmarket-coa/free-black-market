@@ -173,20 +173,6 @@ medusaIntegrationTestRunner({
     const removeFromCycle = (token: string, cycleId: string, rowId: string) =>
       call(api.delete(`/vendor/order-cycles/${cycleId}/products/${rowId}`, bearer(token)))
 
-    beforeAll(async () => {
-      // A fixture, not FBM's behaviour (SD-63): on a database built from the
-      // migrations these tables lack the raw_* companion Medusa writes for
-      // their bigNumber field (module-schema-drift.spec.ts lists exactly these
-      // two in KNOWN_DRIFT), so every insert and update of a cycle product
-      // fails with "column raw_override_price does not exist" and the cycle
-      // routes are inert. SD-63's fix adds the columns and arms the routes;
-      // this spec checks them as they will be then. Remove when SD-63 merges.
-      await pg().raw(`
-        ALTER TABLE "order_cycle_product" ADD COLUMN IF NOT EXISTS "raw_override_price" JSONB NULL;
-        ALTER TABLE "enterprise_fee" ADD COLUMN IF NOT EXISTS "raw_amount" JSONB NULL;
-      `)
-    })
-
     afterEach(() => {
       jest.restoreAllMocks()
     })
