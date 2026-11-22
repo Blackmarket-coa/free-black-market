@@ -113,10 +113,11 @@ export function QuickPath() {
 
       toast.success("Quick start saved — let's set up delivery")
       // The full wizard, which opens at the step the backend just recorded
-      // (delivery). This went to "/onboarding?step=step_3": the backend's
-      // answer has `next`, not the `next_step_url` read here, and without
-      // `mode=full` the onboarding route shows this quick path again, so
-      // "Continue to delivery" reloaded itself (SD-151 (5)).
+      // (delivery). The backend answers `next_step_url:
+      // "/onboarding?step=step_3"` (quick-publish/route.ts), and this went
+      // there; but without `mode=full` the onboarding route shows this quick
+      // path again, so "Continue to delivery" reloaded itself (SD-151 (5)).
+      // The answer is not read: the wizard finds its step from the state.
       window.location.assign(QUICK_PATH_NEXT)
     } catch (err) {
       toast.error("Could not save quick start", {
