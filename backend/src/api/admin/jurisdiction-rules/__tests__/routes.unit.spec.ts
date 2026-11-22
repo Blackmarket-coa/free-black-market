@@ -62,7 +62,7 @@ function makeService() {
   return {
     listRuleVersions: jest.fn(async (_filters: Record<string, unknown>) => [rule]),
     listJurisdictionSources: jest.fn(async (_filters: Record<string, unknown>) => [{ id: "jsrc_1" }]),
-    createDraftVersion: jest.fn(async (draft: Record<string, unknown>) => ({
+    createDraftVersion: jest.fn(async (draft: Record<string, unknown>, _options?: { proposedByUserId?: string | null }) => ({
       created: true,
       rule: { ...rule, ...draft },
       superseded_draft_id: null,
@@ -120,7 +120,7 @@ const asUser = (id: string) => ({ actor_id: id, actor_type: "user", auth_identit
 describe("POST /admin/jurisdiction-rules/:id/review", () => {
   const original = process.env[REVIEWER_ALLOWLIST_ENV]
   beforeEach(() => {
-    process.env[REVIEWER_ALLOWLIST_ENV] = "owner@example.com"
+    process.env[REVIEWER_ALLOWLIST_ENV] = "user_owner"
   })
   afterEach(() => {
     if (original === undefined) delete process.env[REVIEWER_ALLOWLIST_ENV]
@@ -140,7 +140,7 @@ describe("POST /admin/jurisdiction-rules/:id/review", () => {
     expect(service.markReviewed).toHaveBeenCalledWith({
       rule_id: "jrule_1",
       expected_content_sha256: HASH,
-      reviewer: { user_id: "user_owner", name: "Ada Okafor" },
+      reviewer: { user_id: "user_owner", name: "Ada Okafor", email: "owner@example.com" },
       note: "Checked against CPD Form #2210.",
     })
   })
@@ -163,11 +163,12 @@ describe("POST /admin/jurisdiction-rules/:id/review", () => {
     expect(service.markReviewed).toHaveBeenCalledWith({
       rule_id: "jrule_1",
       expected_content_sha256: HASH,
-      reviewer: { user_id: "user_owner", name: "Ada Okafor" },
+      reviewer: { user_id: "user_owner", name: "Ada Okafor", email: "owner@example.com" },
       note: null,
     })
     expect(JSON.stringify(service.markReviewed.mock.calls[0])).not.toContain("user_other")
     expect(JSON.stringify(service.markReviewed.mock.calls[0])).not.toContain("Sam Reed")
+    expect(JSON.stringify(service.markReviewed.mock.calls[0])).not.toContain("other@example.com")
   })
 
   it("refuses an admin who is not on the allowlist with 403, and writes nothing", async () => {
@@ -320,11 +321,30 @@ describe("POST /admin/jurisdiction-rules", () => {
     citations: [{ source_id: "jsrc_1", locator: "Labeling, item 4", quote: "A statement" }],
   }
 
-  it("proposes a draft, defaulting the program, and answers 201 with the new version", async () => {
+  it("proposes a draft as the authenticated admin, defaulting the program, and answers 201 with the new version", async () => {
     const { res, service } = await call(createDraft as Handler, { auth: asUser("user_other"), body: draft })
     expect(res.statusCode).toBe(201)
-    expect(service.createDraftVersion).toHaveBeenCalledWith({ ...draft, program: "home_based_food" })
+    expect(service.createDraftVersion).toHaveBeenCalledWith({ ...draft, program: "home_based_food" }, { proposedByUserId: "user_other" })
     expect(res.body).toMatchObject({ rule: { rule_key: "label.statement" }, superseded_draft_id: null })
+  })
+
+  it("refuses an API key, a seller and an unauthenticated request: a proposal records the admin user who made it", async () => {
+    for (const auth of [{ actor_id: "apk_1", actor_type: "api-key" }, { actor_id: "sel_1", actor_type: "seller" }, undefined]) {
+      const { res, service } = await call(createDraft as Handler, { auth, body: draft })
+      expect(res.statusCode).toBe(403)
+      expect(res.body).toMatchObject({ type: "forbidden" })
+      expect(service.createDraftVersion).not.toHaveBeenCalled()
+    }
+  })
+
+  it("takes the proposer from the session, never the body", async () => {
+    const { res, service } = await call(createDraft as Handler, {
+      auth: asUser("user_other"),
+      body: { ...draft, proposed_by_user_id: "user_owner" },
+    })
+    // The schema is strict: a proposer in the body is refused, not used.
+    expect(res.statusCode).toBe(400)
+    expect(service.createDraftVersion).not.toHaveBeenCalled()
   })
 
   it("refuses a body that carries a review field, a version or a hash", async () => {

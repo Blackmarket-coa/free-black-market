@@ -22,10 +22,17 @@ import { RULE_KINDS, RULE_REVIEW_STATUSES } from "../types"
  * A reviewed version stays in force while a correction to it is pending as a
  * draft; it is superseded only when that draft is itself reviewed.
  *
- * `reviewed_by_user_id` and `withdrawn_by_user_id` are admin user ids, taken
- * from the authenticated request and never from a body. They are not customer
- * references (`src/lib/__tests__/customer-data-registry.unit.spec.ts`,
- * NOT_A_CUSTOMER_ID).
+ * `proposed_by_user_id`, `reviewed_by_user_id` and `withdrawn_by_user_id` are
+ * admin user ids, taken from the authenticated request and never from a body.
+ * They are not customer references
+ * (`src/lib/__tests__/customer-data-registry.unit.spec.ts`, NOT_A_CUSTOMER_ID).
+ *
+ * On a database built from the migration, triggers hold the history too: a
+ * row is inserted only as a draft with no review, supersession, withdrawal or
+ * deletion; no row is ever deleted or soft-deleted; and a supersession, a
+ * withdrawal and a review record cannot be changed once written (see the
+ * migration). The model cannot express triggers, so a schema built from it
+ * (the module test runner's) has none.
  *
  * `effective_from` is a calendar date as text, or null when the source states
  * none, which readers are shown as "not stated" (see jurisdiction-source.ts
@@ -51,11 +58,18 @@ const JurisdictionRule = model
     effective_note: model.text().nullable(),
     /** SHA-256 of the canonical content (`content-hash.ts`): what a reviewer signs. */
     content_sha256: model.text(),
+    /**
+     * The admin user who proposed this version, from the authenticated request.
+     * Null only for a version the seed script wrote. Written once.
+     */
+    proposed_by_user_id: model.text().nullable(),
 
     // ---- Review ----
     review_status: model.enum([...RULE_REVIEW_STATUSES]).default("draft"),
     reviewed_by_user_id: model.text().nullable(),
     reviewer_name: model.text().nullable(),
+    /** The reviewer's admin email at the time of the sign-off, for the record. */
+    reviewer_email: model.text().nullable(),
     reviewed_at: model.dateTime().nullable(),
     review_note: model.text().nullable(),
 
@@ -103,11 +117,11 @@ const JurisdictionRule = model
     {
       // A reviewed row names who reviewed it and when; a draft names nobody.
       name: "jurisdiction_rule_review_record_check",
-      expression: `(review_status = 'reviewed') = (reviewed_by_user_id IS NOT NULL AND reviewed_at IS NOT NULL)`,
+      expression: `(review_status = 'reviewed') = (reviewed_by_user_id IS NOT NULL AND reviewer_email IS NOT NULL AND reviewed_at IS NOT NULL)`,
     },
     {
       name: "jurisdiction_rule_draft_has_no_reviewer_check",
-      expression: `review_status = 'reviewed' OR (reviewed_by_user_id IS NULL AND reviewed_at IS NULL AND reviewer_name IS NULL AND review_note IS NULL)`,
+      expression: `review_status = 'reviewed' OR (reviewed_by_user_id IS NULL AND reviewed_at IS NULL AND reviewer_name IS NULL AND reviewer_email IS NULL AND review_note IS NULL)`,
     },
     {
       name: "jurisdiction_rule_superseded_record_check",

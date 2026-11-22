@@ -11,7 +11,10 @@ import { COVERAGE_STATUSES } from "../types"
  * `status_changed_at` recording when it last moved; nothing sets it directly.
  * It is a record, not what readers are told: the service's read methods work
  * the status out from the rule versions each time. `required_rule_keys` is a
- * JSON list of rule keys, set by the seed that opens the jurisdiction.
+ * JSON list of rule keys, set by the seed that opens the jurisdiction. On a
+ * migrated database a trigger lets that list only grow, and refuses a DELETE,
+ * a soft delete or a change of the row's jurisdiction or program
+ * (`../db-guards.ts`), so what "covered" takes cannot be loosened.
  */
 const JurisdictionCoverage = model
   .define("jurisdiction_coverage", {

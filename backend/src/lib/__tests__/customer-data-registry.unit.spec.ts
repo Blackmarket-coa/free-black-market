@@ -299,7 +299,8 @@ const NOT_A_CUSTOMER_ID: Record<string, string> = {
   "kb_contribution.decided_by": "an admin (admin/knowledge-base/contributions/[id]/decide)",
   "hawala_vendor_advance.approved_by": "an admin (admin/hawala/advances/orgs/[id]/approve)",
   "hawala_payout_hold.released_by": "an admin actor or \"system\" (lib/card-refund-attribution.ts, lib/card-order-reconcile.ts)",
-  "jurisdiction_rule.reviewed_by_user_id": "an admin user, the reviewer on JURISDICTION_RULE_REVIEWER_EMAILS, read from the authenticated request (admin/jurisdiction-rules/[id]/review)",
+  "jurisdiction_rule.proposed_by_user_id": "an admin user, read from the authenticated request (admin/jurisdiction-rules POST); null for a version the seed script wrote",
+  "jurisdiction_rule.reviewed_by_user_id": "an admin user, the reviewer on JURISDICTION_RULE_REVIEWER_USER_IDS, read from the authenticated request (admin/jurisdiction-rules/[id]/review)",
   "jurisdiction_rule.withdrawn_by_user_id": "an admin user, read from the authenticated request (admin/jurisdiction-rules/[id]/withdraw)",
   // Read by the review's wider suffix rule (`_key`, `_handle`).
   "opportunity_score.subject_key": "a category slug or a product id, by subject_type (opportunity-engine/models/opportunity-score.ts)",

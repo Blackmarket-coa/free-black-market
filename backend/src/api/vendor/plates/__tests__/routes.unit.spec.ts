@@ -4,6 +4,7 @@ import { JURISDICTION_RULES_MODULE } from "../../../../modules/jurisdiction-rule
 import { PHASE0_FEATURE_FLAGS } from "../../../../shared/feature-flags"
 import { GET as listJurisdictions } from "../jurisdictions/route"
 import { GET as getJurisdiction } from "../jurisdictions/[code]/route"
+import { PLACEHOLDER_TEXT } from "../_shared"
 
 /**
  * `/vendor/plates/*`: what a seller is shown from the jurisdiction-rule store.
@@ -71,6 +72,7 @@ const view = {
   },
   rules: [
     {
+      placeholder: false,
       id: "jrule_1",
       rule_key: "label.product_name",
       version: 1,
@@ -87,6 +89,7 @@ const view = {
       correction_pending: false,
     },
     {
+      placeholder: false,
       id: "jrule_2",
       rule_key: "sales.online_delivery",
       version: 1,
@@ -243,6 +246,47 @@ describe("/vendor/plates", () => {
         document_date_text: "not stated",
         document_date_note: "No date or form number is printed on the document.",
       })
+    })
+
+    it("holds a required rule's place with a placeholder when there is nothing to show, and says the gap is no answer", async () => {
+      const service = makeService()
+      service.getRuleView.mockResolvedValue({
+        ...view,
+        coverage: { ...view.coverage, required_rule_keys: ["label.product_name", "foods.not_allowed", "sales.online_delivery"] },
+        rules: [
+          view.rules[0],
+          { placeholder: true, rule_key: "foods.not_allowed", reason: "withdrawn" },
+          view.rules[1],
+        ],
+      } as unknown as typeof view)
+      const resolve = jest.fn((key: string) => {
+        if (key === JURISDICTION_RULES_MODULE) return service
+        throw new Error(`unexpected container key: ${key}`)
+      })
+      const res = createRes()
+      await (getJurisdiction as Handler)(
+        { params: { code: "US-SC" }, scope: { resolve }, _seller_id: "sel_1", _sellerContextResolved: true, auth_context: { actor_id: "sel_1", actor_type: "seller" } } as never,
+        res as never
+      )
+      expect(res.statusCode).toBe(200)
+      const body = res.body as { rules: Array<Record<string, unknown>>; count: number; placeholder_count: number }
+      expect(body.rules.map((r) => [r.rule_key, r.is_placeholder])).toEqual([
+        ["label.product_name", false],
+        ["foods.not_allowed", true],
+        ["sales.online_delivery", false],
+      ])
+      expect(body.rules[1]).toEqual({
+        rule_key: "foods.not_allowed",
+        is_placeholder: true,
+        placeholder_reason: "withdrawn",
+        display_text:
+          "FBM withdrew its wording for this rule and has none to show right now. That is not a statement about what is or is not allowed.",
+        citations: [],
+      })
+      expect(body).toMatchObject({ count: 3, placeholder_count: 1 })
+      for (const reason of ["withdrawn", "not_reviewed", "unavailable", "no_version"] as const) {
+        expect(PLACEHOLDER_TEXT[reason]).toMatch(/That is not a statement about what is or is not allowed\.$/)
+      }
     })
 
     it("answers 200 and not_covered for a state with nothing on file: that is an answer, not an error", async () => {

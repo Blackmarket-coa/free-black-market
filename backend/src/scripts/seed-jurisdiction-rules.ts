@@ -22,8 +22,9 @@ import {
  * It records the two archived SCDA documents with their SHA-256 hashes, opens
  * US-SC / home_based_food coverage with the sixteen required rule keys, and
  * writes version 1 of each rule as a draft. Coverage then reads `draft`; it
- * reads `covered` only when a reviewer on JURISDICTION_RULE_REVIEWER_EMAILS
- * has signed off all sixteen through the admin API.
+ * reads `covered` only when a reviewer on JURISDICTION_RULE_REVIEWER_USER_IDS
+ * has signed off all sixteen through the admin API. Versions the seed writes
+ * record no proposer (`proposed_by_user_id` is null).
  *
  * Additive only. It never writes a review field, never adds a version to a
  * key that already has one (a draft, a reviewed version, or only withdrawn

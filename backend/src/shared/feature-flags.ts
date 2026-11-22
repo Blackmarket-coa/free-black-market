@@ -320,7 +320,7 @@ export const PHASE0_FEATURE_FLAGS = {
   // reviewed with it off. Rules are information only; with the flag on or off,
   // nothing in the rule store blocks a sale or touches cart or checkout.
   // Default off. BEFORE SETTING IT: run src/scripts/seed-jurisdiction-rules.ts,
-  // set JURISDICTION_RULE_REVIEWER_EMAILS (unset means nobody can review), and
+  // set JURISDICTION_RULE_REVIEWER_USER_IDS (unset means nobody can review), and
   // have a reviewer sign off all sixteen South Carolina rules so coverage
   // reads `covered`. The vendor-panel twin VITE_FF_PLATES_V1 arrives with the
   // panel phases; set the backend flag first.

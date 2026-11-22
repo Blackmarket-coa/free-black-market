@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { RuleCitation, RuleContent } from "./types"
+import { RULE_CITATION_SOURCE_FIELDS, type RuleCitation, type RuleCitationSource, type RuleContent } from "./types"
 
 /**
  * The content hash a reviewer signs.
@@ -56,9 +56,23 @@ export function canonicalJson(value: unknown): string {
   return `{${body}}`
 }
 
+/**
+ * The source details a reader is shown, each one hashed, with an absent one
+ * written as null. Named fields only: a key added to the stored JSON that no
+ * reader is shown changes nothing a reader sees, so it does not change the
+ * hash either.
+ */
+const canonicalCitationSource = (source: RuleCitationSource | null | undefined) => {
+  if (source == null || typeof source !== "object") return null
+  const out: Record<string, unknown> = {}
+  for (const field of RULE_CITATION_SOURCE_FIELDS) out[field] = source[field] ?? null
+  return out
+}
+
 const canonicalCitation = (citation: RuleCitation) => ({
   source_id: citation.source_id,
   source_sha256: citation.source_sha256,
+  source: canonicalCitationSource(citation.source),
   locator: citation.locator,
   quote: citation.quote ?? null,
 })
@@ -67,7 +81,12 @@ const canonicalCitation = (citation: RuleCitation) => ({
  * Exactly the fields the hash covers, with absent optionals written as null so
  * a row read back from the database (null) and a draft built in memory
  * (undefined) are the same content. Citations stay in their written order:
- * reordering them is a change to what the reviewer was shown.
+ * reordering them is a change to what the reviewer was shown. Each citation
+ * is hashed with the hash of the file its quote is attributed to and with
+ * the copy of that document's details (issuer, title, address, document id
+ * and date, notes, retrieval date, archive path) that readers are shown, so
+ * none of what a reader sees beside a reviewed rule can change under the
+ * sign-off.
  */
 export function canonicalRuleContent(content: RuleContent): string {
   return canonicalJson({

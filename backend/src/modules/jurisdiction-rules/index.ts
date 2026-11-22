@@ -34,7 +34,7 @@ export type { RuleVersionState } from "./coverage"
 export { canonicalJson, canonicalRuleContent, ruleContentSha256, CONTENT_HASH_SCHEME } from "./content-hash"
 export { ruleDraftProblems, isIsoDate } from "./rule-draft"
 export type { RuleDraftInput } from "./rule-draft"
-export { JurisdictionRuleError, standingOf, sourceProblems } from "./service"
+export { JurisdictionRuleError, contentIntact, standingOf, sourceProblems } from "./service"
 export type {
   CreateDraftVersionResult,
   JurisdictionCoverageRecord,
@@ -47,6 +47,9 @@ export type {
   RuleVersionStanding,
   RuleView,
   RuleViewEntry,
+  RuleViewItem,
+  RuleViewPlaceholder,
+  RuleViewPlaceholderReason,
   RuleViewSource,
   WithdrawRuleInput,
 } from "./service"

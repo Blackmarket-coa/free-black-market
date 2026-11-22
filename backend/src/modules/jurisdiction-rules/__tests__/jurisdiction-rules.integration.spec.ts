@@ -1,11 +1,13 @@
 import { moduleIntegrationTestRunner } from "@medusajs/test-utils"
 import { JURISDICTION_RULES_MODULE } from ".."
-import { ruleContentOf, ruleContentSha256 } from "../content-hash"
+import { canonicalRuleContent, ruleContentOf, ruleContentSha256 } from "../content-hash"
 import { JurisdictionCoverage, JurisdictionRule, JurisdictionSource } from "../models"
 import type { RuleDraftInput } from "../rule-draft"
 import JurisdictionRulesModuleService, {
   JurisdictionRuleError,
   type JurisdictionRuleRecord,
+  type RuleView,
+  type RuleViewEntry,
 } from "../service"
 import { US_SC_HOME_BASED_FOOD_RULES } from "../seeds/us-sc-home-based-food"
 import { seedUsScHomeBasedFood } from "../../../scripts/seed-jurisdiction-rules"
@@ -39,7 +41,16 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
   testSuite: ({ service, MikroOrmWrapper }) => {
     const SC = "US-SC"
     const PROGRAM = "home_based_food"
-    const owner = { user_id: "user_owner", name: "Ada Okafor" }
+    const owner = { user_id: "user_owner", name: "Ada Okafor", email: "owner@example.com" }
+
+    /** The rule shown for a key, failing if the key holds a placeholder or is absent. */
+    const shown = (view: RuleView, key: string): RuleViewEntry => {
+      const item = view.rules.find((r) => r.rule_key === key)
+      if (!item || item.placeholder) throw new Error(`expected a rule for ${key}, got ${JSON.stringify(item)}`)
+      return item
+    }
+    const outline = (view: RuleView) =>
+      view.rules.map((r) => (r.placeholder ? [r.rule_key, `placeholder:${r.reason}`] : [r.rule_key, r.review_status]))
 
     const sql = (query: string, params: unknown[] = []) =>
       MikroOrmWrapper.forkManager().execute(query, params) as Promise<Record<string, unknown>[]>
@@ -168,14 +179,28 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
         expect(rule.reviewer_name).toBeNull()
         expect(rule.reviewed_at).toBeNull()
         expect(rule.effective_from).toBeNull()
+        // The cited file's hash and the document details a reader is shown are
+        // copied from the source row, and hashed with the rest.
         expect(rule.citations).toEqual([
           {
             source_id: src.id,
             source_sha256: src.content_sha256,
+            source: {
+              issuer: "South Carolina Department of Agriculture",
+              title: "A fact sheet",
+              url: "https://example.test/fact-sheet.pdf",
+              document_id: "Form 1",
+              document_date: "2026-05-01",
+              document_date_note: null,
+              retrieved_at: "2026-11-17",
+              archive_ref: "docs/sources/us-sc/a-fact-sheet.pdf",
+              notes: null,
+            },
             locator: "Labeling, item 4",
             quote: "A statement printed in all capital letters",
           },
         ])
+        expect(rule.proposed_by_user_id).toBeNull()
         expect(rule.content_sha256).toMatch(/^[0-9a-f]{64}$/)
         expect(rule.content_sha256).toBe(ruleContentSha256(ruleContentOf(rule)))
 
@@ -332,9 +357,11 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
            VALUES (?, 'US-SC', 'home_based_food', 'label.statement', ?, 'requirement', 'text', CAST('[{"source_id":"x","source_sha256":"y","locator":"z","quote":"q"}]' AS jsonb), ?${extra.values ?? ""})`,
           [id, version, sha()]
         )
+      // Raw inserts of reviewed rows: this runner's schema has no insert guard
+      // (a migrated database refuses them; the HTTP spec pins that).
       const reviewedColumns = {
-        columns: `, review_status, reviewed_by_user_id, reviewed_at`,
-        values: `, 'reviewed', 'user_x', now()`,
+        columns: `, review_status, reviewed_by_user_id, reviewer_email, reviewed_at`,
+        values: `, 'reviewed', 'user_x', 'x@example.com', now()`,
       }
 
       it("refuse a second row for the same version of a rule", async () => {
@@ -355,8 +382,8 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
 
       it("allow one reviewed version in force beside one pending draft, and any number of superseded or withdrawn ones", async () => {
         await rawInsert("jrule_a", 1, {
-          columns: `, review_status, reviewed_by_user_id, reviewed_at, superseded_at, superseded_by_rule_id`,
-          values: `, 'reviewed', 'user_x', now(), now(), 'jrule_c'`,
+          columns: `, review_status, reviewed_by_user_id, reviewer_email, reviewed_at, superseded_at, superseded_by_rule_id`,
+          values: `, 'reviewed', 'user_x', 'x@example.com', now(), now(), 'jrule_c'`,
         })
         await rawInsert("jrule_b", 2, {
           columns: `, withdrawn_at, withdrawn_by_user_id, withdrawn_reason`,
@@ -368,9 +395,12 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
       })
 
       it("and the table refuses a review record that does not add up", async () => {
-        // Reviewed with nobody named.
+        // Reviewed with nobody named, or with no email recorded for the reviewer.
         await expect(
           rawInsert("jrule_a", 1, { columns: `, review_status`, values: `, 'reviewed'` })
+        ).rejects.toThrow(/jurisdiction_rule_review_record_check/)
+        await expect(
+          rawInsert("jrule_a", 1, { columns: `, review_status, reviewed_by_user_id, reviewed_at`, values: `, 'reviewed', 'user_x', now()` })
         ).rejects.toThrow(/jurisdiction_rule_review_record_check/)
         // A draft that names a reviewer.
         await expect(
@@ -441,7 +471,7 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
           service.markReviewed({
             rule_id: v2.id,
             expected_content_sha256: v2.content_sha256,
-            reviewer: { user_id: "user_second", name: "Second Reviewer" },
+            reviewer: { user_id: "user_second", name: "Second Reviewer", email: "second@example.com" },
           })
         )
         expect(twice.reason).toBe("stale")
@@ -464,7 +494,7 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
       it("lets exactly one of two reviewers signing the same draft at once through", async () => {
         const src = await opened()
         const draft = await propose(src.id)
-        const second = { user_id: "user_second", name: "Second Reviewer" }
+        const second = { user_id: "user_second", name: "Second Reviewer", email: "second@example.com" }
 
         const results = await Promise.allSettled([
           service.markReviewed({ rule_id: draft.id, expected_content_sha256: draft.content_sha256, reviewer: owner }),
@@ -534,7 +564,7 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
         await service.markReviewed({
           rule_id: v4.id,
           expected_content_sha256: v4.content_sha256,
-          reviewer: { user_id: "user_second", name: "Second Reviewer" },
+          reviewer: { user_id: "user_second", name: "Second Reviewer", email: "second@example.com" },
         })
 
         // Superseded now, and still exactly what was signed, by whom, when.
@@ -612,8 +642,9 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
           [2, "withdrawn"],
           [1, "superseded"],
         ])
+        // The required key keeps its place, saying there is nothing to show.
         const view = await service.getRuleView(SC, PROGRAM, { includeDrafts: true })
-        expect(view.rules).toEqual([])
+        expect(view.rules).toEqual([{ placeholder: true, rule_key: "label.statement", reason: "withdrawn" }])
       })
     })
 
@@ -657,7 +688,11 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
         expect(await status()).toBe("draft")
         const view = await service.getRuleView(SC, PROGRAM, { includeDrafts: false })
         expect(view.coverage).toMatchObject({ status: "draft", required_keys_not_reviewed: [KEYS[1]] })
-        expect(view.rules.map((r) => r.rule_key)).toEqual([KEYS[0], KEYS[2]])
+        expect(outline(view)).toEqual([
+          [KEYS[0], "reviewed"],
+          [KEYS[1], "placeholder:withdrawn"],
+          [KEYS[2], "reviewed"],
+        ])
       })
 
       it("works a reader's answer out from the rules, whatever the stored status says", async () => {
@@ -702,15 +737,20 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
         await service.markReviewed({ rule_id: a.id, expected_content_sha256: a.content_sha256, reviewer: owner })
 
         const forBuyers = await service.getRuleView(SC, PROGRAM, { includeDrafts: false })
-        expect(forBuyers.rules.map((r) => [r.rule_key, r.review_status])).toEqual([[KEYS[0], "reviewed"]])
+        expect(outline(forBuyers)).toEqual([
+          [KEYS[0], "reviewed"],
+          [KEYS[1], "placeholder:not_reviewed"],
+          [KEYS[2], "placeholder:no_version"],
+        ])
 
         const forSellers = await service.getRuleView(SC, PROGRAM, { includeDrafts: true })
-        expect(forSellers.rules.map((r) => [r.rule_key, r.review_status])).toEqual([
+        expect(outline(forSellers)).toEqual([
           [KEYS[0], "reviewed"],
           [KEYS[1], "draft"],
+          [KEYS[2], "placeholder:no_version"],
         ])
-        expect(forSellers.rules[0]).toMatchObject({ reviewer_name: "Ada Okafor", effective_from: null })
-        expect(forSellers.rules[0].citations[0].source).toMatchObject({
+        expect(shown(forSellers, KEYS[0])).toMatchObject({ reviewer_name: "Ada Okafor", effective_from: null })
+        expect(shown(forSellers, KEYS[0]).citations[0].source).toMatchObject({
           id: src.id,
           title: "A fact sheet",
           document_id: "Form 1",
@@ -718,6 +758,95 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
           content_sha256: src.content_sha256,
         })
         expect(forSellers.jurisdiction_name).toBe("South Carolina")
+      })
+    })
+
+    describe("what a reader is shown", () => {
+      const KEYS = ["label.statement", "label.product_name"]
+
+      it("records who proposed a version, from the caller, and nothing for the seed's", async () => {
+        const src = await opened()
+        const result = await service.createDraftVersion(draftOf(src.id), { proposedByUserId: "user_proposer" })
+        if (!result.created) throw new Error("expected a draft to be written")
+        expect(result.rule.proposed_by_user_id).toBe("user_proposer")
+        const stored = await byId(result.rule.id)
+        expect(stored.proposed_by_user_id).toBe("user_proposer")
+        // Provenance, not content: the proposer is not part of what a reviewer signs.
+        expect(canonicalRuleContent(ruleContentOf(stored))).not.toContain("user_proposer")
+        expect(ruleContentSha256(ruleContentOf(stored))).toBe(stored.content_sha256)
+      })
+
+      it("shows each citation's source as it was signed with the version, not as the source row says now", async () => {
+        const src = await opened()
+        const draft = await propose(src.id)
+        await service.markReviewed({ rule_id: draft.id, expected_content_sha256: draft.content_sha256, reviewer: owner })
+        // The source row edited underneath (a migrated database refuses this UPDATE).
+        await sql(`UPDATE jurisdiction_source SET title = 'Another title', document_id = 'CPD Form #9999', document_date = '2019-01-01', content_sha256 = ? WHERE id = ?`, [
+          "f".repeat(64),
+          src.id,
+        ])
+        const source = shown(await service.getRuleView(SC, PROGRAM, { includeDrafts: false }), "label.statement").citations[0].source
+        expect(source).toMatchObject({
+          id: src.id,
+          title: "A fact sheet",
+          document_id: "Form 1",
+          document_date: "2026-05-01",
+          content_sha256: src.content_sha256,
+        })
+      })
+
+      it("never shows, or counts as reviewed, a version whose stored text no longer matches its hash", async () => {
+        const src = await opened(KEYS)
+        for (const rule_key of KEYS) {
+          const draft = await propose(src.id, { rule_key })
+          await service.markReviewed({ rule_id: draft.id, expected_content_sha256: draft.content_sha256, reviewer: owner })
+        }
+        expect((await service.getRuleView(SC, PROGRAM, { includeDrafts: false })).coverage.status).toBe("covered")
+
+        // The reviewed statement rule's text, rewritten underneath the service (a
+        // migrated database refuses this UPDATE; this runner's schema has no trigger).
+        await sql(`UPDATE jurisdiction_rule SET display_text = 'Sell anything you like.' WHERE rule_key = 'label.statement'`)
+
+        for (const includeDrafts of [false, true]) {
+          const view = await service.getRuleView(SC, PROGRAM, { includeDrafts })
+          expect(outline(view)).toEqual([
+            ["label.statement", "placeholder:unavailable"],
+            ["label.product_name", "reviewed"],
+          ])
+          expect(JSON.stringify(view)).not.toContain("Sell anything you like.")
+          expect(view.coverage).toMatchObject({ status: "draft", required_keys_not_reviewed: ["label.statement"] })
+        }
+        expect((await service.listCoverage(PROGRAM)).find((c) => c.jurisdiction_code === SC)).toMatchObject({
+          status: "draft",
+          required_keys_not_reviewed: ["label.statement"],
+        })
+        expect((await service.recomputeCoverage(SC, PROGRAM))?.status).toBe("draft")
+      })
+
+      it("gives every required key a place: its rule, or a placeholder saying why there is nothing to show", async () => {
+        const src = await opened(["label.statement", "label.product_name", "sales.annual_cap", "foods.not_allowed"])
+        const statement = await propose(src.id, { rule_key: "label.statement" })
+        await service.markReviewed({ rule_id: statement.id, expected_content_sha256: statement.content_sha256, reviewer: owner })
+        await propose(src.id, { rule_key: "label.product_name" })
+        const notAllowed = await propose(src.id, { rule_key: "foods.not_allowed", kind: "prohibition" })
+        await service.markReviewed({ rule_id: notAllowed.id, expected_content_sha256: notAllowed.content_sha256, reviewer: owner })
+        await service.withdrawRule({ rule_id: notAllowed.id, withdrawn_by_user_id: "user_other", reason: "Wrong." })
+        // A key nobody required is shown after them, and gets no placeholder when empty.
+        await propose(src.id, { rule_key: "label.extra" })
+
+        expect(outline(await service.getRuleView(SC, PROGRAM, { includeDrafts: false }))).toEqual([
+          ["label.statement", "reviewed"],
+          ["label.product_name", "placeholder:not_reviewed"],
+          ["sales.annual_cap", "placeholder:no_version"],
+          ["foods.not_allowed", "placeholder:withdrawn"],
+        ])
+        expect(outline(await service.getRuleView(SC, PROGRAM, { includeDrafts: true }))).toEqual([
+          ["label.statement", "reviewed"],
+          ["label.product_name", "draft"],
+          ["sales.annual_cap", "placeholder:no_version"],
+          ["foods.not_allowed", "placeholder:withdrawn"],
+          ["label.extra", "draft"],
+        ])
       })
     })
 
@@ -749,6 +878,7 @@ moduleIntegrationTestRunner<JurisdictionRulesModuleService>({
 
         const view = await service.getRuleView(SC, PROGRAM, { includeDrafts: true })
         expect(view.rules.map((r) => r.rule_key)).toEqual(US_SC_HOME_BASED_FOOD_RULES.map((r) => r.rule_key))
+        expect(view.rules.some((r) => r.placeholder)).toBe(false)
         expect(view.coverage.required_keys_not_reviewed).toHaveLength(16)
       })
     })

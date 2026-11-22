@@ -182,7 +182,7 @@ The FAQ page 2 exemption list is recorded in the FAQ's source note as a differen
 - `[id]/route.ts`: GET.
 - `[id]/review/route.ts`: POST with body `{ expected_content_sha256, note? }`.
   - The reviewer is taken from `auth_context.actor_id` through the user module, never from the body.
-  - The reviewer must be on an allowlist in env `JURISDICTION_RULE_REVIEWER_EMAILS`. If the variable is unset, nobody can review.
+  - The reviewer's admin user id must be on an allowlist in env `JURISDICTION_RULE_REVIEWER_USER_IDS`. If the variable is unset, nobody can review. (Built first as an email list, `JURISDICTION_RULE_REVIEWER_EMAILS`; changed in the PL-2 review because a deleted admin's email can be registered again by another admin, while a user id is never reused.)
   - A stale hash gets 409; an admin not on the list gets 403.
 - `[id]/withdraw/route.ts`.
 - `backend/src/api/admin/jurisdiction-sources/route.ts` and `backend/src/api/admin/jurisdiction-coverage/route.ts`.
@@ -596,7 +596,7 @@ The FAQ page 2 exemption list is recorded in the FAQ's source note as a differen
 
 1. Archive the PDFs.
 2. Run the seed in production.
-3. Set `JURISDICTION_RULE_REVIEWER_EMAILS`.
+3. Set `JURISDICTION_RULE_REVIEWER_USER_IDS` to the owner's admin user id.
 4. The owner or the named reviewer reviews all 16 rules, and coverage reads covered.
 5. Walk journey 9 on staging.
 6. Set `FF_PLATES_V1=true` on the backend first, then the `VITE_FF_PLATES_V1` repo variable and rebuild the panel.
@@ -640,7 +640,7 @@ Rows:
 
 Asked on 2026-11-17 (recorded in `docs/AUDIT_DEBT.md` SD-154):
 
-1. **Reviewer: the owner.** The owner reviews and signs off the 16 South Carolina rules. The operator adds the owner's admin login to `JURISDICTION_RULE_REVIEWER_EMAILS`; it is never set in code.
+1. **Reviewer: the owner.** The owner reviews and signs off the 16 South Carolina rules. The operator adds the owner's admin login to the reviewer allowlist, `JURISDICTION_RULE_REVIEWER_USER_IDS`, by its admin user id, which identifies that login exactly; it is never set in code. (The list was first keyed by email; the PL-2 review showed an email can be re-registered by another admin after the owner's user is deleted, so it is keyed by user id.)
 2. **Online orders and delivery within SC: launch saying "not addressed by our sources".** The pilot does not wait for the SCDA Law Guidance or SC Code §44-1-143; `sales.online_delivery` stays a reviewed `not_stated` rule until a source is added.
 
 Not asked; the plan's defaults stand unless the owner objects:

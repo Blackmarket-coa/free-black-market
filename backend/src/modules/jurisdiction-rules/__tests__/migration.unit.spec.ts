@@ -1,5 +1,7 @@
 import type { Configuration } from "@mikro-orm/core"
 import type { AbstractSqlDriver } from "@mikro-orm/knex"
+import { GUARD_TRIGGER_DEFINITIONS } from "../db-guards"
+import * as migrationFile from "../migrations/Migration20261118CreateJurisdictionRules"
 import { Migration20261118CreateJurisdictionRules } from "../migrations/Migration20261118CreateJurisdictionRules"
 import { JurisdictionCoverage, JurisdictionRule, JurisdictionSource } from "../models"
 import { COVERAGE_STATUSES, RULE_KINDS, RULE_REVIEW_STATUSES } from "../types"
@@ -74,7 +76,7 @@ describe("Migration20261118CreateJurisdictionRules", () => {
       "constraint jurisdiction_rule_citations_present_check check (CASE WHEN jsonb_typeof(citations) = 'array' THEN jsonb_array_length(citations) >= 1 ELSE false END)"
     )
     expect(create).toContain(
-      "constraint jurisdiction_rule_review_record_check check ((review_status = 'reviewed') = (reviewed_by_user_id IS NOT NULL AND reviewed_at IS NOT NULL))"
+      "constraint jurisdiction_rule_review_record_check check ((review_status = 'reviewed') = (reviewed_by_user_id IS NOT NULL AND reviewer_email IS NOT NULL AND reviewed_at IS NOT NULL))"
     )
     expect(create).toContain("constraint jurisdiction_rule_draft_has_no_reviewer_check")
     expect(create).toContain("constraint jurisdiction_rule_content_sha256_check check (content_sha256 ~ '^[0-9a-f]{64}$')")
@@ -101,9 +103,54 @@ describe("Migration20261118CreateJurisdictionRules", () => {
     }
   })
 
-  it("installs the append-only trigger over every content column, and freezes a reviewed row's review record", () => {
-    const fn = upQueries.find((q) => q.includes("FUNCTION jurisdiction_rule_refuse_content_change()"))
-    expect(fn).toBeDefined()
+  const functionBody = (name: string) => {
+    const fn = upQueries.find((q) => q.includes(`FUNCTION ${name}()`))
+    if (!fn) throw new Error(`no function ${name}`)
+    return fn
+  }
+
+  it("exports nothing but the migration class: MikroORM takes the first export as the migration", () => {
+    expect(Object.keys(migrationFile)).toEqual(["Migration20261118CreateJurisdictionRules"])
+  })
+
+  it("guards every write to the three tables with a trigger, as declared", () => {
+    expect(GUARD_TRIGGER_DEFINITIONS.map(([table, trigger, when]) => [table, trigger, when])).toEqual([
+      ["jurisdiction_rule", "jurisdiction_rule_guard_insert", "BEFORE INSERT"],
+      ["jurisdiction_rule", "jurisdiction_rule_guard_update", "BEFORE UPDATE"],
+      ["jurisdiction_rule", "jurisdiction_rule_refuse_delete", "BEFORE DELETE"],
+      ["jurisdiction_source", "jurisdiction_source_refuse_update", "BEFORE UPDATE"],
+      ["jurisdiction_source", "jurisdiction_source_refuse_delete", "BEFORE DELETE"],
+      ["jurisdiction_coverage", "jurisdiction_coverage_guard_update", "BEFORE UPDATE"],
+      ["jurisdiction_coverage", "jurisdiction_coverage_refuse_delete", "BEFORE DELETE"],
+    ])
+    for (const [table, trigger, when, fn] of GUARD_TRIGGER_DEFINITIONS) {
+      expect(up).toContain(`CREATE TRIGGER "${trigger}" ${when} ON "${table}" FOR EACH ROW EXECUTE PROCEDURE ${fn}();`)
+      functionBody(fn)
+    }
+  })
+
+  it("inserts a rule version only as a draft with no review, supersession, withdrawal or deletion", () => {
+    const fn = functionBody("jurisdiction_rule_guard_insert")
+    expect(fn).toContain("NEW.review_status IS DISTINCT FROM 'draft'")
+    for (const column of [
+      "reviewed_by_user_id",
+      "reviewer_name",
+      "reviewer_email",
+      "reviewed_at",
+      "review_note",
+      "superseded_by_rule_id",
+      "superseded_at",
+      "withdrawn_at",
+      "withdrawn_by_user_id",
+      "withdrawn_reason",
+      "deleted_at",
+    ]) {
+      expect(fn).toContain(`NEW.${column} IS NOT NULL`)
+    }
+  })
+
+  it("freezes a version's content, identity and proposer, its review record once reviewed, its supersession and withdrawal once set, and deleted_at", () => {
+    const fn = functionBody("jurisdiction_rule_guard_update")
     for (const column of [
       "jurisdiction_code",
       "program",
@@ -116,21 +163,51 @@ describe("Migration20261118CreateJurisdictionRules", () => {
       "effective_from",
       "effective_note",
       "content_sha256",
+      "id",
+      "created_at",
+      "proposed_by_user_id",
+      "deleted_at",
+      "review_status",
+      "reviewed_by_user_id",
+      "reviewer_name",
+      "reviewer_email",
+      "reviewed_at",
+      "review_note",
+      "superseded_at",
+      "superseded_by_rule_id",
+      "withdrawn_at",
+      "withdrawn_by_user_id",
+      "withdrawn_reason",
     ]) {
       expect(fn).toContain(`NEW.${column} IS DISTINCT FROM OLD.${column}`)
     }
-    for (const column of ["review_status", "reviewed_by_user_id", "reviewer_name", "reviewed_at", "review_note"]) {
+    expect(fn).toContain("IF OLD.review_status = 'reviewed' AND (")
+    expect(fn).toContain("IF OLD.superseded_at IS NOT NULL AND (")
+    expect(fn).toContain("IF OLD.withdrawn_at IS NOT NULL AND (")
+    // Every column the model has is named here (frozen outright, or frozen once
+    // set), except updated_at, which every write moves. A column added to the
+    // model later fails this until the guard says what happens to it.
+    for (const column of Object.keys(JurisdictionRule.schema).filter((c) => c !== "updated_at")) {
       expect(fn).toContain(`NEW.${column} IS DISTINCT FROM OLD.${column}`)
     }
-    expect(up).toContain(
-      `CREATE TRIGGER "jurisdiction_rule_refuse_content_change" BEFORE UPDATE ON "jurisdiction_rule" FOR EACH ROW EXECUTE PROCEDURE jurisdiction_rule_refuse_content_change();`
-    )
+  })
+
+  it("never updates a source, never shrinks coverage's required keys, and never deletes a row of any of the three", () => {
+    expect(functionBody("jurisdiction_source_refuse_update")).toMatch(/BEGIN\s+RAISE EXCEPTION 'jurisdiction_source % is immutable/)
+    const coverage = functionBody("jurisdiction_coverage_guard_update")
+    expect(coverage).toContain("IF NOT (NEW.required_rule_keys @> OLD.required_rule_keys) THEN")
+    for (const column of ["id", "jurisdiction_code", "program", "created_at", "deleted_at"]) {
+      expect(coverage).toContain(`NEW.${column} IS DISTINCT FROM OLD.${column}`)
+    }
+    expect(functionBody("jurisdiction_store_refuse_delete")).toMatch(/BEGIN\s+RAISE EXCEPTION '% rows are never deleted/)
   })
 
   it("down() reverses everything up() created", () => {
     for (const table of Object.keys(TABLES)) expect(down).toContain(`drop table if exists "${table}" cascade;`)
-    expect(down).toContain(`DROP TRIGGER IF EXISTS "jurisdiction_rule_refuse_content_change" ON "jurisdiction_rule";`)
-    expect(down).toContain(`DROP FUNCTION IF EXISTS jurisdiction_rule_refuse_content_change();`)
+    for (const [table, trigger, , fn] of GUARD_TRIGGER_DEFINITIONS) {
+      expect(down).toContain(`DROP TRIGGER IF EXISTS "${trigger}" ON "${table}";`)
+      expect(down).toContain(`DROP FUNCTION IF EXISTS ${fn}();`)
+    }
     expect(down).not.toMatch(/create /i)
   })
 })

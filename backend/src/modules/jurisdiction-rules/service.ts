@@ -14,6 +14,7 @@ import {
   SHA256_PATTERN,
   type CoverageStatus,
   type RuleCitation,
+  type RuleCitationSource,
   type RuleContent,
   type RuleReviewStatus,
 } from "./types"
@@ -77,9 +78,11 @@ export type JurisdictionSourceRecord = {
 export type JurisdictionRuleRecord = RuleContent & {
   id: string
   content_sha256: string
+  proposed_by_user_id: string | null
   review_status: RuleReviewStatus
   reviewed_by_user_id: string | null
   reviewer_name: string | null
+  reviewer_email: string | null
   reviewed_at: Timestamp | null
   review_note: string | null
   superseded_by_rule_id: string | null
@@ -130,6 +133,12 @@ export type CreateDraftVersionOptions = {
    * already has history, reviewed or not.
    */
   onlyIfKeyHasNoVersion?: boolean
+  /**
+   * The admin user proposing this version, read by the route from the
+   * authenticated session. Left out only by the seed script, whose versions
+   * record no proposer.
+   */
+  proposedByUserId?: string | null
 }
 
 export type CreateDraftVersionResult =
@@ -140,8 +149,12 @@ export type MarkReviewedInput = {
   rule_id: string
   /** The hash of the text the reviewer was shown. */
   expected_content_sha256: string
-  /** The authenticated admin. The caller reads this from the session, never from a request body. */
-  reviewer: { user_id: string; name: string | null }
+  /**
+   * The authenticated admin, as the user module has them. The caller reads
+   * this from the session, never from a request body. The email is recorded
+   * beside the user id so the record says which login signed.
+   */
+  reviewer: { user_id: string; name: string | null; email: string }
   note?: string | null
 }
 
@@ -159,6 +172,11 @@ export type WithdrawRuleInput = {
   reason: string
 }
 
+/**
+ * A cited document as a reader is shown it: the copy of its details taken
+ * into the citation when the version was written, and the file hash signed
+ * with it. Never the live source row.
+ */
 export type RuleViewSource = Pick<
   JurisdictionSourceRecord,
   | "id"
@@ -174,6 +192,7 @@ export type RuleViewSource = Pick<
 >
 
 export type RuleViewEntry = {
+  placeholder: false
   id: string
   rule_key: string
   version: number
@@ -191,6 +210,30 @@ export type RuleViewEntry = {
   correction_pending: boolean
 }
 
+/**
+ * Why a required rule has nothing to show:
+ *
+ * - `withdrawn`: it had versions, and none is in force.
+ * - `not_reviewed`: only a draft is on file, and this reader is not shown drafts.
+ * - `unavailable`: the version in force no longer matches its content hash,
+ *   so its text is not the text that was written or signed.
+ * - `no_version`: nothing is on file for it.
+ */
+export type RuleViewPlaceholderReason = "withdrawn" | "not_reviewed" | "unavailable" | "no_version"
+
+/**
+ * A required rule with nothing to show, in its place in the list, so that a
+ * reader is never shown a partial set (the allowed foods without the foods
+ * not allowed) as though it were the whole.
+ */
+export type RuleViewPlaceholder = {
+  placeholder: true
+  rule_key: string
+  reason: RuleViewPlaceholderReason
+}
+
+export type RuleViewItem = RuleViewEntry | RuleViewPlaceholder
+
 export type RuleView = {
   jurisdiction_code: string
   jurisdiction_name: string | null
@@ -201,7 +244,8 @@ export type RuleView = {
     required_keys_not_reviewed: string[]
     status_changed_at: Timestamp | null
   }
-  rules: RuleViewEntry[]
+  /** Required keys first, in the order coverage lists them, each a rule or a placeholder; then any other key in force. */
+  rules: RuleViewItem[]
 }
 
 type SqlManager = {
@@ -266,6 +310,45 @@ function toCoverageRecord(row: Record<string, unknown>): JurisdictionCoverageRec
   }
 }
 
+/**
+ * Whether a stored version still says what it said when it was written: its
+ * content, recomputed into the canonical form, hashes to its stored
+ * `content_sha256`. A row that fails this is not the text that was written,
+ * or signed, and is never shown or counted as reviewed.
+ */
+export function contentIntact(rule: JurisdictionRuleRecord): boolean {
+  try {
+    return ruleContentSha256(ruleContentOf(rule)) === rule.content_sha256
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The state coverage reads for a version. A reviewed version whose content no
+ * longer matches its hash counts as not reviewed.
+ */
+function coverageStateOf(rule: JurisdictionRuleRecord): RuleVersionState {
+  return {
+    rule_key: rule.rule_key,
+    review_status: rule.review_status === "reviewed" && !contentIntact(rule) ? "draft" : rule.review_status,
+    superseded_at: rule.superseded_at,
+    withdrawn_at: rule.withdrawn_at,
+  }
+}
+
+const citationSourceOf = (row: Record<string, unknown>): RuleCitationSource => ({
+  issuer: String(row.issuer),
+  title: String(row.title),
+  url: (row.url as string | null) ?? null,
+  document_id: (row.document_id as string | null) ?? null,
+  document_date: (row.document_date as string | null) ?? null,
+  document_date_note: (row.document_date_note as string | null) ?? null,
+  retrieved_at: String(row.retrieved_at),
+  archive_ref: String(row.archive_ref),
+  notes: (row.notes as string | null) ?? null,
+})
+
 /** Why the sign-off's one UPDATE matched nothing, said from the row as it was read just before. */
 function staleReason(rule: JurisdictionRuleRecord, expectedSha256: string): string {
   if (rule.withdrawn_at != null) return "this version was withdrawn"
@@ -301,6 +384,13 @@ function staleReason(rule: JurisdictionRuleRecord, expectedSha256: string): stri
  *   the pending draft and still carries that hash.
  * - `covered` is computed (`coverage.ts`), in the same transaction as the
  *   change it follows, and never set.
+ * - A citation carries copies of its source's file hash and of the document
+ *   details a reader is shown, taken from the source row when the version is
+ *   written, so the version's hash covers them and readers are shown them.
+ * - On every read, a version whose content no longer hashes to its stored
+ *   `content_sha256` is neither shown nor counted as reviewed
+ *   (`contentIntact`). The database triggers (`db-guards.ts`) refuse such an
+ *   edit on a migrated database; this catches one that got past them.
  *
  * Every write for one (jurisdiction, program) takes a row lock on its
  * coverage row first, so version numbering and supersession are serial within
@@ -339,6 +429,18 @@ class JurisdictionRulesModuleService extends MedusaService({
    * draft when no reviewed version exists. Superseded and withdrawn versions
    * are history and never appear here.
    *
+   * A version whose stored content no longer matches its content hash is not
+   * the text that was written or signed: it is never shown and never counts
+   * as reviewed.
+   *
+   * Every key coverage requires gets a place in the list, in coverage's order:
+   * its rule, or a placeholder saying why there is nothing to show, so a
+   * withdrawn `foods.not_allowed` cannot leave the allowed foods standing
+   * alone as though they were the whole answer.
+   *
+   * Each citation's source is the copy of the document's details signed with
+   * the version, not the live source row.
+   *
    * Coverage is computed from the versions just read rather than taken from
    * the coverage row's cached `status`, so this view cannot say `covered`
    * while showing a required key as a draft.
@@ -362,37 +464,36 @@ class JurisdictionRulesModuleService extends MedusaService({
       )) as unknown as Record<string, unknown>[]
     ).map(toRuleRecord)
 
-    const byKey = new Map<string, { reviewed?: JurisdictionRuleRecord; draft?: JurisdictionRuleRecord }>()
+    type Slot = { reviewed?: JurisdictionRuleRecord; draft?: JurisdictionRuleRecord; tampered: boolean; any: boolean }
+    const byKey = new Map<string, Slot>()
     for (const version of versions) {
-      if (!inForce(version)) continue
-      const slot = byKey.get(version.rule_key) ?? {}
-      if (version.review_status === "reviewed") slot.reviewed = version
-      else slot.draft = version
+      const slot = byKey.get(version.rule_key) ?? { tampered: false, any: false }
+      slot.any = true
+      if (inForce(version)) {
+        if (!contentIntact(version)) slot.tampered = true
+        else if (version.review_status === "reviewed") slot.reviewed = version
+        else slot.draft = version
+      }
       byKey.set(version.rule_key, slot)
     }
 
-    const shown: Array<{ rule: JurisdictionRuleRecord; correction_pending: boolean }> = []
-    for (const slot of byKey.values()) {
-      if (slot.reviewed) shown.push({ rule: slot.reviewed, correction_pending: Boolean(slot.draft) })
-      else if (slot.draft && options.includeDrafts) shown.push({ rule: slot.draft, correction_pending: false })
+    const entryOf = (slot: Slot): { rule: JurisdictionRuleRecord; correction_pending: boolean } | null => {
+      if (slot.reviewed) return { rule: slot.reviewed, correction_pending: Boolean(slot.draft) }
+      if (slot.draft && options.includeDrafts) return { rule: slot.draft, correction_pending: false }
+      return null
     }
-    // Required keys first, in the order coverage lists them; then any others by key.
-    const rank = (key: string) => {
-      const index = required.indexOf(key)
-      return index === -1 ? required.length : index
+    const reasonOf = (slot: Slot | undefined): RuleViewPlaceholderReason => {
+      if (!slot || !slot.any) return "no_version"
+      if (slot.tampered) return "unavailable"
+      if (slot.draft) return "not_reviewed"
+      return "withdrawn"
     }
-    shown.sort((a, b) => rank(a.rule.rule_key) - rank(b.rule.rule_key) || a.rule.rule_key.localeCompare(b.rule.rule_key))
 
-    const sourceIds = [...new Set(shown.flatMap(({ rule }) => rule.citations.map((c) => c.source_id)))]
-    const sources = sourceIds.length
-      ? ((await this.listJurisdictionSources({ id: sourceIds }, { take: null })) as unknown as JurisdictionSourceRecord[])
-      : []
-    const sourceById = new Map(sources.map((s) => [s.id, s]))
-    const sourceView = (id: string): RuleViewSource | null => {
-      const s = sourceById.get(id)
-      if (!s) return null
+    const sourceView = (citation: RuleCitation): RuleViewSource | null => {
+      const s = citation.source
+      if (!s || typeof s !== "object") return null
       return {
-        id: s.id,
+        id: citation.source_id,
         issuer: s.issuer,
         title: s.title,
         url: s.url ?? null,
@@ -400,41 +501,57 @@ class JurisdictionRulesModuleService extends MedusaService({
         document_date: s.document_date ?? null,
         document_date_note: s.document_date_note ?? null,
         retrieved_at: s.retrieved_at,
-        content_sha256: s.content_sha256,
+        content_sha256: citation.source_sha256,
         archive_ref: s.archive_ref,
       }
     }
+    const viewOf = (rule: JurisdictionRuleRecord, correction_pending: boolean): RuleViewEntry => ({
+      placeholder: false,
+      id: rule.id,
+      rule_key: rule.rule_key,
+      version: rule.version,
+      kind: rule.kind,
+      value: rule.value,
+      display_text: rule.display_text,
+      citations: rule.citations.map((c) => ({
+        locator: c.locator,
+        quote: c.quote ?? null,
+        source: sourceView(c),
+      })),
+      effective_from: rule.effective_from ?? null,
+      effective_note: rule.effective_note ?? null,
+      review_status: rule.review_status,
+      reviewed_at: rule.reviewed_at ?? null,
+      reviewer_name: rule.reviewer_name ?? null,
+      content_sha256: rule.content_sha256,
+      correction_pending,
+    })
 
+    const items: RuleViewItem[] = []
+    for (const key of required) {
+      const slot = byKey.get(key)
+      const entry = slot ? entryOf(slot) : null
+      items.push(entry ? viewOf(entry.rule, entry.correction_pending) : { placeholder: true, rule_key: key, reason: reasonOf(slot) })
+    }
+    // Keys coverage does not require: shown when there is something to show, by key.
+    const others = [...byKey.keys()].filter((key) => !required.includes(key)).sort((a, b) => a.localeCompare(b))
+    for (const key of others) {
+      const entry = entryOf(byKey.get(key)!)
+      if (entry) items.push(viewOf(entry.rule, entry.correction_pending))
+    }
+
+    const states = versions.map(coverageStateOf)
     return {
       jurisdiction_code: jurisdictionCode,
       jurisdiction_name: usJurisdictionName(jurisdictionCode),
       program,
       coverage: {
-        status: coverageStatusOf(required, versions),
+        status: coverageStatusOf(required, states),
         required_rule_keys: required,
-        required_keys_not_reviewed: requiredKeysNotReviewed(required, versions),
+        required_keys_not_reviewed: requiredKeysNotReviewed(required, states),
         status_changed_at: coverage?.status_changed_at ?? null,
       },
-      rules: shown.map(({ rule, correction_pending }) => ({
-        id: rule.id,
-        rule_key: rule.rule_key,
-        version: rule.version,
-        kind: rule.kind,
-        value: rule.value,
-        display_text: rule.display_text,
-        citations: rule.citations.map((c) => ({
-          locator: c.locator,
-          quote: c.quote ?? null,
-          source: sourceView(c.source_id),
-        })),
-        effective_from: rule.effective_from ?? null,
-        effective_note: rule.effective_note ?? null,
-        review_status: rule.review_status,
-        reviewed_at: rule.reviewed_at ?? null,
-        reviewer_name: rule.reviewer_name ?? null,
-        content_sha256: rule.content_sha256,
-        correction_pending,
-      })),
+      rules: items,
     }
   }
 
@@ -479,15 +596,19 @@ class JurisdictionRulesModuleService extends MedusaService({
     ).map(toCoverageRecord)
     const byCode = new Map(rows.map((row) => [row.jurisdiction_code, row]))
 
+    // Whole rows, not a few columns: a version counts as reviewed only while
+    // its content still matches its hash, and checking that needs the content.
     const versionsByCode = new Map<string, RuleVersionState[]>()
     if (rows.length > 0) {
-      const versions = (await this.listJurisdictionRules(
-        { program, jurisdiction_code: rows.map((row) => row.jurisdiction_code) },
-        { select: ["jurisdiction_code", "rule_key", "review_status", "superseded_at", "withdrawn_at"], take: null }
-      )) as unknown as Array<RuleVersionState & { jurisdiction_code: string }>
+      const versions = (
+        (await this.listJurisdictionRules(
+          { program, jurisdiction_code: rows.map((row) => row.jurisdiction_code) },
+          { take: null }
+        )) as unknown as Record<string, unknown>[]
+      ).map(toRuleRecord)
       for (const version of versions) {
         const list = versionsByCode.get(version.jurisdiction_code) ?? []
-        list.push(version)
+        list.push(coverageStateOf(version))
         versionsByCode.set(version.jurisdiction_code, list)
       }
     }
@@ -671,15 +792,17 @@ class JurisdictionRulesModuleService extends MedusaService({
     )
     if (options.onlyIfKeyHasNoVersion && existing.length > 0) return { created: false, rule: null }
 
-    // The cited sources must be on file, for this jurisdiction. Their hashes
-    // are copied into the citations here, from the rows, so the version's own
-    // hash covers the exact files it quotes.
+    // The cited sources must be on file, for this jurisdiction. Each one's
+    // hash, and the details of the document a reader is shown, are copied
+    // into the citations here, from the rows, never from the caller, so the
+    // version's own hash covers the file each quote is attributed to and
+    // everything shown about it.
     const sourceIds = [...new Set(draft.citations.map((c) => c.source_id))]
     const sources =
       sourceIds.length === 0
         ? []
         : await manager.execute(
-            `SELECT "id", "jurisdiction_code", "content_sha256" FROM "jurisdiction_source"
+            `SELECT * FROM "jurisdiction_source"
               WHERE "id" IN (${sourceIds.map(() => "?").join(", ")}) AND "deleted_at" IS NULL`,
             sourceIds,
             "all"
@@ -706,12 +829,16 @@ class JurisdictionRulesModuleService extends MedusaService({
       kind: draft.kind,
       value: draft.value ?? null,
       display_text: draft.display_text,
-      citations: draft.citations.map((c) => ({
-        source_id: c.source_id,
-        source_sha256: String(sourceById.get(c.source_id)!.content_sha256),
-        locator: c.locator,
-        quote: c.quote ?? null,
-      })),
+      citations: draft.citations.map((c) => {
+        const source = sourceById.get(c.source_id)!
+        return {
+          source_id: c.source_id,
+          source_sha256: String(source.content_sha256),
+          source: citationSourceOf(source),
+          locator: c.locator,
+          quote: c.quote ?? null,
+        }
+      }),
       effective_from: draft.effective_from ?? null,
       effective_note: draft.effective_note ?? null,
     }
@@ -730,8 +857,8 @@ class JurisdictionRulesModuleService extends MedusaService({
     const inserted = await manager.execute(
       `INSERT INTO "jurisdiction_rule"
          ("id", "jurisdiction_code", "program", "rule_key", "version", "kind", "value", "display_text",
-          "citations", "effective_from", "effective_note", "content_sha256", "review_status")
-       VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, CAST(? AS jsonb), ?, ?, ?, 'draft')
+          "citations", "effective_from", "effective_note", "content_sha256", "proposed_by_user_id", "review_status")
+       VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, CAST(? AS jsonb), ?, ?, ?, ?, 'draft')
        RETURNING *`,
       [
         id,
@@ -746,6 +873,7 @@ class JurisdictionRulesModuleService extends MedusaService({
         content.effective_from,
         content.effective_note,
         ruleContentSha256(content),
+        filled(options.proposedByUserId) ? options.proposedByUserId : null,
       ],
       "all"
     )
@@ -781,6 +909,7 @@ class JurisdictionRulesModuleService extends MedusaService({
       problems.push("expected_content_sha256 must be the 64-character hash of the text that was reviewed")
     }
     if (!filled(input.reviewer?.user_id)) problems.push("reviewer.user_id is required")
+    if (!filled(input.reviewer?.email)) problems.push("reviewer.email is required: the reviewer's admin email, for the record")
     if (problems.length > 0) throw new JurisdictionRuleError("invalid", "This is not a usable sign-off.", problems)
     try {
       return await this.markReviewedInTransaction_(input)
@@ -818,6 +947,7 @@ class JurisdictionRulesModuleService extends MedusaService({
           SET "review_status" = 'reviewed',
               "reviewed_by_user_id" = ?,
               "reviewer_name" = ?,
+              "reviewer_email" = ?,
               "reviewed_at" = now(),
               "review_note" = ?,
               "updated_at" = now()
@@ -831,6 +961,7 @@ class JurisdictionRulesModuleService extends MedusaService({
       [
         input.reviewer.user_id,
         filled(input.reviewer.name) ? input.reviewer.name.trim() : null,
+        input.reviewer.email,
         filled(input.note) ? input.note.trim() : null,
         input.rule_id,
         input.expected_content_sha256,
@@ -963,12 +1094,14 @@ class JurisdictionRulesModuleService extends MedusaService({
     const coverage = await this.lockCoverage_(manager, jurisdictionCode, program)
     if (!coverage) return null
 
-    const versions = (await manager.execute(
-      `SELECT "rule_key", "review_status", "superseded_at", "withdrawn_at" FROM "jurisdiction_rule"
-        WHERE "jurisdiction_code" = ? AND "program" = ? AND "deleted_at" IS NULL`,
-      [jurisdictionCode, program],
-      "all"
-    )) as unknown as RuleVersionState[]
+    const versions = (
+      await manager.execute(
+        `SELECT * FROM "jurisdiction_rule"
+          WHERE "jurisdiction_code" = ? AND "program" = ? AND "deleted_at" IS NULL`,
+        [jurisdictionCode, program],
+        "all"
+      )
+    ).map((row) => coverageStateOf(toRuleRecord(row)))
 
     const status = coverageStatusOf(coverage.required_rule_keys, versions)
     if (status === coverage.status) return coverage

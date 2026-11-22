@@ -20,7 +20,14 @@ import { PLATES_PROGRAM, coverageForSeller, platesDisabled, ruleForSeller } from
  * date. A date or id the document does not print reads "not stated", and so
  * does a rule's effective date when the source gives none. Each rule says
  * whether it is reviewed, by whom and when; a rule that has not been reviewed
- * is included and marked `is_draft: true`.
+ * is included and marked `is_draft: true`. Each source is shown as it was
+ * signed with the rule (the citation's copy and file hash).
+ *
+ * Every rule the state's coverage requires has a place in `rules`, in order.
+ * One with nothing to show (withdrawn, or its stored text no longer matching
+ * its hash) is a placeholder, `is_placeholder: true`, whose text says the gap
+ * is not an answer either way; so a withdrawn list of foods not allowed
+ * cannot leave the allowed list standing alone.
  *
  * A state with nothing on file answers 200 with `coverage.status:
  * "not_covered"` and no rules: "we have not read this state's rules" is an
@@ -53,5 +60,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     coverage: coverageForSeller(view),
     rules: view.rules.map(ruleForSeller),
     count: view.rules.length,
+    placeholder_count: view.rules.filter((rule) => rule.placeholder).length,
   })
 }

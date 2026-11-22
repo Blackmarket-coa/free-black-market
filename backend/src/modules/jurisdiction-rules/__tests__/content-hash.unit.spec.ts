@@ -6,9 +6,21 @@ import {
   ruleContentOf,
   ruleContentSha256,
 } from "../content-hash"
-import type { RuleContent } from "../types"
+import { RULE_CITATION_SOURCE_FIELDS, type RuleCitationSource, type RuleContent } from "../types"
 
 const SOURCE_SHA = "b19c9924721c9219b54f6c859e4733b97e8ad86caa7b29c13df0d8647fe7712c"
+
+const FACT_SHEET: RuleCitationSource = {
+  issuer: "South Carolina Department of Agriculture",
+  title: "Home-Based Food Production (Cottage Law)",
+  url: "https://agriculture.sc.gov/retail-food-safety",
+  document_id: "CPD Form #2210",
+  document_date: "2026-05-01",
+  document_date_note: "Printed in the footer as 5/1/26.",
+  retrieved_at: "2026-11-17",
+  archive_ref: "docs/sources/us-sc/scda-cpd-2210-home-based-food-production-2026-05-01.pdf",
+  notes: "One-page fact sheet.",
+}
 
 const base = (): RuleContent => ({
   jurisdiction_code: "US-SC",
@@ -18,7 +30,7 @@ const base = (): RuleContent => ({
   kind: "requirement",
   value: { label_field: "statement", all_capitals: true },
   display_text: "The label must carry this statement.",
-  citations: [{ source_id: "jsrc_1", source_sha256: SOURCE_SHA, locator: "Labeling, item 4", quote: "A statement" }],
+  citations: [{ source_id: "jsrc_1", source_sha256: SOURCE_SHA, source: FACT_SHEET, locator: "Labeling, item 4", quote: "A statement" }],
   effective_from: null,
   effective_note: "Neither source states when this took effect.",
 })
@@ -74,7 +86,16 @@ describe("ruleContentSha256", () => {
     const reordered = {
       effective_note: base().effective_note,
       effective_from: null,
-      citations: [{ quote: "A statement", locator: "Labeling, item 4", source_sha256: SOURCE_SHA, source_id: "jsrc_1" }],
+      citations: [
+        {
+          quote: "A statement",
+          locator: "Labeling, item 4",
+          // The source copy's keys reordered as well.
+          source: Object.fromEntries(Object.entries(FACT_SHEET).reverse()),
+          source_sha256: SOURCE_SHA,
+          source_id: "jsrc_1",
+        },
+      ],
       display_text: base().display_text,
       value: { all_capitals: true, label_field: "statement" },
       kind: "requirement",
@@ -119,6 +140,35 @@ describe("ruleContentSha256", () => {
 
     const second = { ...citation, locator: "Labeling, item 1", quote: "Name and address" }
     expect(withCitations([citation, second])).not.toBe(withCitations([second, citation]))
+  })
+
+  it("covers every detail of the cited document a reader is shown, so none can change under a sign-off", () => {
+    const [citation] = base().citations
+    const original = ruleContentSha256(base())
+    const changed: Record<keyof RuleCitationSource, unknown> = {
+      issuer: "Someone else",
+      title: "Another title",
+      url: "https://example.test/other",
+      document_id: "CPD Form #9999",
+      document_date: "2019-01-01",
+      document_date_note: "Another note.",
+      retrieved_at: "2019-01-02",
+      archive_ref: "docs/sources/us-sc/other.pdf",
+      notes: "Other notes.",
+    }
+    expect(Object.keys(changed).sort()).toEqual([...RULE_CITATION_SOURCE_FIELDS].sort())
+    for (const field of RULE_CITATION_SOURCE_FIELDS) {
+      const source = { ...FACT_SHEET, [field]: changed[field] } as RuleCitationSource
+      expect(ruleContentSha256({ ...base(), citations: [{ ...citation, source }] })).not.toBe(original)
+    }
+    // A null in place of a value is a change too.
+    expect(ruleContentSha256({ ...base(), citations: [{ ...citation, source: { ...FACT_SHEET, document_id: null } }] })).not.toBe(original)
+  })
+
+  it("ignores a key in the stored source copy that no reader is shown", () => {
+    const [citation] = base().citations
+    const padded = { ...FACT_SHEET, internal: "not shown" } as RuleCitationSource
+    expect(ruleContentSha256({ ...base(), citations: [{ ...citation, source: padded }] })).toBe(ruleContentSha256(base()))
   })
 
   it("tells the typographic apostrophe from the straight one", () => {

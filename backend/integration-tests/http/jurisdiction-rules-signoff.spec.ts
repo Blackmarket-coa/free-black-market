@@ -10,7 +10,7 @@ import {
 } from "../../src/modules/jurisdiction-rules/seeds/us-sc-home-based-food"
 import seedJurisdictionRules from "../../src/scripts/seed-jurisdiction-rules"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
-import { REVIEWER_ALLOWLIST_ENV } from "../../src/api/admin/jurisdiction-rules/reviewers"
+import { RETIRED_REVIEWER_EMAILS_ENV, REVIEWER_ALLOWLIST_ENV } from "../../src/api/admin/jurisdiction-rules/reviewers"
 import { authHeader, createAuthenticatedSeller } from "./helpers/seller-auth"
 
 jest.setTimeout(300 * 1000)
@@ -22,12 +22,13 @@ jest.setTimeout(300 * 1000)
  * What only this shows:
  *
  * - The migration, not the models, built the tables here: the three partial
- *   unique indexes, the CHECK constraints and the append-only trigger are the
- *   ones production gets.
+ *   unique indexes, the CHECK constraints and the guard triggers are the ones
+ *   production gets. The module runner builds from the models and has no
+ *   triggers, so every trigger is pinned here and only here.
  * - The seed is the operator's script, run the way `medusa exec` runs it.
  * - The reviewer is whoever Medusa's admin authentication says is signed in.
  *   The allowlist is read from the environment at request time, so the cases
- *   below set and unset `JURISDICTION_RULE_REVIEWER_EMAILS` and
+ *   below set and unset `JURISDICTION_RULE_REVIEWER_USER_IDS` and
  *   `FF_PLATES_V1` on the running app.
  *
  * Nothing here blocks a sale: the 403 and 409 asserted below are on the admin
@@ -54,11 +55,11 @@ medusaIntegrationTestRunner({
     type Admin = { id: string; email: string; headers: { headers: { authorization: string } } }
 
     /** A real admin user and a bearer token Medusa's admin auth accepts. */
-    async function asAdmin(names: { first_name?: string; last_name?: string } = {}): Promise<Admin> {
-      const email = `admin+${uid()}@example.com`
+    async function asAdmin(names: { first_name?: string; last_name?: string; email?: string } = {}): Promise<Admin> {
+      const email = names.email ?? `admin+${uid()}@example.com`
       const [user] = await container()
         .resolve<{ createUsers: (data: Record<string, unknown>[]) => Promise<Array<{ id: string }>> }>(Modules.USER)
-        .createUsers([{ email, ...names }])
+        .createUsers([{ ...names, email }])
       const secret = process.env.JWT_SECRET
       if (!secret) throw new Error("JWT_SECRET is not set in the test env")
       const token = jwt.sign(
@@ -69,11 +70,21 @@ medusaIntegrationTestRunner({
       return { id: user.id, email, headers: { headers: { authorization: `Bearer ${token}` } } }
     }
 
-    /** The owner: an admin whose email the operator has put on the reviewer list. */
+    /** The owner: an admin whose user id the operator has put on the reviewer list. */
     async function asReviewer(): Promise<Admin> {
       const owner = await asAdmin({ first_name: "Ada", last_name: "Okafor" })
-      process.env[REVIEWER_ALLOWLIST_ENV] = `someone-else@example.com, ${owner.email}`
+      process.env[REVIEWER_ALLOWLIST_ENV] = `user_someone_else, ${owner.id}`
       return owner
+    }
+
+    /** Run `sql` with the named triggers off, then put them back, whatever happens. */
+    async function withTriggersOff(table: string, triggers: string[], sql: string, bindings: unknown[] = []) {
+      for (const t of triggers) await pg().raw(`ALTER TABLE ${table} DISABLE TRIGGER "${t}"`)
+      try {
+        await pg().raw(sql, bindings)
+      } finally {
+        for (const t of triggers) await pg().raw(`ALTER TABLE ${table} ENABLE TRIGGER "${t}"`)
+      }
     }
 
     const call = <T = any>(p: Promise<T>) => p.catch((e: any) => e.response)
@@ -128,10 +139,11 @@ medusaIntegrationTestRunner({
     afterEach(() => {
       delete process.env[FLAG]
       delete process.env[REVIEWER_ALLOWLIST_ENV]
+      delete process.env[RETIRED_REVIEWER_EMAILS_ENV]
     })
 
     describe("the migrated schema", () => {
-      it("has the three partial unique indexes, the citation check and the append-only trigger", async () => {
+      it("has the three partial unique indexes, the citation check and the guard triggers", async () => {
         const indexes = await rows(`SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'jurisdiction_rule'`)
         const def = (name: string) => String(indexes.find((i) => i.indexname === name)?.indexdef ?? "")
         expect(def("IDX_jurisdiction_rule_key_version_unique")).toMatch(/UNIQUE INDEX .*\(jurisdiction_code, program, rule_key, version\) WHERE \(deleted_at IS NULL\)/)
@@ -156,10 +168,17 @@ medusaIntegrationTestRunner({
           ])
         )
 
-        const triggers = await rows(
-          `SELECT tgname FROM pg_trigger WHERE tgrelid = 'jurisdiction_rule'::regclass AND NOT tgisinternal`
-        )
-        expect(triggers.map((t) => t.tgname)).toEqual(["jurisdiction_rule_refuse_content_change"])
+        const triggersOf = async (table: string) =>
+          (
+            await rows(`SELECT tgname FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal AND tgenabled = 'O' ORDER BY tgname`, [table])
+          ).map((t) => t.tgname)
+        expect(await triggersOf("jurisdiction_rule")).toEqual([
+          "jurisdiction_rule_guard_insert",
+          "jurisdiction_rule_guard_update",
+          "jurisdiction_rule_refuse_delete",
+        ])
+        expect(await triggersOf("jurisdiction_source")).toEqual(["jurisdiction_source_refuse_delete", "jurisdiction_source_refuse_update"])
+        expect(await triggersOf("jurisdiction_coverage")).toEqual(["jurisdiction_coverage_guard_update", "jurisdiction_coverage_refuse_delete"])
       })
     })
 
@@ -191,12 +210,26 @@ medusaIntegrationTestRunner({
             superseded_at: null,
             withdrawn_at: null,
           })
-          const citations = rule.citations as Array<{ source_id: string; source_sha256: string; quote: string | null }>
+          expect(rule.proposed_by_user_id).toBeNull()
+          expect(rule.reviewer_email).toBeNull()
+          const citations = rule.citations as Array<{ source_id: string; source_sha256: string; source: Record<string, unknown>; quote: string | null }>
           expect(citations.length).toBeGreaterThan(0)
           for (const citation of citations) {
             const source = first.sources.find((s) => s.id === citation.source_id)
             expect(source).toBeDefined()
             expect(citation.source_sha256).toBe(source?.content_sha256)
+            // The details a reader is shown, copied from the source row and signed with the rule.
+            expect(citation.source).toEqual({
+              issuer: source?.issuer,
+              title: source?.title,
+              url: source?.url,
+              document_id: source?.document_id,
+              document_date: source?.document_date,
+              document_date_note: source?.document_date_note,
+              retrieved_at: source?.retrieved_at,
+              archive_ref: source?.archive_ref,
+              notes: source?.notes,
+            })
             if (rule.kind === "not_stated") expect(citation.quote).toBeNull()
             else expect(typeof citation.quote).toBe("string")
           }
@@ -292,12 +325,44 @@ medusaIntegrationTestRunner({
         expect((await review(owner, rule)).status).toBe(403)
         expect(await rows(`SELECT id FROM jurisdiction_rule WHERE review_status = 'reviewed'`)).toHaveLength(0)
 
-        // The list is exact: the same address in another letter case is someone else.
-        process.env[REVIEWER_ALLOWLIST_ENV] = owner.email.toUpperCase()
-        expect((await review(owner, rule)).status).toBe(403)
-
+        // The list holds user ids. The owner's email in it admits nobody, and
+        // the retired email variable is not read; the refusal says so.
         process.env[REVIEWER_ALLOWLIST_ENV] = owner.email
+        expect((await review(owner, rule)).status).toBe(403)
+        delete process.env[REVIEWER_ALLOWLIST_ENV]
+        process.env[RETIRED_REVIEWER_EMAILS_ENV] = owner.email
+        const retired = await review(owner, rule)
+        expect(retired.status).toBe(403)
+        expect(retired.data.message).toContain("JURISDICTION_RULE_REVIEWER_EMAILS is set but is no longer read")
+        expect(await rows(`SELECT id FROM jurisdiction_rule WHERE review_status = 'reviewed'`)).toHaveLength(0)
+
+        process.env[REVIEWER_ALLOWLIST_ENV] = owner.id
         expect((await review(owner, rule)).status).toBe(200)
+      })
+
+      it("an admin who deletes the owner and registers the owner's email again cannot sign, and the owner's old login cannot either", async () => {
+        const owner = await asReviewer()
+        const impostor = await asAdmin({ first_name: "Sam", last_name: "Reed" })
+        await seed()
+        const rule = inForce(await ruleList(owner), "label.statement")
+
+        // Medusa lets one admin delete another (a soft delete), and the unique
+        // index on the email covers live users only.
+        const deleted = await call(api.delete(`/admin/users/${owner.id}`, impostor.headers))
+        expect(deleted.status).toBe(200)
+        const [gone] = await rows(`SELECT deleted_at FROM "user" WHERE id = ?`, [owner.id])
+        expect(gone.deleted_at).not.toBeNull()
+
+        // A new admin user with the owner's email and name, as an accepted invite would make.
+        const lookalike = await asAdmin({ first_name: "Ada", last_name: "Okafor", email: owner.email })
+        expect(lookalike.id).not.toBe(owner.id)
+
+        const forged = await review(lookalike, rule)
+        expect(forged.status).toBe(403)
+        expect(forged.data).toMatchObject({ type: "not_a_reviewer" })
+        // The deleted owner's token admits nobody either: the user is not retrieved.
+        expect((await review(owner, rule)).status).toBe(403)
+        expect(await rows(`SELECT id FROM jurisdiction_rule WHERE review_status = 'reviewed'`)).toHaveLength(0)
       })
 
       it("a reviewer named in the body is ignored: the row records the authenticated admin", async () => {
@@ -321,6 +386,7 @@ medusaIntegrationTestRunner({
           review_status: "reviewed",
           reviewed_by_user_id: owner.id,
           reviewer_name: "Ada Okafor",
+          reviewer_email: owner.email,
           review_note: "Checked against CPD Form #2210.",
           content_sha256: rule.content_sha256,
         })
@@ -328,8 +394,10 @@ medusaIntegrationTestRunner({
         const [stored] = await rows(`SELECT * FROM jurisdiction_rule WHERE id = ?`, [rule.id])
         expect(stored.reviewed_by_user_id).toBe(owner.id)
         expect(stored.reviewer_name).toBe("Ada Okafor")
+        expect(stored.reviewer_email).toBe(owner.email)
         expect(new Date(stored.reviewed_at as string).getFullYear()).toBeGreaterThan(2020)
         expect(JSON.stringify(stored)).not.toContain(other.id)
+        expect(JSON.stringify(stored)).not.toContain(other.email)
 
         // And the other admin naming the owner in the body is still not the owner.
         const second = inForce(await ruleList(owner), "label.ingredients")
@@ -442,6 +510,12 @@ medusaIntegrationTestRunner({
         expect(withdrawn.data.coverage.status).toBe("draft")
         expect(await coverageOf(owner)).toMatchObject({ status: "draft", required_keys_not_reviewed: ["sales.annual_cap"] })
         expect(await sellerCoverage()).toEqual({ listed: "draft", detail: "draft" })
+        // The seller still sees sixteen places, the withdrawn one held by a placeholder.
+        const detail = await api.get(`/vendor/plates/jurisdictions/${SC}`, authHeader(seller.token))
+        expect(detail.data).toMatchObject({ count: 16, placeholder_count: 1 })
+        const capPlace = detail.data.rules.find((r: { rule_key: string }) => r.rule_key === "sales.annual_cap")
+        expect(capPlace).toMatchObject({ is_placeholder: true, placeholder_reason: "withdrawn", citations: [] })
+        expect(capPlace.display_text).toMatch(/That is not a statement about what is or is not allowed\.$/)
 
         // Withdrawing it again, or without a reason, is refused.
         expect((await call(api.post(`/admin/jurisdiction-rules/${cap.id}/withdraw`, { reason: "Again." }, other.headers))).status).toBe(409)
@@ -471,7 +545,7 @@ medusaIntegrationTestRunner({
         )
         expect(proposed.status).toBe(201)
         const v2 = proposed.data.rule as RuleRow
-        expect(v2).toMatchObject({ version: 2, review_status: "draft", reviewed_by_user_id: null })
+        expect(v2).toMatchObject({ version: 2, review_status: "draft", reviewed_by_user_id: null, proposed_by_user_id: other.id })
         expect(v2.content_sha256).not.toBe(v1.content_sha256)
 
         const detail = await api.get(`/admin/jurisdiction-rules/${v2.id}`, owner.headers)
@@ -599,10 +673,11 @@ medusaIntegrationTestRunner({
         // The review record of a reviewed row: who, when, the note, and the status itself.
         for (const change of [
           `reviewer_name = 'Mallory'`,
+          `reviewer_email = 'mallory@example.com'`,
           `reviewed_by_user_id = 'user_mallory'`,
           `reviewed_at = now()`,
           `review_note = 'Rewritten.'`,
-          `review_status = 'draft', reviewed_by_user_id = NULL, reviewed_at = NULL, reviewer_name = NULL, review_note = NULL`,
+          `review_status = 'draft', reviewed_by_user_id = NULL, reviewed_at = NULL, reviewer_name = NULL, reviewer_email = NULL, review_note = NULL`,
         ]) {
           await expect(pg().raw(`UPDATE jurisdiction_rule SET ${change} WHERE id = ?`, [signedRule.id])).rejects.toThrow(
             /review record cannot be changed/
@@ -614,14 +689,21 @@ medusaIntegrationTestRunner({
           /jurisdiction_rule_review_record_check/
         )
         // Nor can a second pending draft or a second reviewed version in force be put beside the first.
-        const copy = (status: string, extra: string) =>
+        const copyOf = (id: string, copyId: string) =>
+          `INSERT INTO jurisdiction_rule (id, jurisdiction_code, program, rule_key, version, kind, display_text, citations, content_sha256)
+           SELECT '${copyId}', jurisdiction_code, program, rule_key, 2, kind, display_text, citations, content_sha256 FROM jurisdiction_rule WHERE id = '${id}'`
+        await expect(pg().raw(copyOf(draft.id, `jrule_copy_${uid()}`))).rejects.toThrow(/IDX_jurisdiction_rule_one_pending_draft/)
+        // A second reviewed version has to be inserted as a draft and then marked
+        // reviewed (the insert guard allows nothing else); the index refuses the second step.
+        const second = `jrule_copy_${uid()}`
+        await expect(
           pg().raw(
-            `INSERT INTO jurisdiction_rule (id, jurisdiction_code, program, rule_key, version, kind, display_text, citations, content_sha256, review_status${extra ? ", reviewed_by_user_id, reviewed_at" : ""})
-             SELECT ?, jurisdiction_code, program, rule_key, 2, kind, display_text, citations, content_sha256, ?${extra} FROM jurisdiction_rule WHERE id = ?`,
-            [`jrule_copy_${uid()}`, status, status === "draft" ? draft.id : signedRule.id]
+            `DO $do$ BEGIN
+               ${copyOf(signedRule.id, second)};
+               UPDATE jurisdiction_rule SET review_status = 'reviewed', reviewed_by_user_id = 'user_x', reviewer_email = 'x@example.com', reviewed_at = now() WHERE id = '${second}';
+             END $do$`
           )
-        await expect(copy("draft", "")).rejects.toThrow(/IDX_jurisdiction_rule_one_pending_draft/)
-        await expect(copy("reviewed", ", 'user_x', now()")).rejects.toThrow(/IDX_jurisdiction_rule_one_reviewed_in_force/)
+        ).rejects.toThrow(/IDX_jurisdiction_rule_one_reviewed_in_force/)
 
         expect(await snapshot()).toEqual(before)
 
@@ -630,6 +712,157 @@ medusaIntegrationTestRunner({
         await expect(generated.updateJurisdictionRules({ id: signedRule.id, display_text: "Rewritten." })).rejects.toMatchObject({ reason: "closed" })
         await expect(generated.deleteJurisdictionRules([signedRule.id])).rejects.toMatchObject({ reason: "closed" })
         expect(await snapshot()).toEqual(before)
+      })
+    })
+
+    describe("the history on a migrated database", () => {
+      it("refuses a rule inserted already reviewed, withdrawn or deleted, and a delete or soft delete of any row", async () => {
+        const owner = await asReviewer()
+        await seed()
+        const statement = inForce(await ruleList(owner), "label.statement")
+        const before = await snapshot()
+
+        // A pre-reviewed row with false text, as the review measured, and its variants.
+        const forged = (columns: string, values: string) =>
+          pg().raw(
+            `INSERT INTO jurisdiction_rule (id, jurisdiction_code, program, rule_key, version, kind, display_text, citations, content_sha256${columns})
+             SELECT '${`jrule_forged_${uid()}`}', jurisdiction_code, program, 'label.forged', 1, kind, 'Sell anything you like.', citations, content_sha256${values}
+               FROM jurisdiction_rule WHERE id = '${statement.id}'`
+          )
+        for (const [columns, values] of [
+          [", review_status, reviewed_by_user_id, reviewer_email, reviewed_at", ", 'reviewed', 'user_x', 'x@example.com', now()"],
+          [", withdrawn_at, withdrawn_by_user_id, withdrawn_reason", ", now(), 'user_x', 'x'"],
+          [", superseded_at, superseded_by_rule_id", ", now(), 'jrule_x'"],
+          [", deleted_at", ", now()"],
+        ]) {
+          await expect(forged(columns, values)).rejects.toThrow(/must be written as a draft/)
+        }
+
+        // No row of the three tables is deleted, or soft-deleted.
+        await expect(pg().raw(`DELETE FROM jurisdiction_rule WHERE id = ?`, [statement.id])).rejects.toThrow(/jurisdiction_rule rows are never deleted/)
+        await expect(pg().raw(`DELETE FROM jurisdiction_source`)).rejects.toThrow(/jurisdiction_source rows are never deleted/)
+        await expect(pg().raw(`DELETE FROM jurisdiction_coverage`)).rejects.toThrow(/jurisdiction_coverage rows are never deleted/)
+        await expect(pg().raw(`UPDATE jurisdiction_rule SET deleted_at = now() WHERE id = ?`, [statement.id])).rejects.toThrow(
+          /never deleted or restored/
+        )
+
+        expect(await snapshot()).toEqual(before)
+      })
+
+      it("keeps a withdrawal, a supersession and a proposer as written, a source unchanged, and coverage's required keys from shrinking", async () => {
+        const owner = await asReviewer()
+        const other = await asAdmin()
+        await seed()
+        const list = await ruleList(owner)
+
+        // A withdrawn rule cannot be revived by clearing its withdrawal.
+        const health = inForce(list, "claims.health")
+        expect((await call(api.post(`/admin/jurisdiction-rules/${health.id}/withdraw`, { reason: "Testing." }, owner.headers))).status).toBe(200)
+        for (const change of [
+          `withdrawn_at = NULL, withdrawn_by_user_id = NULL, withdrawn_reason = NULL`,
+          `withdrawn_reason = 'Something else.'`,
+          `withdrawn_by_user_id = 'user_mallory'`,
+        ]) {
+          await expect(pg().raw(`UPDATE jurisdiction_rule SET ${change} WHERE id = ?`, [health.id])).rejects.toThrow(
+            /withdrawal cannot be changed/
+          )
+        }
+
+        // A superseded version cannot be put back in force.
+        const v1 = inForce(list, "sales.online_delivery")
+        expect((await review(owner, v1)).status).toBe(200)
+        const proposed = await call(
+          api.post(
+            "/admin/jurisdiction-rules",
+            {
+              jurisdiction_code: SC,
+              rule_key: "sales.online_delivery",
+              kind: "not_stated",
+              display_text: "Not addressed by our sources, reworded.",
+              citations: v1.citations.map((c) => ({ source_id: c.source_id, locator: c.locator })),
+            },
+            other.headers
+          )
+        )
+        expect((await review(owner, proposed.data.rule)).status).toBe(200)
+        for (const change of [`superseded_at = NULL, superseded_by_rule_id = NULL`, `superseded_by_rule_id = 'jrule_other'`]) {
+          await expect(pg().raw(`UPDATE jurisdiction_rule SET ${change} WHERE id = ?`, [v1.id])).rejects.toThrow(
+            /supersession cannot be changed/
+          )
+        }
+        await expect(
+          pg().raw(`UPDATE jurisdiction_rule SET proposed_by_user_id = 'user_mallory' WHERE id = ?`, [proposed.data.rule.id])
+        ).rejects.toThrow(/append-only/)
+
+        // A source is immutable.
+        const [source] = await rows(`SELECT id FROM jurisdiction_source LIMIT 1`)
+        for (const change of [`title = 'Another title'`, `document_id = 'CPD Form #9999'`, `document_date = '2019-01-01'`, `content_sha256 = '${"f".repeat(64)}'`, `deleted_at = now()`]) {
+          await expect(pg().raw(`UPDATE jurisdiction_source SET ${change} WHERE id = ?`, [source.id])).rejects.toThrow(/is immutable/)
+        }
+
+        // Coverage's required keys only grow; it cannot be re-pointed or soft-deleted.
+        await expect(pg().raw(`UPDATE jurisdiction_coverage SET required_rule_keys = '["label.statement"]'::jsonb`)).rejects.toThrow(/only grows/)
+        await expect(pg().raw(`UPDATE jurisdiction_coverage SET required_rule_keys = '[]'::jsonb`)).rejects.toThrow(/only grows/)
+        for (const change of [`jurisdiction_code = 'US-NC'`, `program = 'other'`, `deleted_at = now()`]) {
+          await expect(pg().raw(`UPDATE jurisdiction_coverage SET ${change}`)).rejects.toThrow(/cannot be re-pointed, deleted or restored/)
+        }
+        // Growing is allowed (rolled back here, so the row stays as the seed left it).
+        await expect(
+          pg().raw(
+            `DO $do$ BEGIN
+               UPDATE jurisdiction_coverage SET required_rule_keys = required_rule_keys || '["label.extra"]'::jsonb;
+               RAISE EXCEPTION 'grew, rolling back';
+             END $do$`
+          )
+        ).rejects.toThrow(/grew, rolling back/)
+        expect((await rows(`SELECT required_rule_keys FROM jurisdiction_coverage`))[0].required_rule_keys).toEqual(
+          US_SC_HOME_BASED_FOOD_RULES.map((r) => r.rule_key)
+        )
+      })
+
+      it("shows a seller neither a reviewed rule whose text no longer matches its hash, nor a source changed under a signed rule", async () => {
+        const owner = await asReviewer()
+        const seller = await createAuthenticatedSeller({ api, getContainer })
+        await seed()
+        process.env[FLAG] = "true"
+        const list = await ruleList(owner)
+        for (const rule of list) expect((await review(owner, rule)).status).toBe(200)
+        const detail = async () => (await api.get(`/vendor/plates/jurisdictions/${SC}`, authHeader(seller.token))).data
+        expect((await detail()).coverage.status).toBe("covered")
+
+        // Only with the guards switched off can the rows be changed at all.
+        const statement = inForce(list, "label.statement")
+        await withTriggersOff(
+          "jurisdiction_rule",
+          ["jurisdiction_rule_guard_update"],
+          `UPDATE jurisdiction_rule SET display_text = 'Sell anything you like.' WHERE id = ?`,
+          [statement.id]
+        )
+        await withTriggersOff(
+          "jurisdiction_source",
+          ["jurisdiction_source_refuse_update"],
+          `UPDATE jurisdiction_source SET title = 'Another title', document_id = 'CPD Form #9999', document_date = '2019-01-01', content_sha256 = ? WHERE document_id = 'CPD Form #2210'`,
+          ["f".repeat(64)]
+        )
+
+        const after = await detail()
+        expect(JSON.stringify(after)).not.toContain("Sell anything you like.")
+        expect(after.rules.find((r: { rule_key: string }) => r.rule_key === "label.statement")).toMatchObject({
+          is_placeholder: true,
+          placeholder_reason: "unavailable",
+        })
+        expect(after.coverage).toMatchObject({ status: "draft", required_keys_not_reviewed: ["label.statement"] })
+        expect(await coverageOf(owner)).toMatchObject({ status: "draft", required_keys_not_reviewed: ["label.statement"] })
+
+        // Every source shown is the copy signed with its rule, whatever the row says now.
+        const ingredients = after.rules.find((r: { rule_key: string }) => r.rule_key === "label.ingredients")
+        expect(ingredients.citations[1].source).toMatchObject({
+          title: "Home-Based Food Production (Cottage Law)",
+          document_id: "CPD Form #2210",
+          document_date: "2026-05-01",
+          content_sha256: "b19c9924721c9219b54f6c859e4733b97e8ad86caa7b29c13df0d8647fe7712c",
+        })
+        expect(JSON.stringify(after)).not.toContain("CPD Form #9999")
       })
     })
 
@@ -645,6 +878,8 @@ medusaIntegrationTestRunner({
             const res = await call(api.get(path, authHeader(seller.token)))
             expect(res.status).toBe(404)
             expect(res.data).toEqual({ type: "feature_disabled", message: "Feature flag FF_PLATES_V1 is disabled" })
+            // Authentication runs before the flag, as for every flagged vendor route: no token is 401 either way.
+            expect((await call(api.get(path))).status).toBe(401)
           }
         }
 

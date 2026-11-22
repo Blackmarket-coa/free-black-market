@@ -11,13 +11,15 @@ import { ReviewBody, rejectBody, sendRuleError } from "../../schema"
  *
  * In order:
  *
- * 1. **Who.** The reviewer is the authenticated admin user, looked up in the
- *    user module, and must be on the allowlist the operator sets in
- *    `JURISDICTION_RULE_REVIEWER_EMAILS`. Anyone else gets 403, before the
- *    body or the rule is looked at, so the answer says nothing about whether
- *    the rule exists. With the variable unset, that is everyone. Nothing in
- *    the body can name a reviewer: the schema has no such field, and unknown
- *    keys are dropped.
+ * 1. **Who.** The reviewer is the authenticated admin user, whose user id
+ *    must be on the allowlist the operator sets in
+ *    `JURISDICTION_RULE_REVIEWER_USER_IDS`, and whom the user module must
+ *    still have (a deleted user is not retrieved). Anyone else gets 403,
+ *    before the body or the rule is looked at, so the answer says nothing
+ *    about whether the rule exists. With the variable unset, that is
+ *    everyone. Nothing in the body can name a reviewer: the schema has no
+ *    such field, and unknown keys are dropped. The user id, name and email
+ *    the user module returns are recorded on the sign-off.
  * 2. **What.** `expected_content_sha256` is the hash of the text the reviewer
  *    was shown. The service marks the version reviewed in one conditional
  *    UPDATE that matches only while this version is still the pending draft
@@ -47,7 +49,11 @@ export async function POST(req: MedusaRequest<unknown>, res: MedusaResponse) {
     const result = await service.markReviewed({
       rule_id: id,
       expected_content_sha256: parsed.data.expected_content_sha256,
-      reviewer: { user_id: resolution.reviewer.user_id, name: resolution.reviewer.name },
+      reviewer: {
+        user_id: resolution.reviewer.user_id,
+        name: resolution.reviewer.name,
+        email: resolution.reviewer.email,
+      },
       note: parsed.data.note ?? null,
     })
     return res.status(200).json(result)

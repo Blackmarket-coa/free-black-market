@@ -58,13 +58,45 @@ export type RuleCitationInput = {
 }
 
 /**
- * One citation as stored. `source_sha256` is copied from the source row by the
- * service when the version is written, never taken from the caller, so the
- * rule's content hash covers the exact file the quote was read from.
+ * The details of a source document a reader is shown beside a citation, as
+ * they stood when the rule version was written.
+ */
+export type RuleCitationSource = {
+  issuer: string
+  title: string
+  url: string | null
+  document_id: string | null
+  document_date: string | null
+  document_date_note: string | null
+  retrieved_at: string
+  archive_ref: string
+  notes: string | null
+}
+
+/** The source fields copied into every citation, in the order they are hashed (the order does not matter to the hash). */
+export const RULE_CITATION_SOURCE_FIELDS = [
+  "issuer",
+  "title",
+  "url",
+  "document_id",
+  "document_date",
+  "document_date_note",
+  "retrieved_at",
+  "archive_ref",
+  "notes",
+] as const satisfies ReadonlyArray<keyof RuleCitationSource>
+
+/**
+ * One citation as stored. `source_sha256` and `source` are copied from the
+ * source row by the service when the version is written, never taken from the
+ * caller, so the rule's content hash covers the hash of the file the quote is
+ * attributed to and every detail of that document a reader is shown. Readers
+ * are shown these copies, not the live source row.
  */
 export type RuleCitation = {
   source_id: string
   source_sha256: string
+  source: RuleCitationSource
   locator: string
   quote: string | null
 }

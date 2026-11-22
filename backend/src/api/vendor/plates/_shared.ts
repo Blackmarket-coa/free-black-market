@@ -1,6 +1,11 @@
 import type { MedusaResponse } from "@medusajs/framework/http"
 import { NOT_STATED } from "../../../modules/jurisdiction-rules"
-import type { RuleView, RuleViewEntry } from "../../../modules/jurisdiction-rules"
+import type {
+  RuleView,
+  RuleViewEntry,
+  RuleViewItem,
+  RuleViewPlaceholderReason,
+} from "../../../modules/jurisdiction-rules"
 import { PHASE0_FEATURE_FLAGS, featureFlagState } from "../../../shared/feature-flags"
 
 /**
@@ -35,7 +40,8 @@ type ViewSource = NonNullable<RuleViewEntry["citations"][number]["source"]>
 
 /**
  * A source as a seller is shown it: the issuer and title, the document id and
- * the printed date. A document that prints no id or no date reads
+ * the printed date, as signed with the rule version (the copy in the
+ * citation, and the file hash signed with it), not the live source row. A document that prints no id or no date reads
  * "not stated" in the `_text` field, with the raw value left null beside it,
  * so a screen never has to decide what an absent date should say.
  */
@@ -56,9 +62,41 @@ function sourceForSeller(source: ViewSource | null) {
   }
 }
 
-/** One rule as a seller is shown it. A draft is marked as one. */
-export function ruleForSeller(rule: RuleViewEntry) {
+/**
+ * What a seller reads in place of a required rule that has nothing to show.
+ * Each says that the gap is not an answer either way.
+ */
+export const PLACEHOLDER_TEXT: Record<RuleViewPlaceholderReason, string> = {
+  withdrawn:
+    "FBM withdrew its wording for this rule and has none to show right now. That is not a statement about what is or is not allowed.",
+  not_reviewed:
+    "FBM's wording for this rule has not been reviewed yet, so it is not shown here. That is not a statement about what is or is not allowed.",
+  unavailable:
+    "FBM's wording for this rule cannot be shown right now. That is not a statement about what is or is not allowed.",
+  no_version:
+    "FBM has no wording on file for this rule yet. That is not a statement about what is or is not allowed.",
+}
+
+/** A required rule with nothing to show, in its place, saying so. */
+function placeholderForSeller(rule_key: string, reason: RuleViewPlaceholderReason) {
   return {
+    rule_key,
+    is_placeholder: true as const,
+    placeholder_reason: reason,
+    display_text: PLACEHOLDER_TEXT[reason],
+    citations: [] as never[],
+  }
+}
+
+/** One rule as a seller is shown it, or the placeholder that holds its place. A draft is marked as one. */
+export function ruleForSeller(rule: RuleViewItem) {
+  if (rule.placeholder) return placeholderForSeller(rule.rule_key, rule.reason)
+  return ruleEntryForSeller(rule)
+}
+
+function ruleEntryForSeller(rule: RuleViewEntry) {
+  return {
+    is_placeholder: false as const,
     id: rule.id,
     rule_key: rule.rule_key,
     version: rule.version,

@@ -6,7 +6,10 @@ import { model } from "@medusajs/framework/utils"
  * A source is a file in the repository (`archive_ref`, under `docs/sources/`)
  * and its SHA-256. Rows are written only by a seed that names an archived
  * file; there is no route that creates or edits one, so a citation always
- * leads to bytes that were reviewed in a pull request.
+ * leads to bytes that were reviewed in a pull request. On a migrated database
+ * a trigger refuses any UPDATE or DELETE of a source row (`../db-guards.ts`).
+ * Rule versions do not read this row to show a source: each citation carries
+ * its own signed copy of the details a reader is shown.
  *
  * The three dates are calendar dates as text (`2026-05-01`), not timestamps.
  * A document's printed date has no time of day and no zone, and a timestamp

@@ -1,4 +1,5 @@
 import { Migration } from "@medusajs/framework/mikro-orm/migrations"
+import { GUARD_FUNCTIONS, GUARD_TRIGGERS, JURISDICTION_RULE_GUARDS } from "../db-guards"
 
 /**
  * jurisdiction_source, jurisdiction_rule, jurisdiction_coverage: the Plates
@@ -17,12 +18,26 @@ import { Migration } from "@medusajs/framework/mikro-orm/migrations"
  * `model.enum`, not native enum types: a later change is a DROP / ADD
  * CONSTRAINT inside the migration's transaction on any Postgres version.
  *
- * One thing here has no counterpart in the models: the trigger at the end.
- * The models cannot express it, so a schema built from them (the module test
- * runner's) does not have it; the service's own refusals are what that runner
- * tests. On a migrated database the trigger is the last line: a version's
- * content, and a reviewed version's review record, cannot be changed by any
- * UPDATE, whoever issues it.
+ * One thing here has no counterpart in the models: the guard triggers at the
+ * end. The models cannot express them, so a schema built from the models (the
+ * module test runner's) has none, and that runner tests the service's own
+ * refusals; the triggers are pinned on a migrated database by
+ * `integration-tests/http/jurisdiction-rules-signoff.spec.ts`. On a migrated
+ * database they hold whoever writes:
+ *
+ * - jurisdiction_rule: inserted only as a draft with no review,
+ *   supersession, withdrawal or deletion; never deleted or soft-deleted; its
+ *   content, identity and proposer never change; a review record, a
+ *   supersession and a withdrawal, once written, never change.
+ * - jurisdiction_source: never updated or deleted.
+ * - jurisdiction_coverage: never deleted, re-pointed or soft-deleted, and its
+ *   required keys only grow.
+ *
+ * What they do not stop: someone with direct write access can still issue the
+ * same statements the service issues (insert a draft, mark it reviewed), and
+ * can compute the content hash, which is public. They keep the history from
+ * being rewritten or a reviewed row from being forged in one stroke; they are
+ * not an authorisation layer.
  */
 export class Migration20261118CreateJurisdictionRules extends Migration {
   override async up(): Promise<void> {
@@ -40,7 +55,7 @@ export class Migration20261118CreateJurisdictionRules extends Migration {
     )
 
     this.addSql(
-      `create table if not exists "jurisdiction_rule" ("id" text not null, "jurisdiction_code" text not null, "program" text not null, "rule_key" text not null, "version" integer not null, "kind" text check ("kind" in ('requirement', 'permission', 'prohibition', 'fact', 'not_stated')) not null, "value" jsonb null, "display_text" text not null, "citations" jsonb not null, "effective_from" text null, "effective_note" text null, "content_sha256" text not null, "review_status" text check ("review_status" in ('draft', 'reviewed')) not null default 'draft', "reviewed_by_user_id" text null, "reviewer_name" text null, "reviewed_at" timestamptz null, "review_note" text null, "superseded_by_rule_id" text null, "superseded_at" timestamptz null, "withdrawn_at" timestamptz null, "withdrawn_by_user_id" text null, "withdrawn_reason" text null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "jurisdiction_rule_pkey" primary key ("id"), constraint jurisdiction_rule_version_check check (version >= 1), constraint jurisdiction_rule_content_sha256_check check (content_sha256 ~ '^[0-9a-f]{64}$'), constraint jurisdiction_rule_citations_present_check check (CASE WHEN jsonb_typeof(citations) = 'array' THEN jsonb_array_length(citations) >= 1 ELSE false END), constraint jurisdiction_rule_effective_from_check check (effective_from IS NULL OR effective_from ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'), constraint jurisdiction_rule_review_record_check check ((review_status = 'reviewed') = (reviewed_by_user_id IS NOT NULL AND reviewed_at IS NOT NULL)), constraint jurisdiction_rule_draft_has_no_reviewer_check check (review_status = 'reviewed' OR (reviewed_by_user_id IS NULL AND reviewed_at IS NULL AND reviewer_name IS NULL AND review_note IS NULL)), constraint jurisdiction_rule_superseded_record_check check ((superseded_at IS NULL) = (superseded_by_rule_id IS NULL)), constraint jurisdiction_rule_withdrawn_record_check check ((withdrawn_at IS NULL) = (withdrawn_by_user_id IS NULL) AND (withdrawn_at IS NULL) = (withdrawn_reason IS NULL)));`
+      `create table if not exists "jurisdiction_rule" ("id" text not null, "jurisdiction_code" text not null, "program" text not null, "rule_key" text not null, "version" integer not null, "kind" text check ("kind" in ('requirement', 'permission', 'prohibition', 'fact', 'not_stated')) not null, "value" jsonb null, "display_text" text not null, "citations" jsonb not null, "effective_from" text null, "effective_note" text null, "content_sha256" text not null, "proposed_by_user_id" text null, "review_status" text check ("review_status" in ('draft', 'reviewed')) not null default 'draft', "reviewed_by_user_id" text null, "reviewer_name" text null, "reviewer_email" text null, "reviewed_at" timestamptz null, "review_note" text null, "superseded_by_rule_id" text null, "superseded_at" timestamptz null, "withdrawn_at" timestamptz null, "withdrawn_by_user_id" text null, "withdrawn_reason" text null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "jurisdiction_rule_pkey" primary key ("id"), constraint jurisdiction_rule_version_check check (version >= 1), constraint jurisdiction_rule_content_sha256_check check (content_sha256 ~ '^[0-9a-f]{64}$'), constraint jurisdiction_rule_citations_present_check check (CASE WHEN jsonb_typeof(citations) = 'array' THEN jsonb_array_length(citations) >= 1 ELSE false END), constraint jurisdiction_rule_effective_from_check check (effective_from IS NULL OR effective_from ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'), constraint jurisdiction_rule_review_record_check check ((review_status = 'reviewed') = (reviewed_by_user_id IS NOT NULL AND reviewer_email IS NOT NULL AND reviewed_at IS NOT NULL)), constraint jurisdiction_rule_draft_has_no_reviewer_check check (review_status = 'reviewed' OR (reviewed_by_user_id IS NULL AND reviewed_at IS NULL AND reviewer_name IS NULL AND reviewer_email IS NULL AND review_note IS NULL)), constraint jurisdiction_rule_superseded_record_check check ((superseded_at IS NULL) = (superseded_by_rule_id IS NULL)), constraint jurisdiction_rule_withdrawn_record_check check ((withdrawn_at IS NULL) = (withdrawn_by_user_id IS NULL) AND (withdrawn_at IS NULL) = (withdrawn_reason IS NULL)));`
     )
     this.addSql(
       `CREATE INDEX IF NOT EXISTS "IDX_jurisdiction_rule_deleted_at" ON "jurisdiction_rule" ("deleted_at") WHERE deleted_at IS NULL;`
@@ -70,51 +85,18 @@ export class Migration20261118CreateJurisdictionRules extends Migration {
       `CREATE UNIQUE INDEX IF NOT EXISTS "IDX_jurisdiction_coverage_code_program_unique" ON "jurisdiction_coverage" ("jurisdiction_code", "program") WHERE deleted_at IS NULL;`
     )
 
-    // Append-only content, at the database. `IS DISTINCT FROM` so a NULL
-    // becoming a value (or the reverse) counts as a change. The review record
-    // of a row that is already reviewed is frozen the same way; a draft's is
-    // not, because becoming reviewed is the one change a draft is for.
-    // `EXECUTE PROCEDURE` rather than `EXECUTE FUNCTION`: both mean the same
-    // from Postgres 11 on, and only the former exists before it.
-    this.addSql(
-      `CREATE OR REPLACE FUNCTION jurisdiction_rule_refuse_content_change() RETURNS trigger AS $body$
-BEGIN
-  IF NEW.jurisdiction_code IS DISTINCT FROM OLD.jurisdiction_code
-     OR NEW.program IS DISTINCT FROM OLD.program
-     OR NEW.rule_key IS DISTINCT FROM OLD.rule_key
-     OR NEW.version IS DISTINCT FROM OLD.version
-     OR NEW.kind IS DISTINCT FROM OLD.kind
-     OR NEW.value IS DISTINCT FROM OLD.value
-     OR NEW.display_text IS DISTINCT FROM OLD.display_text
-     OR NEW.citations IS DISTINCT FROM OLD.citations
-     OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
-     OR NEW.effective_note IS DISTINCT FROM OLD.effective_note
-     OR NEW.content_sha256 IS DISTINCT FROM OLD.content_sha256 THEN
-    RAISE EXCEPTION 'jurisdiction_rule % is append-only: its content cannot be changed, write a new version', OLD.id
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  IF OLD.review_status = 'reviewed' AND (
-       NEW.review_status IS DISTINCT FROM OLD.review_status
-       OR NEW.reviewed_by_user_id IS DISTINCT FROM OLD.reviewed_by_user_id
-       OR NEW.reviewer_name IS DISTINCT FROM OLD.reviewer_name
-       OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
-       OR NEW.review_note IS DISTINCT FROM OLD.review_note) THEN
-    RAISE EXCEPTION 'jurisdiction_rule % is reviewed: its review record cannot be changed', OLD.id
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END;
-$body$ LANGUAGE plpgsql;`
-    )
-    this.addSql(`DROP TRIGGER IF EXISTS "jurisdiction_rule_refuse_content_change" ON "jurisdiction_rule";`)
-    this.addSql(
-      `CREATE TRIGGER "jurisdiction_rule_refuse_content_change" BEFORE UPDATE ON "jurisdiction_rule" FOR EACH ROW EXECUTE PROCEDURE jurisdiction_rule_refuse_content_change();`
-    )
+    // The database's own guards. Each refuses with ERRCODE restrict_violation
+    // and a message naming what it protects. `IS DISTINCT FROM` so a NULL
+    // becoming a value (or the reverse) counts as a change. `EXECUTE
+    // PROCEDURE` rather than `EXECUTE FUNCTION`: both mean the same from
+    // Postgres 11 on, and only the former exists before it. TRUNCATE is not
+    // guarded: it is what the test runners use to reset a database.
+    for (const sql of JURISDICTION_RULE_GUARDS) this.addSql(sql)
   }
 
   override async down(): Promise<void> {
-    this.addSql(`DROP TRIGGER IF EXISTS "jurisdiction_rule_refuse_content_change" ON "jurisdiction_rule";`)
-    this.addSql(`DROP FUNCTION IF EXISTS jurisdiction_rule_refuse_content_change();`)
+    for (const [table, trigger] of GUARD_TRIGGERS) this.addSql(`DROP TRIGGER IF EXISTS "${trigger}" ON "${table}";`)
+    for (const fn of GUARD_FUNCTIONS) this.addSql(`DROP FUNCTION IF EXISTS ${fn}();`)
     this.addSql(`drop table if exists "jurisdiction_coverage" cascade;`)
     this.addSql(`drop table if exists "jurisdiction_rule" cascade;`)
     this.addSql(`drop table if exists "jurisdiction_source" cascade;`)

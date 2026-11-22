@@ -56,8 +56,11 @@ The service has three writers of a rule (`createDraftVersion`, `markReviewed`,
 `softDelete*` / `restore*` method. Under it, three partial unique indexes hold
 the "at most one" rules, CHECK constraints refuse a row with no citation or
 with a review record that does not add up, and on a database built from the
-migration a trigger refuses any UPDATE of a version's content or of a reviewed
-version's review record.
+migration triggers hold the history whoever writes: a rule version is
+inserted only as a draft, never deleted or soft-deleted, and its content, a
+review record, a supersession and a withdrawal never change once written; a
+source is never updated or deleted; a coverage row is never deleted or
+re-pointed, and its required keys only grow.
 
 **3. A sign-off names the text, not only the row.**
 
@@ -68,9 +71,19 @@ conditional UPDATE that matches only while that version is still the pending
 draft carrying that hash. Anything else writes nothing.
 
 Who reviewed is the authenticated admin, passed in by the route from the
-session. No request body can name a reviewer. Who *may* review is the
-operator's allowlist, `JURISDICTION_RULE_REVIEWER_EMAILS`
-(`src/api/admin/jurisdiction-rules/reviewers.ts`); unset means nobody.
+session; the user id, name and email the user module returns are recorded.
+No request body can name a reviewer. Who *may* review is the operator's
+allowlist of admin **user ids**, `JURISDICTION_RULE_REVIEWER_USER_IDS`
+(`src/api/admin/jurisdiction-rules/reviewers.ts`); unset means nobody. Not
+emails: a deleted admin's email can be registered again by another admin,
+while a user id is never reused.
+
+Readers are shown, for each citation, the copy of the document's details
+signed with the version, not the live source row; and a version whose stored
+content no longer hashes to its `content_sha256` is never shown or counted as
+reviewed. Every key coverage requires has a place in a reader's list: its
+rule, or a placeholder saying there is nothing to show (withdrawn, or its
+text unavailable).
 
 ## Coverage
 
