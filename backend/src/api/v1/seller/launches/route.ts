@@ -9,6 +9,7 @@ import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import type DemandPoolModuleService from "../../../../modules/demand-pool/service"
 import { BountyObjective } from "../../../../modules/demand-pool/models/demand-bounty"
 import { DemandPostStatus } from "../../../../modules/demand-pool/models/demand-post"
+import { isFundedLaunchesLive } from "../../../../modules/hawala-ledger/vendor-transfer-switches"
 import { CreatorProgramType } from "../../../../modules/creator-program/models/creator-program"
 import { PRODUCER_MODULE } from "../../../../modules/producer"
 import type ProducerService from "../../../../modules/producer/service"
@@ -56,7 +57,15 @@ const LaunchSchema = z.object({
   // Marketing bounty
   bounty_objective: z.nativeEnum(BountyObjective).optional(),
   bounty_amount: z.number().min(0).max(1_000_000).optional(),
-  bounty_milestones: z.array(MilestoneSchema).max(10).optional(),
+  // addBounty refuses milestones whose percentages do not sum to 100; checked
+  // here too, so such a launch is refused before anything is written.
+  bounty_milestones: z
+    .array(MilestoneSchema)
+    .max(10)
+    .optional()
+    .refine((ms) => !ms || ms.length === 0 || ms.reduce((sum, m) => sum + m.percentage, 0) === 100, {
+      message: "Bounty milestone percentages must sum to 100",
+    }),
   // Creator program
   program_type: z.nativeEnum(CreatorProgramType).optional(),
   commission_percent: z.number().min(0).max(100).optional().nullable(),
@@ -110,6 +119,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // created; idempotency is handled by the workflow's deterministic keys
   // (program slug reuse + sponsorship escrow key).
   if (launchType === "SPONSORSHIP") {
+    // A funded sponsorship is refused, before anything is written, unless
+    // funded launches are on (FBM_FUNDED_LAUNCHES_LIVE, also enforced in
+    // escrowSponsorshipFunds). Its escrow debits the seller's USER_WALLET,
+    // which nothing creates for a seller ("Producer wallet not found", and an
+    // empty escrow account and a closed program left behind on every
+    // attempt); with a wallet, the money sat in escrow with no payout
+    // (paySponsorship has no caller) and no refund.
+    if ((data.sponsorship_amount ?? 0) > 0 && !isFundedLaunchesLive()) {
+      return res.status(400).json({
+        message: "A funded sponsorship is not available yet. Leave the sponsorship amount empty to launch.",
+        type: "invalid_request",
+      })
+    }
     try {
       const { result } = await launchSponsorshipWorkflow(req.scope).run({
         input: {
@@ -142,14 +164,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  // A funded bounty is refused, before anything is written. Its escrow debits
-  // the seller's USER_WALLET, which nothing creates for a seller, so the
-  // workflow failed for every store ("Contributor wallet not found"); and an
-  // escrowed bounty has no way out: its payout route wants a customer equal
-  // to the post's creator (a seller here), a panel launch has no milestones,
-  // and no cancel path refunds it. Until a wallet, a payout and a refund
-  // exist, a launch carries an unfunded bounty or none.
-  if ((data.bounty_amount ?? 0) > 0) {
+  // A funded bounty is refused, before anything is written, unless funded
+  // launches are on (FBM_FUNDED_LAUNCHES_LIVE, also enforced in
+  // escrowBountyFunds). Its escrow debits the seller's USER_WALLET, which
+  // nothing creates for a seller, so the workflow failed for every store
+  // ("Contributor wallet not found"); and an escrowed bounty has no way out:
+  // its payout route wants a customer equal to the post's creator (a seller
+  // here), a panel launch has no milestones, and no cancel path refunds it.
+  // Until a wallet, a payout and a refund exist, a launch carries an unfunded
+  // bounty or none.
+  if ((data.bounty_amount ?? 0) > 0 && !isFundedLaunchesLive()) {
     return res.status(400).json({
       message: "A funded bounty is not available yet. Leave the bounty amount empty to launch.",
       type: "invalid_request",

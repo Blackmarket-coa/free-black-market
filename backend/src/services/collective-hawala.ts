@@ -14,6 +14,7 @@ import {
   requireMutualAidAccountId,
   shouldRouteToMutualAid,
 } from "../lib/surplus-redirect"
+import { assertFundedLaunchesLive } from "../modules/hawala-ledger/vendor-transfer-switches"
 
 /**
  * Platform's cut of a creator sponsorship, in percent. Unlike order platform
@@ -219,7 +220,13 @@ export class CollectiveHawalaService {
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * Escrow bounty funds when a buyer creates a demand bounty.
+   * Escrow a bounty's funds into its pool's escrow account.
+   *
+   * Its one caller is the seller launch's bounty step, so it is a funded
+   * launch: off unless FBM_FUNDED_LAUNCHES_LIVE=1
+   * (modules/hawala-ledger/vendor-transfer-switches.ts), refused before any
+   * account is read or made. The wallet and its balance are checked before
+   * the pool's escrow account is made, so a refusal leaves no empty account.
    */
   async escrowBountyFunds(input: {
     demand_post_id: string
@@ -227,9 +234,7 @@ export class CollectiveHawalaService {
     contributor_id: string
     amount: number
   }) {
-    const escrowAccount = await this.getOrCreateDemandEscrow(
-      input.demand_post_id
-    )
+    assertFundedLaunchesLive()
 
     const contributorAccounts =
       await this.hawalaService.listLedgerAccounts({
@@ -245,6 +250,10 @@ export class CollectiveHawalaService {
     if (Number(contributorAccount.available_balance) < input.amount) {
       throw new Error("Insufficient balance for bounty escrow")
     }
+
+    const escrowAccount = await this.getOrCreateDemandEscrow(
+      input.demand_post_id
+    )
 
     const entry = await this.hawalaService.createTransfer({
       debit_account_id: contributorAccount.id,
@@ -575,15 +584,19 @@ export class CollectiveHawalaService {
    * Mirrors `escrowBountyFunds`: moves funds from the producer's wallet into a
    * per-sponsorship escrow account. Idempotent on `sponsorship-escrow-${id}`.
    * All amounts are in dollars (the ledger's working unit).
+   *
+   * A funded launch: off unless FBM_FUNDED_LAUNCHES_LIVE=1
+   * (modules/hawala-ledger/vendor-transfer-switches.ts), refused before any
+   * account is read or made. The wallet and its balance are checked before
+   * the escrow account is made, so a refusal leaves no empty account (before,
+   * every attempt without a wallet left one).
    */
   async escrowSponsorshipFunds(input: {
     sponsorship_id: string
     producer_id: string
     amount: number
   }) {
-    const escrowAccount = await this.getOrCreateSponsorshipEscrow(
-      input.sponsorship_id
-    )
+    assertFundedLaunchesLive()
 
     const producerAccounts = await this.hawalaService.listLedgerAccounts({
       owner_id: input.producer_id,
@@ -597,6 +610,10 @@ export class CollectiveHawalaService {
     if (Number(producerAccount.available_balance) < input.amount) {
       throw new Error("Insufficient balance for sponsorship escrow")
     }
+
+    const escrowAccount = await this.getOrCreateSponsorshipEscrow(
+      input.sponsorship_id
+    )
 
     return this.hawalaService.createTransfer({
       debit_account_id: producerAccount.id,
@@ -616,12 +633,17 @@ export class CollectiveHawalaService {
    * creator payout — each with a deterministic idempotency key so retries are
    * safe. The two legs always sum to the original amount (fee is rounded to the
    * cent, the creator gets the remainder).
+   *
+   * No caller today. A funded launch's payout, so off unless
+   * FBM_FUNDED_LAUNCHES_LIVE=1, like the escrow it pays out of.
    */
   async paySponsorship(input: {
     sponsorship_id: string
     creator_id: string
     amount: number
   }) {
+    assertFundedLaunchesLive()
+
     const escrowAccount = await this.getOrCreateSponsorshipEscrow(
       input.sponsorship_id
     )

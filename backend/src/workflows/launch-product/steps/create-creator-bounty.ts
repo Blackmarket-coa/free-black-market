@@ -5,6 +5,7 @@ import { DEMAND_POOL_MODULE } from "../../../modules/demand-pool"
 import { BountyStatus } from "../../../modules/demand-pool/models/demand-bounty"
 import { DemandPostStatus } from "../../../modules/demand-pool/models/demand-post"
 import { getCollectiveHawalaService } from "../../../services/collective-hawala"
+import { assertFundedLaunchesLive } from "../../../modules/hawala-ledger/vendor-transfer-switches"
 import { createLogger } from "../../../shared/logger"
 
 const log = createLogger("workflows/launch-product/create-creator-bounty")
@@ -74,8 +75,10 @@ async function cancelLaunchDemand(container: MedusaContainer, demandPostId: stri
  * to OPEN so creators can discover and claim it. Idempotent per `launch_id`
  * and product.
  *
- * Nothing it makes outlives a failed launch as a public bounty: if the escrow
- * throws, or a later step does, the post and its bounties are cancelled.
+ * Nothing it makes outlives a failed launch as a public bounty: if any part of
+ * it throws (the post, its publication, the bounty, the escrow), or a later
+ * step does, the post and its bounties are cancelled. A funded bounty is
+ * refused before anything is written unless FBM_FUNDED_LAUNCHES_LIVE=1.
  */
 const createCreatorBountyStep = createStep(
   "create-creator-bounty-step",
@@ -105,61 +108,69 @@ const createCreatorBountyStep = createStep(
       )
     }
 
-    const post = await service.createDemandPost({
-      creator_id: data.seller_id,
-      creator_type: "SELLER",
-      title: data.title,
-      description: data.description,
-      category: data.category ?? undefined,
-      target_quantity: data.target_quantity,
-      min_quantity: data.min_quantity,
-      delivery_region: data.delivery_region ?? undefined,
-      cooperative_id: data.cooperative_id ?? undefined,
-      launch_id: data.launch_id,
-      product_id: data.product_id,
-    })
+    // A funded bounty is a funded launch, off unless FBM_FUNDED_LAUNCHES_LIVE=1.
+    // escrowBountyFunds refuses it whatever calls it; asking first here means a
+    // refused launch writes no post at all, rather than a cancelled one.
+    const funded = Number(data.bounty.amount) > 0
+    if (funded) assertFundedLaunchesLive()
 
-    // Publish DRAFT -> OPEN so the bounty is discoverable.
-    await service.publishDemandPost(post.id)
+    // Everything this step writes is undone here if any part of it throws: a
+    // step that throws is not compensated. Before, only the escrow was
+    // covered, so a bounty refused by addBounty (milestones not summing to
+    // 100) left the post OPEN with no bounty, pointing at a product the
+    // rollback deleted, and a retry added a second post beside it.
+    let postId: string | null = null
+    try {
+      const post = await service.createDemandPost({
+        creator_id: data.seller_id,
+        creator_type: "SELLER",
+        title: data.title,
+        description: data.description,
+        category: data.category ?? undefined,
+        target_quantity: data.target_quantity,
+        min_quantity: data.min_quantity,
+        delivery_region: data.delivery_region ?? undefined,
+        cooperative_id: data.cooperative_id ?? undefined,
+        launch_id: data.launch_id,
+        product_id: data.product_id,
+      })
+      postId = post.id as string
 
-    const bounty = await service.addBounty({
-      demand_post_id: post.id,
-      contributor_id: data.seller_id,
-      contributor_type: "SELLER",
-      objective: data.bounty.objective,
-      amount: data.bounty.amount,
-      currency_code: data.bounty.currency_code ?? "USD",
-      milestones: data.bounty.milestones,
-    })
+      // Publish DRAFT -> OPEN so the bounty is discoverable.
+      await service.publishDemandPost(postId)
 
-    // A funded bounty must be backed by escrow so the displayed reward is real.
-    // Locks the amount from the seller's wallet into the demand-pool escrow; if
-    // the wallet can't cover it the step throws and the post is rolled back.
-    if (Number(data.bounty.amount) > 0) {
-      const hawala = getCollectiveHawalaService(container)
-      try {
-        await hawala.escrowBountyFunds({
-          demand_post_id: post.id,
+      const bounty = await service.addBounty({
+        demand_post_id: postId,
+        contributor_id: data.seller_id,
+        contributor_type: "SELLER",
+        objective: data.bounty.objective,
+        amount: data.bounty.amount,
+        currency_code: data.bounty.currency_code ?? "USD",
+        milestones: data.bounty.milestones,
+      })
+
+      // A funded bounty must be backed by escrow so the displayed reward is
+      // real: the amount moves from the seller's wallet into the pool escrow.
+      if (funded) {
+        await getCollectiveHawalaService(container).escrowBountyFunds({
+          demand_post_id: postId,
           bounty_id: bounty.id,
           contributor_id: data.seller_id,
           amount: Number(data.bounty.amount),
         })
-      } catch (err) {
-        // A step that throws is not compensated, so its own writes are undone
-        // here: the post was already OPEN and the bounty ACTIVE, advertising
-        // a reward no money stood behind.
-        await cancelLaunchDemand(container, post.id)
-        throw err
       }
-    }
 
-    return new StepResponse(
-      {
-        demand_post_id: post.id as string,
-        bounty_id: bounty.id as string,
-      },
-      { created: true, demand_post_id: post.id as string }
-    )
+      return new StepResponse(
+        {
+          demand_post_id: postId,
+          bounty_id: bounty.id as string,
+        },
+        { created: true, demand_post_id: postId }
+      )
+    } catch (err) {
+      if (postId) await cancelLaunchDemand(container, postId)
+      throw err
+    }
   },
   async (comp, { container }) => {
     if (!comp || !comp.created || !comp.demand_post_id) {

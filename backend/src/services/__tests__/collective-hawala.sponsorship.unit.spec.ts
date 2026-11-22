@@ -2,6 +2,7 @@ import {
   CollectiveHawalaService,
   SPONSORSHIP_PLATFORM_FEE_PERCENT,
 } from "../collective-hawala"
+import { FUNDED_LAUNCHES_FLAG } from "../../modules/hawala-ledger/vendor-transfer-switches"
 
 /**
  * Fake hawala ledger for the sponsorship money path. createTransfer is
@@ -47,6 +48,33 @@ function makeService() {
 }
 
 describe("CollectiveHawalaService — sponsorship", () => {
+  // A funded sponsorship is a funded launch: off unless its switch is on
+  // (vendor-transfer-switches.ts). These cases check the money path itself,
+  // so the switch is on for them; the last block checks it off.
+  beforeEach(() => {
+    process.env[FUNDED_LAUNCHES_FLAG] = "1"
+  })
+  afterEach(() => {
+    delete process.env[FUNDED_LAUNCHES_FLAG]
+  })
+
+  it("escrowSponsorshipFunds makes no escrow account when the wallet is missing or short", async () => {
+    const { hawala, svc } = makeService()
+    hawala.listLedgerAccounts.mockImplementation(async () => [])
+    await expect(
+      svc.escrowSponsorshipFunds({ sponsorship_id: "spn_1", producer_id: "seller_1", amount: 100 })
+    ).rejects.toThrow("Producer wallet not found")
+
+    hawala.listLedgerAccounts.mockImplementation(async (filter: any) =>
+      filter.account_type === "USER_WALLET" ? [{ id: "acct_seller_1", available_balance: 10 }] : []
+    )
+    await expect(
+      svc.escrowSponsorshipFunds({ sponsorship_id: "spn_1", producer_id: "seller_1", amount: 100 })
+    ).rejects.toThrow("Insufficient balance for sponsorship escrow")
+    expect(hawala.createAccount).not.toHaveBeenCalled()
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
+  })
+
   it("the platform fee is 10%", () => {
     expect(SPONSORSHIP_PLATFORM_FEE_PERCENT).toBe(10)
   })
@@ -143,5 +171,25 @@ describe("CollectiveHawalaService — sponsorship", () => {
     expect(second.fee_entry.id).toBe(first.fee_entry.id)
     expect(second.payout_entry.id).toBe(first.payout_entry.id)
     expect(hawala.transfers).toHaveLength(2)
+  })
+})
+
+describe("CollectiveHawalaService — funded launches off (the default)", () => {
+  it("escrowSponsorshipFunds and paySponsorship refuse before any account is read or made", async () => {
+    delete process.env[FUNDED_LAUNCHES_FLAG]
+    const { hawala, svc } = makeService()
+    const off = /Funded launches are not available \(FBM_FUNDED_LAUNCHES_LIVE is not on\)/
+
+    await expect(
+      svc.escrowSponsorshipFunds({ sponsorship_id: "spn_1", producer_id: "seller_1", amount: 100 })
+    ).rejects.toThrow(off)
+    await expect(svc.paySponsorship({ sponsorship_id: "spn_1", creator_id: "sel_creator", amount: 100 })).rejects.toThrow(off)
+    await expect(
+      svc.escrowBountyFunds({ demand_post_id: "dp_1", bounty_id: "b_1", contributor_id: "seller_1", amount: 50 })
+    ).rejects.toThrow(off)
+
+    expect(hawala.listLedgerAccounts).not.toHaveBeenCalled()
+    expect(hawala.createAccount).not.toHaveBeenCalled()
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
   })
 })

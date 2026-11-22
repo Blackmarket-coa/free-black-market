@@ -5,6 +5,10 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { CreatorProgramType } from "../../src/modules/creator-program/models/creator-program"
 import { DEMAND_POOL_MODULE } from "../../src/modules/demand-pool"
 import type DemandPoolModuleService from "../../src/modules/demand-pool/service"
+import { HAWALA_LEDGER_MODULE } from "../../src/modules/hawala-ledger"
+import type HawalaLedgerModuleService from "../../src/modules/hawala-ledger/service"
+import { FUNDED_LAUNCHES_FLAG } from "../../src/modules/hawala-ledger/vendor-transfer-switches"
+import { getCollectiveHawalaService } from "../../src/services/collective-hawala"
 import launchProductWorkflow from "../../src/workflows/launch-product"
 import { trackSubscribers } from "./helpers/drain-subscribers"
 import { authHeader, createAuthenticatedSeller, ensureStoreInfra, safe } from "./helpers/seller-auth"
@@ -34,10 +38,16 @@ jest.setTimeout(240 * 1000)
  * moment later. The store here has an older channel that is not its default,
  * which a "first channel" lookup would pick.
  *
- * **Funded bounty.** Refused at the route. Its escrow debits a `USER_WALLET`
- * no seller has, so the workflow fails; a failure used to leave the post open
- * with an unescrowed bounty and a deleted product, and the route then answered
- * `idempotent: true` for that slug on every retry.
+ * **Funded launches.** A bounty amount or a sponsorship amount is refused at
+ * the route, and the escrow methods refuse in the service layer, unless
+ * `FBM_FUNDED_LAUNCHES_LIVE=1`. Their escrow debits a `USER_WALLET` no seller
+ * has, so the workflow failed; a failure used to leave the post open with an
+ * unescrowed bounty and a deleted product, and the route then answered
+ * `idempotent: true` for that slug on every retry. With a wallet (a fixture),
+ * the money moved into escrow with no payout and no refund.
+ *
+ * **Milestones.** Percentages that do not sum to 100 are refused at the route;
+ * a failure anywhere in the bounty step cancels the post it made.
  */
 
 const STOREFRONT_QUERY = path.resolve(__dirname, "../../../storefront/src/lib/data/product-query.ts")
@@ -87,6 +97,45 @@ medusaIntegrationTestRunner({
 
     const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     const pools = () => getContainer().resolve<DemandPoolModuleService>(DEMAND_POOL_MODULE)
+    const hawala = () => getContainer().resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
+    const pg = () => getContainer().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+
+    afterEach(() => {
+      delete process.env[FUNDED_LAUNCHES_FLAG]
+    })
+
+    /** A seller USER_WALLET holding `dollars`: a fixture, since nothing in the app makes one for a seller. */
+    async function sellerWallet(sellerId: string, dollars: number) {
+      const account = await hawala().createAccount({
+        account_type: "USER_WALLET",
+        owner_type: "SELLER",
+        owner_id: sellerId,
+        currency_code: "USD",
+      })
+      await pg().raw(`UPDATE hawala_ledger_account SET balance = ?, available_balance = ? WHERE id = ?`, [
+        dollars,
+        dollars,
+        account.id,
+      ])
+    }
+
+    /** Accounts whose owner starts with one of these, as `owner|type` -> dollars. */
+    async function accountsOf(...ownerPrefixes: string[]) {
+      const { rows } = await pg().raw(
+        `SELECT owner_id, account_type, available_balance::text AS available FROM hawala_ledger_account
+          WHERE owner_id LIKE ANY(?) ORDER BY owner_id, account_type`,
+        [ownerPrefixes.map((prefix) => `${prefix}%`)]
+      )
+      return Object.fromEntries(
+        rows.map((r: { owner_id: string; account_type: string; available: string }) => [
+          `${r.owner_id}|${r.account_type}`,
+          Number(r.available),
+        ])
+      )
+    }
+
+    const programCount = async (slug: string) =>
+      Number((await pg().raw(`SELECT count(*)::int AS n FROM creator_program WHERE slug = ?`, [slug])).rows[0].n)
 
     let drainSubscribers: () => Promise<void> = async () => {}
     beforeEach(() => {
@@ -246,11 +295,15 @@ medusaIntegrationTestRunner({
         expect(await storedProducts({ title: `Seed mix ${id}` })).toEqual([])
       })
 
-      /**
-       * The launch workflow with a funded bounty, run as the review ran it:
-       * the escrow throws for want of a seller wallet.
-       */
-      async function failedFundedLaunch(sellerId: string, title: string, slug: string) {
+      type Milestone = { description: string; percentage: number; condition: string }
+
+      /** The launch workflow run directly, as a caller that skips the route would run it. */
+      async function runLaunch(
+        sellerId: string,
+        title: string,
+        slug: string,
+        bounty: { amount: number; milestones?: Milestone[] }
+      ) {
         const launchId = `launch_${sellerId}_${slug}`
         const { errors } = await launchProductWorkflow(getContainer()).run({
           input: {
@@ -271,13 +324,27 @@ medusaIntegrationTestRunner({
               metadata: { launch_id: launchId },
             },
             demand: { title: `${title} — marketing bounty`, description: "Promote it.", target_quantity: 100, min_quantity: 1 },
-            bounty: { objective: "RECRUIT_BUYERS", amount: 50, currency_code: "USD" },
+            bounty: { objective: "RECRUIT_BUYERS", amount: bounty.amount, currency_code: "USD", milestones: bounty.milestones },
             program: { title: `${title} creators`, slug, program_type: CreatorProgramType.AFFILIATE_OPEN },
           },
           throwOnError: false,
         })
-        expect(errors.map((e) => e.error?.message)).toEqual(["Contributor wallet not found"])
-        return launchId
+        return { launchId, errors: errors.map((e) => e.error?.message) }
+      }
+
+      /**
+       * A funded launch with funded launches switched on, run as the first
+       * review ran it: the escrow throws for want of a seller wallet.
+       */
+      async function failedFundedLaunch(sellerId: string, title: string, slug: string) {
+        process.env[FUNDED_LAUNCHES_FLAG] = "1"
+        try {
+          const { launchId, errors } = await runLaunch(sellerId, title, slug, { amount: 50 })
+          expect(errors).toEqual(["Contributor wallet not found"])
+          return launchId
+        } finally {
+          delete process.env[FUNDED_LAUNCHES_FLAG]
+        }
       }
 
       it("whose bounty escrow fails leaves no public bounty behind: the post and the bounty are cancelled, the product is gone", async () => {
@@ -286,7 +353,8 @@ medusaIntegrationTestRunner({
         const id = uid()
         const launchId = await failedFundedLaunch(seller.seller.id, `Seed mix ${id}`, `seed-mix-${id}`)
 
-        expect(await demandOf(launchId)).toEqual([
+        const posts = await demandOf(launchId)
+        expect(posts).toEqual([
           {
             id: expect.any(String),
             status: "CANCELLED",
@@ -295,6 +363,145 @@ medusaIntegrationTestRunner({
           },
         ])
         expect(await storedProducts({ title: `Seed mix ${id}` })).toEqual([])
+        // The wallet was checked before the pool's escrow account was made.
+        expect(await accountsOf(`demand-pool-${posts[0].id}`)).toEqual({})
+      })
+
+      it("with a funded bounty is refused in the service while funded launches are off, though the seller has a wallet, and moves the money once they are on", async () => {
+        await makeStore()
+        const seller = await createAuthenticatedSeller({ api, getContainer })
+        await sellerWallet(seller.seller.id, 200)
+        const id = uid()
+
+        // The workflow called directly (the route already refuses): the
+        // second review saw it escrow 50 with no switch.
+        const off = await runLaunch(seller.seller.id, `Seed mix ${id}`, `seed-mix-${id}`, { amount: 50 })
+        expect(off.errors).toEqual(["Funded launches are not available (FBM_FUNDED_LAUNCHES_LIVE is not on)"])
+        expect(await demandOf(off.launchId)).toEqual([])
+        expect(await storedProducts({ title: `Seed mix ${id}` })).toEqual([])
+        expect(await accountsOf(seller.seller.id, "demand-pool-")).toEqual({ [`${seller.seller.id}|USER_WALLET`]: 200 })
+
+        // On: the same launch escrows the 50, so the switch is what stops it.
+        process.env[FUNDED_LAUNCHES_FLAG] = "1"
+        const on = await runLaunch(seller.seller.id, `Seed mix ${id}`, `seed-mix-${id}`, { amount: 50 })
+        expect(on.errors).toEqual([])
+        const [post] = await demandOf(on.launchId)
+        expect(post).toMatchObject({ status: "OPEN", bounties: [{ status: "ACTIVE", escrowed: true }] })
+        expect(await accountsOf(seller.seller.id, "demand-pool-")).toEqual({
+          [`${seller.seller.id}|USER_WALLET`]: 150,
+          [`demand-pool-${post.id}|ESCROW`]: 50,
+        })
+      })
+
+      it("with milestones that do not sum to 100 is refused at the route, before anything is written", async () => {
+        await makeStore()
+        const seller = await createAuthenticatedSeller({ api, getContainer })
+        const id = uid()
+        const refused = await safe(
+          api.post(
+            "/v1/seller/launches",
+            {
+              title: `Seed mix ${id}`,
+              slug: `seed-mix-${id}`,
+              price: 800,
+              bounty_milestones: [{ description: "Half", percentage: 50, condition: "half done" }],
+            },
+            authHeader(seller.token)
+          )
+        )
+        expect(refused.status).toBe(400)
+        expect(refused.data).toMatchObject({ type: "invalid_request" })
+        expect(refused.data.errors.fieldErrors.bounty_milestones).toEqual(["Bounty milestone percentages must sum to 100"])
+        expect(await demandOf(`launch_${seller.seller.id}_seed-mix-${id}`)).toEqual([])
+        expect(await storedProducts({ title: `Seed mix ${id}` })).toEqual([])
+      })
+
+      it("that fails inside the bounty step before any escrow cancels the post it made, and a retry launches", async () => {
+        await makeStore()
+        const seller = await createAuthenticatedSeller({ api, getContainer })
+        const id = uid()
+
+        // Called directly, past the route's check: addBounty refuses.
+        const half = [{ description: "Half", percentage: 50, condition: "half done" }]
+        const failed = await runLaunch(seller.seller.id, `Seed mix ${id}`, `seed-mix-${id}`, { amount: 0, milestones: half })
+        expect(failed.errors).toEqual(["Bounty milestone percentages must sum to 100"])
+        // Before: the post stayed OPEN with no bounty, beside a deleted product.
+        expect(await demandOf(failed.launchId)).toEqual([
+          { id: expect.any(String), status: "CANCELLED", product_id: expect.any(String), bounties: [] },
+        ])
+        expect(await storedProducts({ title: `Seed mix ${id}` })).toEqual([])
+
+        const whole = [{ description: "All", percentage: 100, condition: "done" }]
+        const retried = await runLaunch(seller.seller.id, `Seed mix ${id}`, `seed-mix-${id}`, { amount: 0, milestones: whole })
+        expect(retried.errors).toEqual([])
+        expect((await demandOf(failed.launchId)).map((post) => [post.status, post.bounties.length]).sort()).toEqual([
+          ["CANCELLED", 0],
+          ["OPEN", 1],
+        ])
+      })
+
+      describe("a sponsorship", () => {
+        const sponsorship = (id: string, extra: Record<string, unknown> = {}) => ({
+          launch_type: "SPONSORSHIP",
+          title: `Sponsor ${id}`,
+          slug: `sponsor-${id}`,
+          sponsorship_amount: 5000,
+          ...extra,
+        })
+
+        it("with an amount is refused at the route, before anything is written", async () => {
+          await makeStore()
+          const seller = await createAuthenticatedSeller({ api, getContainer })
+          const id = uid()
+
+          // The find-creators page's sponsor button, which always sends an amount.
+          const refused = await safe(
+            api.post("/v1/seller/launches", sponsorship(id, { target_creator_seller_id: "sel_some_creator" }), authHeader(seller.token))
+          )
+          expect([refused.status, refused.data]).toEqual([
+            400,
+            {
+              message: "A funded sponsorship is not available yet. Leave the sponsorship amount empty to launch.",
+              type: "invalid_request",
+            },
+          ])
+          expect(await programCount(`sponsor-${id}`)).toBe(0)
+          expect(await accountsOf(`sponsorship-launch_${seller.seller.id}`)).toEqual({})
+        })
+
+        it("and a launch bounty are refused in the service while funded launches are off, before any account is read or made", async () => {
+          const seller = `sel_${uid()}`
+          const off = "Funded launches are not available (FBM_FUNDED_LAUNCHES_LIVE is not on)"
+          const collective = getCollectiveHawalaService(getContainer())
+          await expect(
+            collective.escrowSponsorshipFunds({ sponsorship_id: `launch_${seller}_x`, producer_id: seller, amount: 50 })
+          ).rejects.toThrow(off)
+          await expect(
+            collective.escrowBountyFunds({ demand_post_id: `dp_${seller}`, bounty_id: `b_${seller}`, contributor_id: seller, amount: 50 })
+          ).rejects.toThrow(off)
+          expect(await accountsOf(`sponsorship-launch_${seller}`, `demand-pool-dp_${seller}`)).toEqual({})
+        })
+
+        it("with funded launches on: no wallet leaves no empty escrow account; a wallet (fixture) moves the money, so the switch is what stops it", async () => {
+          await makeStore()
+          const seller = await createAuthenticatedSeller({ api, getContainer })
+          process.env[FUNDED_LAUNCHES_FLAG] = "1"
+
+          const noWallet = uid()
+          const failed = await safe(api.post("/v1/seller/launches", sponsorship(noWallet), authHeader(seller.token)))
+          expect([failed.status, failed.data]).toEqual([409, { message: "Producer wallet not found", type: "launch_failed" }])
+          // Before: an empty sponsorship-launch_… ESCROW account on every attempt.
+          expect(await accountsOf(`sponsorship-launch_${seller.seller.id}`)).toEqual({})
+
+          await sellerWallet(seller.seller.id, 200)
+          const funded = uid()
+          const ok = await safe(api.post("/v1/seller/launches", sponsorship(funded), authHeader(seller.token)))
+          expect({ status: ok.status, body: ok.status === 201 ? null : ok.data }).toEqual({ status: 201, body: null })
+          expect(await accountsOf(seller.seller.id, `sponsorship-launch_${seller.seller.id}`)).toEqual({
+            [`${seller.seller.id}|USER_WALLET`]: 150,
+            [`sponsorship-launch_${seller.seller.id}_sponsor-${funded}|ESCROW`]: 50,
+          })
+        })
       })
 
       it("that failed once can be made: its slug launches, and only a launch whose product exists answers idempotent", async () => {
