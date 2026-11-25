@@ -6,6 +6,9 @@
 
 **Status:** Product requirements and proposed delivery plan. The full unified portal and virtual marketplace are not implemented at the reviewed source revision. This document changes no application code, billing, permissions, flags or deployment.
 
+
+**Security work deferred to repository implementation:** [FBM authorization hardening backlog](FBM_AUTHORIZATION_HARDENING_BACKLOG.md) records the seller/member session audit, vendor and V1 middleware boundaries, cross-role regression tests, onboarding compatibility checks, and release gates. These are planned tasks, not deployed fixes.
+
 ## Authority and scope
 
 FBM will have a standalone iOS and Android app built around one customizable member portal. People can participate in gameplay, buy, sell, trade and negotiate within a virtual marketplace that changes as members publish real offerings and resources. The app also supports websites, inventory, orders, fulfillment and additional business/community tools as those workflows are completed.
