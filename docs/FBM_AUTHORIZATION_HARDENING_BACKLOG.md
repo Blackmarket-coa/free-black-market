@@ -22,3 +22,16 @@ During E2E-23BC–BP, a local, not-deployed middleware change added `authenticat
 - Preserve existing local modified and untracked files; no automatic cleanup or overwrite.
 - Keep the self-hosted architecture; do not propose Medusa Cloud migration.
 - Findings are code-level risks, not a confirmed exploit.
+
+## Ingress and release hardening (2026-11-25)
+
+Public ingress mitigation passed operator HTTP tests and reported browser checks. Permanent fixes remain planned, not implemented.
+
+- P0: Centralize trusted client IP resolution; eliminate raw first-address extraction; validate proxy trust boundaries, duplicate headers, IPv4/IPv6 and internal requests. Audit rate limiting, Hawala auditing and creator attribution.
+- P0: Configure canonical origins and allowlisted checkout and redirect destinations; audit forwarded-host consumers.
+- P0: Restrict shared BMC internal network access and demonstrate maintenance isolation without disrupting other services.
+- P1: Consolidate startup validation for both Stripe secret key variables, including restricted-key compatibility and redacted diagnostics.
+- P1: Regression-test authenticated browser flows, legitimate upstream proxies, payment and webhook delivery.
+- P2: Review SSH/Cockpit exposure, LLMNR and CSP unsafe-inline separately.
+
+Public WAF rejection of preexisting forwarded IP headers does not protect direct internal requests. Host sanitization and HTTPS enforcement are interim controls. Preserve the pinned candidate and deployment lock; require explicit authorization, quiescent database checkpoint, explicit initialization and separately authorized rollback. No automatic database restoration. Fresh Redis rehearsal and selected table fingerprints do not establish full production equivalence.
