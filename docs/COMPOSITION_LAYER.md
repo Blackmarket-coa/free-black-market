@@ -155,3 +155,23 @@ The substrate this branch lands is exercised by:
 - Manual smoke (Phases 5–6): onboard test sellers across all ten playbooks;
   checkout a product per sliding-scale tier with donation toggled; verify
   Stripe ACH settlement lands at the fiscal-sponsor account.
+
+
+## Privacy/security composition and technical ownership (2026-11-27)
+
+This map adds privacy/security handoffs without changing FBM's existing commerce/transaction, settlement, fulfillment, consent or authorization contracts. A private collaboration workflow does not migrate required order/customer records into another service or change their retention automatically.
+
+| User need | Everyday owner / FBM entry | Backend or advanced owner |
+| --- | --- | --- |
+| Seller/buyer permissions and commerce data | FBM account/team and transaction surfaces | FBM remains authoritative; a Blackmask organization role does not grant commerce administration |
+| Private client/team collaboration, selected records or document request | Contextual Open in Blackmask from a supported team/project/sharing context | Blackmask private UX and separately locked vault; existing Matrix services and per-object grants remain authoritative |
+| Identity/recipient review, guest access, access reviews and incident decisions | Blackmask context selected explicitly; return to original FBM resource | Each linked service confirms its own grants/revocation; no universal offboarding shortcut inferred |
+| Website launch/connection, component/embed setup and domains | FBM shows result/status and normal commerce actions | Advanced configuration in Forge, with exact project/tool context and a return path |
+| Advanced protection preset, integration, backup or hosting setup | Persistent Forge entry near account Settings/Privacy plus supported contextual links | Forge orchestration through scoped domain APIs; no decrypted Vault data or raw credentials in projects/URLs/logs |
+| Checkout, orders, inventory, payouts and eligible transport | Existing FBM/Blackstar surfaces | Existing domain owners; privacy consolidation does not create a duplicate ledger or logistics system |
+
+The [Blackmask software map](https://github.com/Blackmarket-coa/blackmask/blob/main/docs/black-mask/software-map.md) maps 36 proposed workflows for individuals, businesses, startups, organizations and groups. The [Forge software map](https://github.com/Blackmarket-coa/Forge/blob/master/SOFTWARE_MAP.md) defines technical configuration surfaces. Related Blackout social/community and Matrix services retain their authority.
+
+Handoffs must be user-directed and carry only authorized identifiers plus a short-lived authenticated reference. Never silently send customer/order content, plaintext documents, vault secrets or message history. Show the actual audience, identity and selected payload; the destination reauthorizes. Preserve intent and a useful path for unavailable/unsupported/signed-out states. Joining/paying for an organization does not grant personal-vault or unrelated-chat access.
+
+Retain fixed commerce rules and existing one-time enhancement policy. Blackmask's storage-only recurring exception does not create a new FBM subscription. New sharing/recovery, native capture and OSS research remain planned/unverified until their owning service records evidence. This is a documentation map change, not a deployment or data migration.

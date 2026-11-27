@@ -1,5 +1,7 @@
 # Documentation Index
 
+> **Privacy/security software-map alignment (2026-11-27):** [Composition Layer — privacy/security ownership](COMPOSITION_LAYER.md#privacysecurity-composition-and-technical-ownership-2026-11-27) maps supported FBM handoffs to the consolidated [Blackmask software map](https://github.com/Blackmarket-coa/blackmask/blob/main/docs/black-mask/software-map.md) and advanced [Forge tooling](https://github.com/Blackmarket-coa/Forge/blob/master/SOFTWARE_MAP.md). FBM keeps commerce authority; contextual entry/return, consent, role gates and private-data boundaries are proposed integration requirements, not shipped features.
+
 > **December launch audit (2026-11-21):** [Business baseline and FBM/Forge readiness](FBM_DECEMBER_LAUNCH_READINESS.md) records founder-confirmed economics/community direction, existing mobile and creator-tool reuse, platform build boundaries, verification limits and a prioritized backlog for the December 31 target.
 
 > **Shared game planning (2026-11-21):** [Coalition game and creator commerce](FBM_COALITION_GAME_AND_CREATOR_COMMERCE_PLAN.md) adapts Blackout's original companion/collection/cooperative exploration direction to FBM, including optional AR, creator packs, consent, code-adoption boundaries and verified commerce/delivery acceptance. Accepted planning only; no game or dependencies installed.
