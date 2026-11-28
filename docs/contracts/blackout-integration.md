@@ -534,3 +534,9 @@ price + publish the Canopy plan listings seeded as drafts
 with Blackout's monetization gates, and verify during acceptance (with
 `BLACKOUT_BETA_UNLOCK_ALL` off) that the first checkout attaches a reusable
 payment method in the Stripe dashboard — off-session renewals depend on it.
+
+## Planned live commerce completion map — November 28, 2026
+
+The [FBM software map for Blackout live commerce](../BLACKOUT_LIVE_COMMERCE_MAP.md) extends planning for gifts, paid finite interactions, goal contributions, rewards and recorded-video offers. It distinguishes payment capture, Blackout effect execution, product entitlement/delivery and recipient settlement, with idempotency, expiry, refund and reconciliation acceptance.
+
+These are requirements for a future verified contract; they do not add endpoint/event support or change the historical implemented flows above. Preserve source/production evidence and existing financial records. New recurring memberships/platform tiers are not approved by the legacy subscription interfaces documented here.
