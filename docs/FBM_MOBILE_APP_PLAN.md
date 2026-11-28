@@ -170,3 +170,11 @@ Before release: verify signing/versioning, app links, push on real iOS/Android d
 
 Exact visual style/camera, avatar movement, five-destination navigation, pilot composition, haggle-panel layout and workshop layout remain open. Use the candidate structure above for design review. Start with working domain/capability contracts so changing the presentation does not create duplicate business systems.
 
+## Forge ownership and native entry surfaces (2026-11-27)
+
+See [FBM–Forge integration](FORGE_INTEGRATION.md), [composition ownership](COMPOSITION_LAYER.md#forge-technicalcreative-product-map-consolidation-2026-11-27) and [BMC software maps](BMC_SOFTWARE_MAPS.md). The unified buyer/seller/trader and game-first direction stays intact. Forge houses advanced creation/setup for sites, portal builds, themes, widgets, app targets, integrations, hosting and release diagnostics.
+
+A permanent **Forge — Build, customize & host** menu entry sits near Settings/Privacy. My Website, My Place/equipment/Appearance, Creator tools, Connected services and project status link directly into their corresponding Forge tool. FBM retains free starter setup, pin/reorder/select/apply, simple uploads/listing management, earnings/payouts, inventory/orders and checkout. Missing Forge or mobile-incompatible tools must preserve intent and explain a supported next step.
+
+Prioritize durable drafts, authenticated project handoff/return, and real signed artifact delivery/install before broader visual-editor scope. New kit/preview/remix/automation capabilities are planned rather than device or production readiness evidence.
+

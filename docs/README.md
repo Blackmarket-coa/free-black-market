@@ -1,5 +1,7 @@
 # Documentation Index
 
+> **Forge session consolidation (2026-11-27):** [FBM–Forge integration](FORGE_INTEGRATION.md) and [BMC software maps](BMC_SOFTWARE_MAPS.md) record the advanced creation/hosting migration, persistent and contextual app surfaces, competitor-derived backlog placement and delivery boundaries. The complete [Forge product map](https://github.com/Blackmarket-coa/Forge/blob/master/PRODUCT_MAP.md) retains all forty research items.
+
 > **Privacy/security software-map alignment (2026-11-27):** [Composition Layer — privacy/security ownership](COMPOSITION_LAYER.md#privacysecurity-composition-and-technical-ownership-2026-11-27) maps supported FBM handoffs to the consolidated [Blackmask software map](https://github.com/Blackmarket-coa/blackmask/blob/main/docs/black-mask/software-map.md) and advanced [Forge tooling](https://github.com/Blackmarket-coa/Forge/blob/master/SOFTWARE_MAP.md). FBM keeps commerce authority; contextual entry/return, consent, role gates and private-data boundaries are proposed integration requirements, not shipped features.
 
 > **December launch audit (2026-11-21):** [Business baseline and FBM/Forge readiness](FBM_DECEMBER_LAUNCH_READINESS.md) records founder-confirmed economics/community direction, existing mobile and creator-tool reuse, platform build boundaries, verification limits and a prioritized backlog for the December 31 target.
@@ -241,3 +243,4 @@ Start with the whitepaper; the rest are phase-specific deep dives.
   with tests (no LangGraph dependency, no model calls, not deployed).
 - End-to-end tests: `e2e/README.md`.
 - Repository overview and full layout: `README.md` (repo root).
+
