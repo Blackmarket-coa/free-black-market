@@ -170,3 +170,7 @@ Before release: verify signing/versioning, app links, push on real iOS/Android d
 
 Exact visual style/camera, avatar movement, five-destination navigation, pilot composition, haggle-panel layout and workshop layout remain open. Use the candidate structure above for design review. Start with working domain/capability contracts so changing the presentation does not create duplicate business systems.
 
+
+## Blackout live commerce software map — November 28, 2026
+
+The [live commerce map](BLACKOUT_LIVE_COMMERCE_MAP.md) assigns gift/support checkout, finite live interactions, capture/refund/settlement and digital-product delivery to FBM, while Blackout retains room state and permitted effect execution. It records event/retry/reconciliation requirements and separates community joining, points, money and contributor rank. Forge authors/configures compatible overlays and stream integrations; Blackmask retains relevant privacy. This is planned cross-app work, not new billing or a shipped live-room feature.
