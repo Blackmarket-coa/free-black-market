@@ -301,3 +301,14 @@ Include exact commands and outcomes in your PR description.
 - Roadmap: `ROADMAP.md`
 - Contributor process: `CONTRIBUTING.md`
 - Root scripts: `scripts/README.md`
+
+
+## Shared privacy and security documentation
+
+FBM retains commerce, customer/order permissions and transaction authority; applicable private collaboration and protection workflows link to Blackmask through explicit, scoped handoffs.
+
+- [Blackmask individual and organization security plan](https://github.com/Blackmarket-coa/blackmask/blob/main/docs/black-mask/individual-and-organization-security-plan.md) — 36 proposed workflows, audiences, permissions, recovery and integration boundaries.
+- [Shared privacy and security OSS catalogue](https://github.com/Blackmarket-coa/blackout/blob/develop/docs/product/BLACKOUT_PRIVACY_SECURITY_OSS_CATALOG.md) — evaluated app, companion, server and development-tool candidates, with primary sources, maintenance/license cautions and screening evidence.
+- [Blackmask software map](https://github.com/Blackmarket-coa/blackmask/blob/main/docs/black-mask/software-map.md) — the six Privacy sections, workflow ownership and cross-app handoffs.
+
+These are planning and evaluation references. Feature implementation, dependency adoption and production readiness require their own evidence.
