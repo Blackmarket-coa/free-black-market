@@ -175,3 +175,12 @@ The [Blackmask software map](https://github.com/Blackmarket-coa/blackmask/blob/m
 Handoffs must be user-directed and carry only authorized identifiers plus a short-lived authenticated reference. Never silently send customer/order content, plaintext documents, vault secrets or message history. Show the actual audience, identity and selected payload; the destination reauthorizes. Preserve intent and a useful path for unavailable/unsupported/signed-out states. Joining/paying for an organization does not grant personal-vault or unrelated-chat access.
 
 Retain fixed commerce rules and existing one-time enhancement policy. Blackmask's storage-only recurring exception does not create a new FBM subscription. New sharing/recovery, native capture and OSS research remain planned/unverified until their owning service records evidence. This is a documentation map change, not a deployment or data migration.
+
+## Forge technical/creative product-map consolidation (2026-11-27)
+
+The [FBM–Forge integration map](FORGE_INTEGRATION.md) and [BMC software maps](BMC_SOFTWARE_MAPS.md) extend the ownership section above. Rehome advanced website Launch/Connect, domains, embeds/SDK, portal/theme/widget authoring, technical connector setup, app packaging and authorized hosting operations into Forge. FBM keeps catalog/orders/checkout/registry/entitlements/settlement, native starter setup and everyday equipment use.
+
+Add the permanent Forge hub near Settings/Privacy and contextual My Website, Appearance/equipment, Creator tools, Connected services and project-status links. Preserve exact authorized project context and return path. Durable drafts and the complete authored-file-to-buyer installation path precede expansion of visual editors.
+
+The competitor backlog adds reusable kits, sample stores, isolated previews, design properties/brand kits, licensed remixing, versioned publishing, supported recovery and tested automations. Detailed authoring lives in Forge; normal transactions and applying a compatible result remain native. No runtime, pricing or authority changes are established by this documentation.
+
