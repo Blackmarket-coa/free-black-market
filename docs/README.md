@@ -241,3 +241,10 @@ Start with the whitepaper; the rest are phase-specific deep dives.
   with tests (no LangGraph dependency, no model calls, not deployed).
 - End-to-end tests: `e2e/README.md`.
 - Repository overview and full layout: `README.md` (repo root).
+
+## Ecosystem gap register — November 28, 2026
+
+- [BMC ecosystem gaps and app ownership](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md) — all ten gaps, existing foundations, primary/supporting apps, proposed entry points, completion criteria and delivery order.
+- [FBM responsibility map](FBM_PRODUCT_STRATEGY.md#ecosystem-business-and-organization-gaps--november-28-2026) — primary ownership of G01, G02, G03, G05, G06, G07, G08 plus explicit cross-app boundaries.
+
+The register is a planning snapshot. It does not promote partial or proposed capabilities to deployed or verified status.

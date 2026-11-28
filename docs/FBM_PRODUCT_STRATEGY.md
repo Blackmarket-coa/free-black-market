@@ -227,3 +227,26 @@ When updating a feature plan, map each strategy outcome to existing code, identi
 ## North star
 
 **People use FBM because it makes their lives easier, and keep using it because it helps them build stronger communities.**
+
+## Ecosystem business and organization gaps — November 28, 2026
+
+The [shared ten-gap register](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md) records source-backed foundations, proposed scope and completion criteria. This section maps FBM's responsibilities; it does not claim the gaps are implemented or verified in production.
+
+**Primary ownership:** [G01](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g01), [G02](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g02), [G03](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g03), [G05](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g05), [G06](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g06), [G07](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g07), [G08](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g08)
+
+| Gap | Capability | FBM responsibility |
+| --- | --- | --- |
+| [G01](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g01) | Complete merchant accounting | Primary: extend or integrate merchant accounting over existing financial foundations; keep merchant books consistent with platform settlement. |
+| [G02](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g02) | Payroll and employee administration | Primary: employee/time/leave/pay-run workflows through explicitly supported payroll integrations; distinguish wages from seller payouts. |
+| [G03](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g03) | Customer relationships and support | Primary: contacts, leads, quotes/orders, follow-ups and support cases; reuse existing customers and permissions. |
+| [G04](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g04) | Collaborative office workspace | Support: attach or link explicitly shared office documents to business records; private collaboration belongs in Blackmask. |
+| [G05](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g05) | Complete retail point of sale | Primary: complete supported retail/device/offline workflows over one stock source; offline entry is not offline payment authorization. |
+| [G06](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g06) | Regional payments and reconciliation | Primary: validate each supported country/provider combination for collection, refund, reconciliation and settlement; candidates are not active integrations. |
+| [G07](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g07) | Country-specific business administration | Primary: versioned business country packs; retain existing payment/compliance gates and truthful supported-country limits. |
+| [G08](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g08) | Donor, grant, and nonprofit administration | Primary: extend donations, restricted funds, volunteers and impact into donor/grant administration. |
+| [G09](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g09) | Offline forms and field data collection | Support: receive approved inventory/aid/fund records from Coalition fieldwork; do not expose raw sensitive submissions. |
+| [G10](BMC_ECOSYSTEM_GAPS_AND_APP_OWNERSHIP.md#g10) | Existing-software migration and external connectors | Support: own imported commerce/accounting/customer records and routine message-to-quote/order actions; Forge owns mapping and migration operations. |
+
+Existing Posture A and money-movement gates remain authoritative. Payment/payroll/country-pack targets require their own supported-scope review and verification; this map does not change settlement rules.
+
+Retain one-time enhancement ownership, the established applicable 3% coalition sale-fee direction after processing fees, and the intended self-hosted architecture. Keep existing hosted-storage exceptions and transaction-kind policies explicit; this planning update introduces no new fee or subscription. Close a gap only with an end-to-end workflow and recorded country/device/provider/configuration evidence, not a module name or successful connector request.
